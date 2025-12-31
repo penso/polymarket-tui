@@ -734,7 +734,7 @@ pub async fn run_trending_tui(
                     tracing::info!("Triggering search for query: '{}'", query_for_logging);
                     
                     // Spawn the search task
-                    tokio::spawn(async move {
+                    let task_handle = tokio::spawn(async move {
                         tracing::info!("Starting search API call for: '{}'", query_clone);
                         
                         let result = gamma_client_for_task.search_events(&query_clone, Some(50)).await;
@@ -757,6 +757,21 @@ pub async fn run_trending_tui(
                                 app.search_results.clear();
                                 tracing::warn!("Cleared search results due to error for: '{}'", query_for_final_log);
                             }
+                        }
+                    });
+                    
+                    // Monitor the task to ensure it runs
+                    let query_for_monitor = query_for_logging.clone();
+                    tokio::spawn(async move {
+                        // Give it a moment to start
+                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                        if task_handle.is_finished() {
+                            match task_handle.await {
+                                Ok(_) => tracing::debug!("Search task completed for: '{}'", query_for_monitor),
+                                Err(e) => tracing::error!("Search task panicked for '{}': {:?}", query_for_monitor, e),
+                            }
+                        } else {
+                            tracing::debug!("Search task still running for: '{}'", query_for_monitor);
                         }
                     });
                 } else if query.is_empty() {

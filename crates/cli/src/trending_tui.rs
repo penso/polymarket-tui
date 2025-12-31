@@ -80,8 +80,8 @@ pub struct TrendingAppState {
     pub search_mode: bool,
     pub search_query: String,
     pub search_results: Vec<Event>, // Results from API search
-    pub is_searching: bool, // Whether a search API call is in progress
-    pub last_search_query: String, // Last query that was searched
+    pub is_searching: bool,         // Whether a search API call is in progress
+    pub last_search_query: String,  // Last query that was searched
     // Log messages captured from tracing
     pub logs: Vec<String>,
     pub log_scroll: usize,
@@ -723,7 +723,7 @@ pub async fn run_trending_tui(
                     let app_state_clone = Arc::clone(&app_state);
                     let query_clone = query.clone();
                     let query_for_logging = query.clone(); // Clone for logging before moving
-                    // Create a new GammaClient for the async task
+                                                           // Create a new GammaClient for the async task
                     let gamma_client_for_task = GammaClient::new();
 
                     {
@@ -737,25 +737,41 @@ pub async fn run_trending_tui(
                     let task_handle = tokio::spawn(async move {
                         tracing::info!("Starting search API call for: '{}'", query_clone);
 
-                        let result = gamma_client_for_task.search_events(&query_clone, Some(50)).await;
+                        let result = gamma_client_for_task
+                            .search_events(&query_clone, Some(50))
+                            .await;
 
                         tracing::info!("Search API call completed for: '{}'", query_clone);
 
                         let query_for_final_log = query_clone.clone();
                         match result {
                             Ok(results) => {
-                                tracing::info!("Search API returned {} results for: '{}'", results.len(), query_for_final_log);
+                                tracing::info!(
+                                    "Search API returned {} results for: '{}'",
+                                    results.len(),
+                                    query_for_final_log
+                                );
                                 let mut app = app_state_clone.lock().await;
                                 app.set_search_results(results, query_clone);
-                                tracing::info!("Search results set in app state for: '{}'", query_for_final_log);
+                                tracing::info!(
+                                    "Search results set in app state for: '{}'",
+                                    query_for_final_log
+                                );
                             }
                             Err(e) => {
                                 // On error, fall back to local search
-                                tracing::error!("Search API error for '{}': {}", query_for_final_log, e);
+                                tracing::error!(
+                                    "Search API error for '{}': {}",
+                                    query_for_final_log,
+                                    e
+                                );
                                 let mut app = app_state_clone.lock().await;
                                 app.set_searching(false);
                                 app.search_results.clear();
-                                tracing::warn!("Cleared search results due to error for: '{}'", query_for_final_log);
+                                tracing::warn!(
+                                    "Cleared search results due to error for: '{}'",
+                                    query_for_final_log
+                                );
                             }
                         }
                     });
@@ -767,11 +783,21 @@ pub async fn run_trending_tui(
                         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                         if task_handle.is_finished() {
                             match task_handle.await {
-                                Ok(_) => tracing::debug!("Search task completed for: '{}'", query_for_monitor),
-                                Err(e) => tracing::error!("Search task panicked for '{}': {:?}", query_for_monitor, e),
+                                Ok(_) => tracing::debug!(
+                                    "Search task completed for: '{}'",
+                                    query_for_monitor
+                                ),
+                                Err(e) => tracing::error!(
+                                    "Search task panicked for '{}': {:?}",
+                                    query_for_monitor,
+                                    e
+                                ),
                             }
                         } else {
-                            tracing::debug!("Search task still running for: '{}'", query_for_monitor);
+                            tracing::debug!(
+                                "Search task still running for: '{}'",
+                                query_for_monitor
+                            );
                         }
                     });
                 } else if query.is_empty() {

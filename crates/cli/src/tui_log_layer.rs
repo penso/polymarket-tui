@@ -38,7 +38,7 @@ where
         // First, get all fields to see what we have
         let mut field_visitor = FieldVisitor::default();
         event.record(&mut field_visitor);
-        
+
         // Also try to get message specifically
         let mut visitor = LogVisitor::default();
         event.record(&mut visitor);
@@ -51,7 +51,7 @@ where
             // For simple cases like "Triggering search for query: '{}'", the message field
             // contains the format string, and we need to substitute values
             let msg_template = visitor.message;
-            
+
             // Check if the message template has placeholders and we have fields to substitute
             if msg_template.contains("{}") && !field_visitor.fields.is_empty() {
                 // Try to format the message with the fields
@@ -63,7 +63,7 @@ where
                         if name != "message" {
                             // Replace first {} with the value
                             if let Some(pos) = formatted.find("{}") {
-                                formatted.replace_range(pos..pos+2, value);
+                                formatted.replace_range(pos..pos + 2, value);
                             }
                         }
                     }
@@ -74,7 +74,8 @@ where
             }
         } else if !field_visitor.fields.is_empty() {
             // No message field, use all fields
-            field_visitor.fields
+            field_visitor
+                .fields
                 .iter()
                 .filter(|f| !f.is_empty() && !f.starts_with("message="))
                 .map(|f| f.as_str())
@@ -88,7 +89,7 @@ where
                 module_path.to_string()
             }
         };
-        
+
         // Remove any existing [LEVEL] prefix from the message (handles double prefixes)
         let message_content = raw_message
             .trim_start_matches("[INFO] ")
@@ -102,7 +103,7 @@ where
             .trim_start_matches("[DEBUG]")
             .trim_start_matches("[TRACE]")
             .trim();
-        
+
         let log_message = format!("[{}] {}", level_str, message_content);
 
         // Store in shared state
@@ -110,7 +111,7 @@ where
         // Since we're in an async context, use spawn but make sure it's not dropped
         let logs = Arc::clone(&self.logs);
         let log_msg = log_message.clone();
-        
+
         // Try to push synchronously if possible, otherwise spawn
         // For now, use spawn but ensure it's awaited somewhere
         tokio::spawn(async move {

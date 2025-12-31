@@ -11,7 +11,7 @@ use ratatui::{
 };
 use std::io;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::Mutex as TokioMutex;
 
 pub struct Trade {
     pub timestamp: i64,

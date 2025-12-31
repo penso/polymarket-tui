@@ -311,11 +311,7 @@ async fn run_watch_event_tui(event_slug: String) -> Result<()> {
 
     // Cleanup terminal
     let _ = disable_raw_mode();
-    let _ = execute!(
-        io::stdout(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    );
+    let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
 
     // Cancel WebSocket task
     ws_handle.abort();

@@ -734,15 +734,21 @@ pub async fn run_trending_tui(
         // Handle search debouncing and API calls
         // Check debounce timer and trigger search if needed
         if let Some(debounce_time) = search_debounce {
-            if debounce_time.elapsed() >= tokio::time::Duration::from_millis(500) {
+            let elapsed = debounce_time.elapsed();
+            if elapsed >= tokio::time::Duration::from_millis(500) {
+                // Debounce period passed, perform search
+                tracing::info!("Debounce timer elapsed ({:?}), triggering search", elapsed);
+                
                 // Debounce period passed, perform search
                 let query = {
                     let app = app_state.lock().await;
                     app.search_query.clone()
                 };
 
+                tracing::info!("Search query from app state: '{}'", query);
+
                 // Clear debounce before processing to prevent race conditions
-                let _ = search_debounce.take();
+                search_debounce = None;
 
                 if !query.is_empty() {
                     // Search for any non-empty query (removed 2-char minimum for debugging)
@@ -763,21 +769,25 @@ pub async fn run_trending_tui(
                     // Capture the current tracing context before spawning
                     use tracing::Instrument;
                     let query_for_span = query_clone.clone();
-                    
+
                     // Get the current tracing context (span) before spawning
                     let current_span = tracing::Span::current();
-                    
+
                     // Create a new span for this search task
-                    let search_span = tracing::info_span!("search_task", query = %query_for_span.clone());
-                    
+                    let search_span =
+                        tracing::info_span!("search_task", query = %query_for_span.clone());
+
                     // Spawn the task with both the current context and the new span
                     // Use .instrument() which will automatically enter the span
+                    tracing::info!("About to spawn search task for query: '{}'", query_clone);
+                    eprintln!("[DEBUG] About to spawn search task for query: '{}'", query_clone);
                     let task_handle = tokio::spawn(
                         async move {
                             // Enter the current span to ensure context inheritance
                             let _current_guard = current_span.enter();
-                            
-                            tracing::info!("Starting search API call for: '{}'", query_clone);
+
+                            tracing::info!("[TASK STARTED] Starting search API call for: '{}'", query_clone);
+                            eprintln!("[DEBUG] Task started for query: '{}'", query_clone);
 
                             let result = gamma_client_for_task
                                 .search_events(&query_clone, Some(50))
@@ -844,15 +854,14 @@ pub async fn run_trending_tui(
                             );
                         }
                     });
-                } else if query.is_empty() {
-                    // Clear search results when query is empty
+                } else {
+                    // Query is empty, clear search results
+                    tracing::info!("Search query is empty, clearing results");
                     let mut app = app_state.lock().await;
                     app.search_results.clear();
                     app.last_search_query.clear();
                     app.set_searching(false);
                 }
-
-                search_debounce = None;
             }
         }
 
@@ -904,6 +913,7 @@ pub async fn run_trending_tui(
                                 app.delete_search_char();
                                 // Trigger search after backspace (with debounce)
                                 search_debounce = Some(tokio::time::Instant::now());
+                                tracing::info!("Backspace pressed, search_query='{}', debounce set", app.search_query);
                             }
                         }
                         KeyCode::Char(c) => {
@@ -911,6 +921,7 @@ pub async fn run_trending_tui(
                                 app.add_search_char(c);
                                 // Trigger search after character input (with debounce)
                                 search_debounce = Some(tokio::time::Instant::now());
+                                tracing::info!("Char '{}' pressed, search_query='{}', debounce set", c, app.search_query);
                             }
                         }
                         KeyCode::Enter => {

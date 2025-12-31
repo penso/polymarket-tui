@@ -482,6 +482,9 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
 
     // Now that tracing is set up, we can log
     info!("🔥 Fetching trending events...");
+    
+    // Give tracing a moment to process
+    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
     // Connect logs to app state
     let logs_for_app = Arc::clone(&logs);

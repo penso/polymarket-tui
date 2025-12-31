@@ -88,16 +88,33 @@ pub struct RTDSClient {
 impl RTDSClient {
     pub fn new() -> Self {
         // Try to load authentication from environment variables
+        // Note: Activity subscriptions (orders_matched) typically don't require auth
+        // Only include auth if explicitly needed for protected subscriptions
         let clob_auth = match (
             std::env::var("api_key"),
             std::env::var("secret"),
             std::env::var("passphrase"),
         ) {
-            (Ok(key), Ok(secret), Ok(passphrase)) => Some(ClobAuth {
-                key,
-                secret,
-                passphrase,
-            }),
+            (Ok(key), Ok(secret), Ok(passphrase)) => {
+                // Validate secret length (must be 44 characters as per API)
+                if secret.len() != 44 {
+                    #[cfg(feature = "tracing")]
+                    tracing::warn!(
+                        "CLOB secret length is {} (expected 44). Authentication may fail.",
+                        secret.len()
+                    );
+                    #[cfg(not(feature = "tracing"))]
+                    eprintln!(
+                        "Warning: CLOB secret length is {} (expected 44). Authentication may fail.",
+                        secret.len()
+                    );
+                }
+                Some(ClobAuth {
+                    key,
+                    secret,
+                    passphrase,
+                })
+            }
             _ => None,
         };
 
@@ -152,6 +169,8 @@ impl RTDSClient {
         let mut subscriptions = Vec::new();
 
         // Subscribe to activity (trades/orders_matched)
+        // Note: Activity subscriptions are public and typically don't require CLOB auth
+        // Only include auth if explicitly needed (some endpoints may require it)
         if let Some(ref event_slug) = self.event_slug {
             let filters = serde_json::json!({
                 "event_slug": event_slug
@@ -161,7 +180,7 @@ impl RTDSClient {
                 topic_type: "orders_matched".to_string(),
                 filters: serde_json::to_string(&filters)
                     .map_err(|e| PolymarketError::Serialization(e))?,
-                clob_auth: self.clob_auth.clone(),
+                clob_auth: None, // Activity subscriptions don't require CLOB auth (public data)
                 gamma_auth: self.gamma_auth.clone(),
             });
         }
@@ -237,14 +256,51 @@ impl RTDSClient {
                             break;
                         }
                     } else {
-                        // Unknown message, log for debugging
-                        #[cfg(feature = "tracing")]
-                        {
-                            warn!("Unknown RTDS message: {}", text);
-                        }
-                        #[cfg(not(feature = "tracing"))]
-                        {
-                            eprintln!("Unknown RTDS message: {}", text);
+                        // Try to parse as error message
+                        if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&text) {
+                            if let Some(body) = error_json.get("body") {
+                                if let Some(message) = body.get("message").and_then(|m| m.as_str()) {
+                                    #[cfg(feature = "tracing")]
+                                    {
+                                        error!("RTDS error: {}", message);
+                                    }
+                                    #[cfg(not(feature = "tracing"))]
+                                    {
+                                        eprintln!("RTDS error: {}", message);
+                                    }
+                                    // If it's an authentication error, break the connection
+                                    if message.contains("validation") || message.contains("auth") {
+                                        break;
+                                    }
+                                } else {
+                                    #[cfg(feature = "tracing")]
+                                    {
+                                        warn!("Unknown RTDS message: {}", text);
+                                    }
+                                    #[cfg(not(feature = "tracing"))]
+                                    {
+                                        eprintln!("Unknown RTDS message: {}", text);
+                                    }
+                                }
+                            } else {
+                                #[cfg(feature = "tracing")]
+                                {
+                                    warn!("Unknown RTDS message: {}", text);
+                                }
+                                #[cfg(not(feature = "tracing"))]
+                                {
+                                    eprintln!("Unknown RTDS message: {}", text);
+                                }
+                            }
+                        } else {
+                            #[cfg(feature = "tracing")]
+                            {
+                                warn!("Unknown RTDS message: {}", text);
+                            }
+                            #[cfg(not(feature = "tracing"))]
+                            {
+                                eprintln!("Unknown RTDS message: {}", text);
+                            }
                         }
                     }
                 }

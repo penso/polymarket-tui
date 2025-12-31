@@ -179,9 +179,8 @@ async fn run_monitor_rtds(event_slug: Option<String>) -> Result<()> {
     info!("Connecting to RTDS WebSocket...");
 
     // Check for authentication
-    let has_auth = env::var("api_key").is_ok()
-        && env::var("secret").is_ok()
-        && env::var("passphrase").is_ok();
+    let has_auth =
+        env::var("api_key").is_ok() && env::var("secret").is_ok() && env::var("passphrase").is_ok();
     if has_auth {
         info!("✓ Using authentication from environment variables");
     } else {
@@ -220,9 +219,8 @@ async fn run_watch_event(event: String) -> Result<()> {
     info!("Connecting to RTDS WebSocket...");
 
     // Check for authentication
-    let has_auth = env::var("api_key").is_ok()
-        && env::var("secret").is_ok()
-        && env::var("passphrase").is_ok();
+    let has_auth =
+        env::var("api_key").is_ok() && env::var("secret").is_ok() && env::var("passphrase").is_ok();
     if has_auth {
         info!("✓ Using authentication from environment variables");
     } else {

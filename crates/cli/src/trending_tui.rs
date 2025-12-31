@@ -721,8 +721,9 @@ pub async fn run_trending_tui(
                 if !query.is_empty() && query.len() >= 2 {
                     // Only search if query is at least 2 characters
                     let app_state_clone = Arc::clone(&app_state);
-                    let gamma_client_clone = gamma_client.clone();
                     let query_clone = query.clone();
+                    // Create a new GammaClient for the async task
+                    let gamma_client_for_task = GammaClient::new();
                     
                     {
                         let mut app = app_state.lock().await;
@@ -730,7 +731,7 @@ pub async fn run_trending_tui(
                     }
                     
                     tokio::spawn(async move {
-                        match gamma_client_clone.search_events(&query_clone, Some(50)).await {
+                        match gamma_client_for_task.search_events(&query_clone, Some(50)).await {
                             Ok(results) => {
                                 let mut app = app_state_clone.lock().await;
                                 app.set_search_results(results, query_clone);

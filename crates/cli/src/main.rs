@@ -213,10 +213,10 @@ async fn run_monitor_rtds(event_slug: Option<String>) -> Result<()> {
         rtds_client = rtds_client.with_event_slug(slug);
     }
 
+    let mut display = display_trait::SimpleDisplay {};
     rtds_client
         .connect_and_listen(|msg| {
-            let formatted = RTDSFormatter::format_message(&msg);
-            print!("{}", formatted);
+            let _ = display.display_trade(&msg);
         })
         .await
         .context("Failed to connect to RTDS WebSocket")?;

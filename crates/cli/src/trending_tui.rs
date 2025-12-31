@@ -573,13 +573,47 @@ pub async fn run_trending_tui(
                 if key.kind == KeyEventKind::Press {
                     let mut app = app_state.lock().await;
                     match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => {
-                            app.should_quit = true;
-                            break;
+                        KeyCode::Char('q') => {
+                            if app.search_mode {
+                                app.exit_search_mode();
+                            } else {
+                                app.should_quit = true;
+                                break;
+                            }
                         }
-                        KeyCode::Up => app.move_up(),
-                        KeyCode::Down => app.move_down(),
+                        KeyCode::Esc => {
+                            if app.search_mode {
+                                app.exit_search_mode();
+                            } else {
+                                app.should_quit = true;
+                                break;
+                            }
+                        }
+                        KeyCode::Char('/') => {
+                            if !app.search_mode {
+                                app.enter_search_mode();
+                            }
+                        }
+                        KeyCode::Up => {
+                            if !app.search_mode {
+                                app.move_up();
+                            }
+                        }
+                        KeyCode::Down => {
+                            if !app.search_mode {
+                                app.move_down();
+                            }
+                        }
+                        KeyCode::Backspace => {
+                            if app.search_mode {
+                                app.delete_search_char();
+                            }
+                        }
                         KeyCode::Enter => {
+                            if app.search_mode {
+                                // Exit search mode and keep selection
+                                app.search_mode = false;
+                            } else {
                             // Toggle watching the selected event
                             if let Some(event_slug) = app.selected_event_slug() {
                                 if app.is_watching(&event_slug) {

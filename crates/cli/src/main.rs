@@ -182,9 +182,9 @@ async fn run_monitor_rtds(event_slug: Option<String>) -> Result<()> {
     let has_auth =
         env::var("api_key").is_ok() && env::var("secret").is_ok() && env::var("passphrase").is_ok();
     if has_auth {
-        info!("✓ Using authentication from environment variables");
+        info!("✓ Authentication tokens found (activity subscriptions are public, auth not required)");
     } else {
-        info!("ℹ️  No authentication found (using public data only)");
+        info!("ℹ️  No authentication found (activity subscriptions are public data)");
     }
 
     if let Some(ref slug) = event_slug {
@@ -222,9 +222,9 @@ async fn run_watch_event(event: String) -> Result<()> {
     let has_auth =
         env::var("api_key").is_ok() && env::var("secret").is_ok() && env::var("passphrase").is_ok();
     if has_auth {
-        info!("✓ Using authentication from environment variables");
+        info!("✓ Authentication tokens found (activity subscriptions are public, auth not required)");
     } else {
-        info!("ℹ️  No authentication found (using public data only)");
+        info!("ℹ️  No authentication found (activity subscriptions are public data)");
     }
 
     info!("Press Ctrl+C to exit");

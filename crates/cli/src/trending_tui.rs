@@ -741,20 +741,21 @@ pub async fn run_trending_tui(
                         
                         tracing::info!("Search API call completed for: '{}'", query_clone);
                         
+                        let query_for_final_log = query_clone.clone();
                         match result {
                             Ok(results) => {
-                                tracing::info!("Search API returned {} results for: '{}'", results.len(), query_clone);
+                                tracing::info!("Search API returned {} results for: '{}'", results.len(), query_for_final_log);
                                 let mut app = app_state_clone.lock().await;
                                 app.set_search_results(results, query_clone);
-                                tracing::info!("Search results set in app state for: '{}'", query_clone);
+                                tracing::info!("Search results set in app state for: '{}'", query_for_final_log);
                             }
                             Err(e) => {
                                 // On error, fall back to local search
-                                tracing::error!("Search API error for '{}': {}", query_clone, e);
+                                tracing::error!("Search API error for '{}': {}", query_for_final_log, e);
                                 let mut app = app_state_clone.lock().await;
                                 app.set_searching(false);
                                 app.search_results.clear();
-                                tracing::warn!("Cleared search results due to error for: '{}'", query_clone);
+                                tracing::warn!("Cleared search results due to error for: '{}'", query_for_final_log);
                             }
                         }
                     });

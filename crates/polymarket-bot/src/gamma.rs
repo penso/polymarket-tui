@@ -307,7 +307,7 @@ impl GammaClient {
             tracing::warn!("Search API error: status={}, body={}", status, response_text);
             #[cfg(not(feature = "tracing"))]
             eprintln!("Search API error: status={}, body={}", status, response_text);
-            return Err(crate::error::PolymarketError::Http(format!(
+            return Err(crate::error::PolymarketError::InvalidData(format!(
                 "Search API returned status {}: {}",
                 status, response_text
             )).into());

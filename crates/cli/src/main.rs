@@ -388,13 +388,13 @@ async fn run_watch_event_tui(event_slug: String) -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    
+
     // Check if we're running a TUI command
     let is_tui_command = matches!(
         cli.command,
         Commands::Trending { .. } | Commands::WatchEvent { tui: true, .. }
     );
-    
+
     // Initialize tracing subscriber conditionally
     if is_tui_command {
         // For TUI commands, we'll set up the subscriber in the TUI function
@@ -464,11 +464,11 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
     let terminal = Terminal::new(backend)?;
 
     let app_state = Arc::new(TokioMutex::new(trending_tui::TrendingAppState::new(events)));
-    
+
     // Setup custom tracing layer to capture logs for TUI
     let logs = Arc::new(TokioMutex::new(Vec::<String>::new()));
     let log_layer = tui_log_layer::TuiLogLayer::new(Arc::clone(&logs));
-    
+
     // Replace the default subscriber with one that includes our custom layer
     use tracing_subscriber::prelude::*;
     let _guard = tracing_subscriber::registry()
@@ -478,7 +478,7 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
         )
         .with(log_layer)
         .set_default();
-    
+
     // Connect logs to app state
     let logs_for_app = Arc::clone(&logs);
     let app_state_for_logs = Arc::clone(&app_state);
@@ -491,7 +491,7 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
                 let new_logs: Vec<String> = logs[last_log_count..].to_vec();
                 last_log_count = logs.len();
                 drop(logs);
-                
+
                 let mut app = app_state_for_logs.lock().await;
                 for log in new_logs {
                     let level = if log.starts_with("[ERROR]") {

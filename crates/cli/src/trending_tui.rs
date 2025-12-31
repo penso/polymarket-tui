@@ -124,8 +124,14 @@ impl TrendingAppState {
             .filter(|event| {
                 event.title.to_lowercase().contains(&query_lower)
                     || event.slug.to_lowercase().contains(&query_lower)
-                    || event.tags.iter().any(|tag| tag.label.to_lowercase().contains(&query_lower))
-                    || event.markets.iter().any(|market| market.question.to_lowercase().contains(&query_lower))
+                    || event
+                        .tags
+                        .iter()
+                        .any(|tag| tag.label.to_lowercase().contains(&query_lower))
+                    || event
+                        .markets
+                        .iter()
+                        .any(|market| market.question.to_lowercase().contains(&query_lower))
             })
             .collect()
     }
@@ -233,14 +239,14 @@ impl TrendingAppState {
 }
 
 pub fn render(f: &mut Frame, app: &TrendingAppState) {
-    let header_height = if app.search_mode { 5 } else { 3 };
+    let header_height = if app.search_mode { 6 } else { 3 };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(header_height), // Header (with search if active)
             Constraint::Min(0),                // Main content
-            Constraint::Length(8),              // Logs area
-            Constraint::Length(3),              // Footer
+            Constraint::Length(8),             // Logs area
+            Constraint::Length(3),             // Footer
         ])
         .split(f.size());
 
@@ -258,7 +264,7 @@ pub fn render(f: &mut Frame, app: &TrendingAppState) {
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(3), // Info line
-                Constraint::Length(3), // Search input (with borders)
+                Constraint::Length(4), // Search input (with borders - increased height)
             ])
             .split(chunks[0]);
 
@@ -285,16 +291,14 @@ pub fn render(f: &mut Frame, app: &TrendingAppState) {
                 Span::styled("🔍 Search: ", Style::default().fg(Color::White)),
                 Span::styled(
                     app.search_query.clone(),
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
                 ),
             ])
         };
         let search_input = Paragraph::new(vec![search_line])
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Search")
-            )
+            .block(Block::default().borders(Borders::ALL).title("Search"))
             .alignment(Alignment::Left)
             .wrap(Wrap { trim: true });
         f.render_widget(search_input, header_chunks[1]);
@@ -382,10 +386,7 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 ]),
                 Line::from(vec![
                     Span::styled("  Markets: ", Style::default().fg(Color::Gray)),
-                    Span::styled(
-                        markets_count.to_string(),
-                        Style::default().fg(Color::Cyan),
-                    ),
+                    Span::styled(markets_count.to_string(), Style::default().fg(Color::Cyan)),
                     if is_watching {
                         Span::styled(
                             format!(" | Trades: {}", trade_count),
@@ -400,7 +401,11 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         .collect();
 
     let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Trending Events"))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Trending Events"),
+        )
         .highlight_style(
             Style::default()
                 .fg(Color::Yellow)
@@ -488,48 +493,65 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             let table = Table::new(
                 rows,
                 [
-                    Constraint::Length(10), // Time
-                    Constraint::Length(8),  // Side
-                    Constraint::Length(5),  // Outcome
-                    Constraint::Length(10), // Price
-                    Constraint::Length(10), // Shares
-                    Constraint::Length(10), // Value
+                    Constraint::Length(10),     // Time
+                    Constraint::Length(8),      // Side
+                    Constraint::Length(5),      // Outcome
+                    Constraint::Length(10),     // Price
+                    Constraint::Length(10),     // Shares
+                    Constraint::Length(10),     // Value
                     Constraint::Percentage(30), // Title
-                    Constraint::Length(15), // User
+                    Constraint::Length(15),     // User
                 ],
             )
             .header(
                 Row::new(vec![
                     "Time", "Side", "Out", "Price", "Shares", "Value", "Market", "User",
                 ])
-                .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                .style(
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
             )
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(format!(
-                        "Trades ({})",
-                        if is_watching { "🔴 Watching" } else { "Stopped" }
-                    )),
-            )
+            .block(Block::default().borders(Borders::ALL).title(format!(
+                "Trades ({})",
+                if is_watching {
+                    "🔴 Watching"
+                } else {
+                    "Stopped"
+                }
+            )))
             .column_spacing(1);
 
             f.render_widget(table, chunks[1]);
         }
     } else {
         let paragraph = Paragraph::new("No event selected")
-            .block(Block::default().borders(Borders::ALL).title("Event Details & Trades"))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Event Details & Trades"),
+            )
             .alignment(Alignment::Center)
             .style(Style::default().fg(Color::Gray));
         f.render_widget(paragraph, area);
     }
 }
 
-fn render_event_details(f: &mut Frame, event: &Event, is_watching: bool, trade_count: usize, area: Rect) {
+fn render_event_details(
+    f: &mut Frame,
+    event: &Event,
+    is_watching: bool,
+    trade_count: usize,
+    area: Rect,
+) {
     let mut lines = vec![
         Line::from(vec![
             Span::styled("Title: ", Style::default().fg(Color::Yellow).bold()),
-            Span::styled(truncate(&event.title, 60), Style::default().fg(Color::White)),
+            Span::styled(
+                truncate(&event.title, 60),
+                Style::default().fg(Color::White),
+            ),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -545,21 +567,21 @@ fn render_event_details(f: &mut Frame, event: &Event, is_watching: bool, trade_c
         Line::from(vec![
             Span::styled("Status: ", Style::default().fg(Color::Yellow).bold()),
             Span::styled(
-                if event.active {
-                    "Active"
+                if event.active { "Active" } else { "Inactive" },
+                Style::default().fg(if event.active {
+                    Color::Green
                 } else {
-                    "Inactive"
-                },
-                Style::default().fg(if event.active { Color::Green } else { Color::Red }),
+                    Color::Red
+                }),
             ),
             Span::styled(" | ", Style::default().fg(Color::Gray)),
             Span::styled(
-                if event.closed {
-                    "Closed"
+                if event.closed { "Closed" } else { "Open" },
+                Style::default().fg(if event.closed {
+                    Color::Red
                 } else {
-                    "Open"
-                },
-                Style::default().fg(if event.closed { Color::Red } else { Color::Green }),
+                    Color::Green
+                }),
             ),
             Span::styled(" | ", Style::default().fg(Color::Gray)),
             Span::styled(
@@ -582,16 +604,21 @@ fn render_event_details(f: &mut Frame, event: &Event, is_watching: bool, trade_c
             Span::styled("Trades: ", Style::default().fg(Color::Yellow).bold()),
             Span::styled(
                 trade_count.to_string(),
-                Style::default().fg(if is_watching { Color::Green } else { Color::Gray }),
+                Style::default().fg(if is_watching {
+                    Color::Green
+                } else {
+                    Color::Gray
+                }),
             ),
         ]),
     ];
 
     if !event.tags.is_empty() {
         lines.push(Line::from(""));
-        lines.push(Line::from(vec![
-            Span::styled("Tags: ", Style::default().fg(Color::Yellow).bold()),
-        ]));
+        lines.push(Line::from(vec![Span::styled(
+            "Tags: ",
+            Style::default().fg(Color::Yellow).bold(),
+        )]));
         for tag in &event.tags {
             lines.push(Line::from(vec![
                 Span::styled("  • ", Style::default().fg(Color::Gray)),
@@ -601,7 +628,11 @@ fn render_event_details(f: &mut Frame, event: &Event, is_watching: bool, trade_c
     }
 
     let paragraph = Paragraph::new(lines)
-        .block(Block::default().borders(Borders::ALL).title("Event Details"))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Event Details"),
+        )
         .wrap(Wrap { trim: true });
     f.render_widget(paragraph, area);
 }
@@ -716,7 +747,8 @@ pub async fn run_trending_tui(
                                         let app_state_ws = Arc::clone(&app_state);
                                         let event_slug_for_closure = event_slug_clone.clone();
 
-                                        let rtds_client = RTDSClient::new().with_event_slug(event_slug_clone.clone());
+                                        let rtds_client = RTDSClient::new()
+                                            .with_event_slug(event_slug_clone.clone());
                                         let ws_handle = tokio::spawn(async move {
                                             let _ = rtds_client
                                                 .connect_and_listen(move |msg| {
@@ -724,7 +756,9 @@ pub async fn run_trending_tui(
                                                     let event_slug = event_slug_for_closure.clone();
                                                     tokio::spawn(async move {
                                                         let mut app = app_state.lock().await;
-                                                        if let Some(event_trades) = app.event_trades.get_mut(&event_slug) {
+                                                        if let Some(event_trades) =
+                                                            app.event_trades.get_mut(&event_slug)
+                                                        {
                                                             event_trades.add_trade(&msg);
                                                         }
                                                     });

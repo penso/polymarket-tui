@@ -132,12 +132,20 @@ struct LogVisitor {
 
 impl tracing::field::Visit for LogVisitor {
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        // Only capture the "message" field - tracing stores the format string here
         if field.name() == "message" {
-            self.message = format!("{:?}", value);
+            let formatted = format!("{:?}", value);
+            // Remove quotes if the value is a string (tracing adds quotes)
+            if formatted.starts_with('"') && formatted.ends_with('"') {
+                self.message = formatted[1..formatted.len()-1].to_string();
+            } else {
+                self.message = formatted;
+            }
         }
     }
 
     fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+        // Only capture the "message" field - tracing stores the format string here
         if field.name() == "message" {
             self.message = value.to_string();
         }

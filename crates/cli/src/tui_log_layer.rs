@@ -1,6 +1,7 @@
 //! Custom tracing layer that captures logs for TUI display
 
 use std::fmt::Write;
+use std::io;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 use tracing::{Event, Level, Subscriber};
@@ -66,7 +67,7 @@ where
                             let clean_value = value.trim_matches('"').trim();
                             // Replace first {} with the value
                             if let Some(pos) = formatted.find("{}") {
-                                formatted.replace_range(pos..pos+2, clean_value);
+                                formatted.replace_range(pos..pos + 2, clean_value);
                             }
                         }
                     }
@@ -99,17 +100,17 @@ where
                 module_path.to_string()
             }
         };
-        
+
         // Remove any existing [LEVEL] prefix from the message (handles double prefixes)
         // Also remove any leading/trailing whitespace and quotes
         // Process in order: trim, remove quotes, then remove any level prefixes
         let mut message_content = raw_message.trim().to_string();
-        
+
         // Remove surrounding quotes if present
         if message_content.starts_with('"') && message_content.ends_with('"') {
-            message_content = message_content[1..message_content.len()-1].to_string();
+            message_content = message_content[1..message_content.len() - 1].to_string();
         }
-        
+
         // Remove any existing level prefixes (check multiple times to catch nested prefixes)
         loop {
             let original = message_content.clone();
@@ -126,7 +127,7 @@ where
                 .trim_start_matches("[TRACE]")
                 .trim()
                 .to_string();
-            
+
             // If no change, we're done
             if original == message_content {
                 break;
@@ -162,11 +163,34 @@ struct LogVisitor {
 impl tracing::field::Visit for LogVisitor {
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
         // Only capture the "message" field - tracing stores the format string here
+        // When using tracing::info!("text"), the message field contains just "text"
+        // When using tracing::info!("text: {}", val), the message field contains "text: {}"
         if field.name() == "message" {
             let formatted = format!("{:?}", value);
-            // Remove quotes if the value is a string (tracing adds quotes)
+            // Remove quotes if the value is a string (tracing adds quotes for Debug)
+            // The message should be a simple string like "🔥 Fetching trending events..."
+            // NOT something like "[INFO] 🔥 Fetching trending events..."
             if formatted.starts_with('"') && formatted.ends_with('"') {
-                self.message = formatted[1..formatted.len() - 1].to_string();
+                let unquoted = &formatted[1..formatted.len() - 1];
+                // Check if it already has a prefix (this would be a bug)
+                if unquoted.starts_with("[INFO]") || unquoted.starts_with("[WARN]") {
+                    // This shouldn't happen - strip it
+                    self.message = unquoted
+                        .trim_start_matches("[INFO] ")
+                        .trim_start_matches("[WARN] ")
+                        .trim_start_matches("[ERROR] ")
+                        .trim_start_matches("[DEBUG] ")
+                        .trim_start_matches("[TRACE] ")
+                        .trim_start_matches("[INFO]")
+                        .trim_start_matches("[WARN]")
+                        .trim_start_matches("[ERROR]")
+                        .trim_start_matches("[DEBUG]")
+                        .trim_start_matches("[TRACE]")
+                        .trim()
+                        .to_string();
+                } else {
+                    self.message = unquoted.to_string();
+                }
             } else {
                 self.message = formatted;
             }
@@ -175,8 +199,27 @@ impl tracing::field::Visit for LogVisitor {
 
     fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
         // Only capture the "message" field - tracing stores the format string here
+        // This is the preferred method - no Debug formatting needed
         if field.name() == "message" {
-            self.message = value.to_string();
+            // Check if value already has a prefix (shouldn't happen)
+            if value.starts_with("[INFO]") || value.starts_with("[WARN]") {
+                // Strip it
+                self.message = value
+                    .trim_start_matches("[INFO] ")
+                    .trim_start_matches("[WARN] ")
+                    .trim_start_matches("[ERROR] ")
+                    .trim_start_matches("[DEBUG] ")
+                    .trim_start_matches("[TRACE] ")
+                    .trim_start_matches("[INFO]")
+                    .trim_start_matches("[WARN]")
+                    .trim_start_matches("[ERROR]")
+                    .trim_start_matches("[DEBUG]")
+                    .trim_start_matches("[TRACE]")
+                    .trim()
+                    .to_string();
+            } else {
+                self.message = value.to_string();
+            }
         }
     }
 

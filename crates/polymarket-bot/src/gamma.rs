@@ -146,14 +146,14 @@ impl GammaClient {
             "{}/events?active=true&closed=false&order={}&ascending={}&limit={}",
             GAMMA_API_BASE, order_by, ascending, limit
         );
-        
+
         tracing::info!("GET {}", url);
-        
+
         let response = self.client.get(&url).send().await?;
         let status = response.status();
-        
+
         tracing::info!("GET {} -> status: {}", url, status);
-        
+
         let events: Vec<Event> = response.json().await?;
         Ok(events)
     }

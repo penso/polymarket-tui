@@ -744,7 +744,7 @@ pub async fn run_trending_tui(
 
                 // Clear debounce before processing to prevent race conditions
                 search_debounce = None;
-                
+
                 if !query.is_empty() {
                     // Search for any non-empty query
                     tracing::info!("Searching for: '{}'", query);
@@ -769,12 +769,10 @@ pub async fn run_trending_tui(
                     let search_span =
                         tracing::info_span!("search", query = %query_for_span.clone());
 
-                    // Spawn the task with both the current context and the new span
+                    // Spawn the task with proper tracing context inheritance
+                    // Use .instrument() to ensure the span context is inherited
                     tokio::spawn(
                         async move {
-                            // Enter the current span to ensure context inheritance
-                            let _current_guard = current_span.enter();
-
                             let result = gamma_client_for_task
                                 .search_events(&query_clone, Some(50))
                                 .await;

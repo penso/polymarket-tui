@@ -114,8 +114,15 @@ impl TrendingAppState {
         if self.logs.len() > 1000 {
             self.logs.remove(0);
         }
-        // Auto-scroll to bottom
-        self.log_scroll = self.logs.len().saturating_sub(10);
+        // Auto-scroll to bottom - always show the latest logs
+        // The logs area is Constraint::Length(8), so visible height is ~6 lines (minus borders)
+        // We'll set scroll to show from the bottom, and render_logs will adjust if needed
+        let estimated_visible_height = 6; // Approximate visible lines (8 - 2 for borders)
+        if self.logs.len() > estimated_visible_height {
+            self.log_scroll = self.logs.len() - estimated_visible_height;
+        } else {
+            self.log_scroll = 0;
+        }
     }
 
     /// Get filtered events based on search query
@@ -208,7 +215,6 @@ impl TrendingAppState {
     }
 
     pub fn move_up(&mut self) {
-        let filtered_len = self.filtered_events().len();
         if self.selected_index > 0 {
             self.selected_index -= 1;
             if self.selected_index < self.scroll_offset {
@@ -267,7 +273,7 @@ impl TrendingAppState {
     }
 }
 
-pub fn render(f: &mut Frame, app: &TrendingAppState) {
+pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
     let header_height = if app.search_mode { 6 } else { 3 };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -387,7 +393,7 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             let is_watching = app.is_watching(&event.slug);
             let trade_count = app.get_trades(&event.slug).len();
 
-            let mut style = if is_selected {
+            let style = if is_selected {
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD | Modifier::REVERSED)
@@ -674,12 +680,29 @@ fn truncate(s: &str, max_len: usize) -> String {
     }
 }
 
-fn render_logs(f: &mut Frame, app: &TrendingAppState, area: Rect) {
+fn render_logs(f: &mut Frame, app: &mut TrendingAppState, area: Rect) {
+    // Calculate the actual visible height (accounting for borders)
+    let visible_height = (area.height as usize).saturating_sub(2);
+    
+    // Auto-scroll to bottom if we're near the bottom or if logs have grown
+    // This ensures new logs are always visible
+    if app.logs.len() > visible_height {
+        // Check if we're already showing the bottom (within 1 line)
+        let current_bottom = app.log_scroll + visible_height;
+        if current_bottom >= app.logs.len().saturating_sub(1) {
+            // We're at or near the bottom, keep it there
+            app.log_scroll = app.logs.len() - visible_height;
+        }
+    } else {
+        // Not enough logs to scroll, show from the beginning
+        app.log_scroll = 0;
+    }
+    
     let log_items: Vec<ListItem> = app
         .logs
         .iter()
         .skip(app.log_scroll)
-        .take(area.height as usize - 2) // Reserve space for borders
+        .take(visible_height)
         .map(|log| {
             let color = if log.starts_with("[WARN]") {
                 Color::Yellow
@@ -705,7 +728,6 @@ pub async fn run_trending_tui(
     use crossterm::event::{self, Event, KeyCode, KeyEventKind};
     use polymarket_bot::{GammaClient, RTDSClient};
 
-    let gamma_client = GammaClient::new();
     let mut search_debounce: Option<tokio::time::Instant> = None;
 
     loop {
@@ -719,8 +741,8 @@ pub async fn run_trending_tui(
                     app.search_query.clone()
                 };
 
-                // Clear debounce before processing
-                search_debounce = None;
+                // Clear debounce before processing to prevent race conditions
+                let _ = search_debounce.take();
 
                 if !query.is_empty() {
                     // Search for any non-empty query (removed 2-char minimum for debugging)
@@ -822,12 +844,12 @@ pub async fn run_trending_tui(
             }
         }
 
-        {
-            let app = app_state.lock().await;
-            terminal.draw(|f| {
-                render(f, &app);
-            })?;
-        }
+            {
+                let mut app = app_state.lock().await;
+                terminal.draw(|f| {
+                    render(f, &mut app);
+                })?;
+            }
 
         if crossterm::event::poll(std::time::Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {

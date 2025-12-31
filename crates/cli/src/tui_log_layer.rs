@@ -1,7 +1,5 @@
 //! Custom tracing layer that captures logs for TUI display
 
-use std::fmt::Write;
-use std::io;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 use tracing::{Event, Level, Subscriber};
@@ -113,7 +111,6 @@ where
         let prefixes_without_space = ["[INFO]", "[WARN]", "[ERROR]", "[DEBUG]", "[TRACE]"];
 
         loop {
-            let original = message_content.clone();
             let mut changed = false;
 
             // Check prefixes with space first
@@ -152,7 +149,6 @@ where
         // Store in shared state
         // We need to use blocking or ensure this completes
         // Since we're in an async context, use spawn but make sure it's not dropped
-        let logs = Arc::clone(&self.logs);
         let log_msg = log_message.clone();
 
         // Store the log message synchronously using a blocking approach
@@ -173,67 +169,6 @@ where
     }
 }
 
-/// A simple visitor that collects message parts
-struct SimpleMessageVisitor<'a> {
-    parts: &'a mut Vec<String>,
-}
-
-impl<'a> SimpleMessageVisitor<'a> {
-    fn new(parts: &'a mut Vec<String>) -> Self {
-        Self { parts }
-    }
-}
-
-impl<'a> tracing::field::Visit for SimpleMessageVisitor<'a> {
-    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
-        if field.name() == "message" {
-            // This is the format string - should NOT contain [INFO] or any prefix
-            let cleaned = value.trim();
-            if !cleaned.starts_with("[INFO]") && !cleaned.starts_with("[WARN]") {
-                self.parts.push(cleaned.to_string());
-            }
-        }
-    }
-
-    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-        if field.name() == "message" {
-            let formatted = format!("{:?}", value);
-            // Remove quotes
-            let cleaned = if formatted.starts_with('"') && formatted.ends_with('"') {
-                &formatted[1..formatted.len() - 1]
-            } else {
-                &formatted
-            };
-            // Remove any prefixes
-            let cleaned = cleaned
-                .trim_start_matches("[INFO] ")
-                .trim_start_matches("[WARN] ")
-                .trim_start_matches("[ERROR] ")
-                .trim_start_matches("[DEBUG] ")
-                .trim_start_matches("[TRACE] ")
-                .trim_start_matches("[INFO]")
-                .trim_start_matches("[WARN]")
-                .trim_start_matches("[ERROR]")
-                .trim_start_matches("[DEBUG]")
-                .trim_start_matches("[TRACE]")
-                .trim();
-            if !cleaned.is_empty() {
-                self.parts.push(cleaned.to_string());
-            }
-        }
-    }
-
-    fn record_f64(&mut self, _field: &tracing::field::Field, _value: f64) {}
-    fn record_i64(&mut self, _field: &tracing::field::Field, _value: i64) {}
-    fn record_u64(&mut self, _field: &tracing::field::Field, _value: u64) {}
-    fn record_bool(&mut self, _field: &tracing::field::Field, _value: bool) {}
-    fn record_error(
-        &mut self,
-        _field: &tracing::field::Field,
-        _value: &(dyn std::error::Error + 'static),
-    ) {
-    }
-}
 
 #[derive(Default)]
 struct LogVisitor {

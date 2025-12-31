@@ -744,13 +744,13 @@ pub async fn run_trending_tui(
 
                 // Clear debounce before processing to prevent race conditions
                 search_debounce = None;
-
+                
                 if !query.is_empty() {
-                    // Search for any non-empty query (removed 2-char minimum for debugging)
+                    // Search for any non-empty query
+                    tracing::info!("Searching for: '{}'", query);
                     let app_state_clone = Arc::clone(&app_state);
                     let query_clone = query.clone();
-                    let query_for_logging = query.clone(); // Clone for logging before moving
-                                                           // Create a new GammaClient for the async task
+                    // Create a new GammaClient for the async task
                     let gamma_client_for_task = GammaClient::new();
 
                     {
@@ -770,7 +770,7 @@ pub async fn run_trending_tui(
                         tracing::info_span!("search", query = %query_for_span.clone());
 
                     // Spawn the task with both the current context and the new span
-                    let task_handle = tokio::spawn(
+                    tokio::spawn(
                         async move {
                             // Enter the current span to ensure context inheritance
                             let _current_guard = current_span.enter();
@@ -853,10 +853,6 @@ pub async fn run_trending_tui(
                                 app.delete_search_char();
                                 // Trigger search after backspace (with debounce)
                                 search_debounce = Some(tokio::time::Instant::now());
-                                tracing::info!(
-                                    "Backspace pressed, search_query='{}', debounce set",
-                                    app.search_query
-                                );
                             }
                         }
                         KeyCode::Char(c) => {
@@ -864,11 +860,6 @@ pub async fn run_trending_tui(
                                 app.add_search_char(c);
                                 // Trigger search after character input (with debounce)
                                 search_debounce = Some(tokio::time::Instant::now());
-                                tracing::info!(
-                                    "Char '{}' pressed, search_query='{}', debounce set",
-                                    c,
-                                    app.search_query
-                                );
                             }
                         }
                         KeyCode::Enter => {

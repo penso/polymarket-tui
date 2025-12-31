@@ -3,6 +3,9 @@ mod display_trait;
 #[cfg(feature = "tui")]
 mod tui;
 
+#[cfg(feature = "tui")]
+mod trending_tui;
+
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use colored::Colorize;
@@ -15,6 +18,7 @@ use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use tokio::sync::Mutex as TokioMutex;
 use tracing::info;
 
 #[derive(Parser)]
@@ -393,7 +397,69 @@ async fn main() -> Result<()> {
         } => run_trades(market, limit, asset, event_id, event_slug).await,
         Commands::Event { event, id } => run_event(event, id).await,
         Commands::Market { market, id } => run_market(market, id).await,
+        Commands::Trending {
+            order_by,
+            ascending,
+            limit,
+        } => run_trending(order_by, ascending, limit).await,
     }
+}
+
+#[cfg(feature = "tui")]
+async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result<()> {
+    use crossterm::{
+        event::{DisableMouseCapture, EnableMouseCapture},
+        execute,
+        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    };
+    use ratatui::backend::CrosstermBackend;
+    use ratatui::Terminal;
+    use std::io;
+
+    info!("🔥 Fetching trending events...");
+    let gamma_client = GammaClient::new();
+    let events = gamma_client
+        .get_trending_events(Some(&order_by), Some(!ascending), Some(limit))
+        .await
+        .context("Failed to fetch trending events")?;
+
+    if events.is_empty() {
+        anyhow::bail!("No trending events found");
+    }
+
+    info!("Found {} trending events", events.len());
+
+    // Setup terminal
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let terminal = Terminal::new(backend)?;
+
+    let app_state = Arc::new(TokioMutex::new(trending_tui::TrendingAppState::new(events)));
+
+    // Run TUI
+    let result = trending_tui::run_trending_tui(terminal, app_state).await;
+
+    // Cleanup terminal
+    let _ = disable_raw_mode();
+    let _ = execute!(
+        io::stdout(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    );
+
+    if let Ok(Some(event_slug)) = result {
+        info!("Selected event: {}", event_slug);
+        info!("You can watch this event with: polymarket-cli watch-event {}", event_slug);
+    }
+
+    Ok(())
+}
+
+#[cfg(not(feature = "tui"))]
+async fn run_trending(_order_by: String, _ascending: bool, _limit: usize) -> Result<()> {
+    anyhow::bail!("Trending command requires building with --features tui flag");
 }
 
 async fn run_orderbook(market: String, use_asset: bool) -> Result<()> {
@@ -443,7 +509,9 @@ async fn run_trades(
         display_trades(&trades);
     } else if use_asset {
         let clob_client = ClobClient::new();
-        let trades = clob_client.get_trades_by_asset(&market, Some(limit)).await?;
+        let trades = clob_client
+            .get_trades_by_asset(&market, Some(limit))
+            .await?;
         display_clob_trades(&trades);
     } else {
         let clob_client = ClobClient::new();

@@ -125,6 +125,30 @@ impl GammaClient {
         Ok(events)
     }
 
+    /// Get trending events ordered by trading volume
+    /// 
+    /// # Arguments
+    /// * `order_by` - Field to order by (e.g., "volume24hr", "volume7d", "volume30d")
+    /// * `ascending` - If true, sort ascending; if false, sort descending
+    /// * `limit` - Maximum number of events to return
+    pub async fn get_trending_events(
+        &self,
+        order_by: Option<&str>,
+        ascending: Option<bool>,
+        limit: Option<usize>,
+    ) -> Result<Vec<Event>> {
+        let limit = limit.unwrap_or(50);
+        let order_by = order_by.unwrap_or("volume24hr");
+        let ascending = ascending.unwrap_or(false);
+        
+        let url = format!(
+            "{}/events?active=true&closed=false&order={}&ascending={}&limit={}",
+            GAMMA_API_BASE, order_by, ascending, limit
+        );
+        let events: Vec<Event> = self.client.get(&url).send().await?.json().await?;
+        Ok(events)
+    }
+
     pub async fn get_market_by_slug(&self, slug: &str) -> Result<Vec<Market>> {
         let url = format!("{}/markets?slug={}", GAMMA_API_BASE, slug);
         let response: serde_json::Value = self.client.get(&url).send().await?.json().await?;
@@ -158,11 +182,11 @@ impl GammaClient {
     pub async fn get_event_by_id(&self, event_id: &str) -> Result<Option<Event>> {
         let url = format!("{}/events/{}", GAMMA_API_BASE, event_id);
         let response = self.client.get(&url).send().await?;
-        
+
         if response.status() == 404 {
             return Ok(None);
         }
-        
+
         let event: Event = response.json().await?;
         Ok(Some(event))
     }
@@ -178,11 +202,11 @@ impl GammaClient {
     pub async fn get_market_by_id(&self, market_id: &str) -> Result<Option<Market>> {
         let url = format!("{}/markets/{}", GAMMA_API_BASE, market_id);
         let response = self.client.get(&url).send().await?;
-        
+
         if response.status() == 404 {
             return Ok(None);
         }
-        
+
         let market: Market = response.json().await?;
         Ok(Some(market))
     }
@@ -196,7 +220,7 @@ impl GammaClient {
     ) -> Result<Vec<Market>> {
         let url = format!("{}/markets", GAMMA_API_BASE);
         let mut params = Vec::new();
-        
+
         if let Some(active) = active {
             params.push(("active", active.to_string()));
         }
@@ -206,7 +230,7 @@ impl GammaClient {
         if let Some(limit) = limit {
             params.push(("limit", limit.to_string()));
         }
-        
+
         let markets: Vec<Market> = self
             .client
             .get(&url)

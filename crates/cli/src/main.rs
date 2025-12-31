@@ -1,24 +1,19 @@
+mod display_trait;
+
+#[cfg(feature = "tui")]
 mod tui;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
+use display_trait::TradeDisplay;
 use polymarket_bot::{
     default_cache_dir, lock_mutex, GammaClient, MarketUpdateFormatter, PolymarketWebSocket,
-    RTDSClient, RTDSFormatter,
+    RTDSClient,
 };
-use ratatui::backend::CrosstermBackend;
-use ratatui::Terminal;
 use std::collections::HashMap;
 use std::env;
-use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tokio::sync::Mutex as TokioMutex;
 use tracing::info;
 
 #[derive(Parser)]
@@ -46,6 +41,9 @@ enum Commands {
         /// Event URL or slug (e.g., https://polymarket.com/event/who-will-die-in-stranger-things-season-5 or who-will-die-in-stranger-things-season-5)
         #[arg(value_name = "EVENT")]
         event: String,
+        /// Use TUI mode (requires --features tui)
+        #[arg(long)]
+        tui: bool,
     },
 }
 
@@ -226,8 +224,60 @@ async fn run_monitor_rtds(event_slug: Option<String>) -> Result<()> {
     Ok(())
 }
 
-async fn run_watch_event(event: String) -> Result<()> {
+async fn run_watch_event(event: String, use_tui: bool) -> Result<()> {
     let event_slug = extract_event_slug(&event);
+    info!("🎯 Watching trade activity for event: {}", event_slug);
+    info!("Connecting to RTDS WebSocket...");
+
+    // Check for authentication
+    let has_auth =
+        env::var("api_key").is_ok() && env::var("secret").is_ok() && env::var("passphrase").is_ok();
+    if has_auth {
+        info!(
+            "✓ Authentication tokens found (activity subscriptions are public, auth not required)"
+        );
+    } else {
+        info!("ℹ️  No authentication found (activity subscriptions are public data)");
+    }
+
+    if use_tui {
+        #[cfg(feature = "tui")]
+        {
+            return run_watch_event_tui(event_slug).await;
+        }
+        #[cfg(not(feature = "tui"))]
+        {
+            anyhow::bail!("TUI mode requires building with --features tui flag");
+        }
+    } else {
+        info!("Press Ctrl+C to exit");
+        info!("{}", "─".repeat(80));
+
+        let rtds_client = RTDSClient::new().with_event_slug(event_slug.clone());
+        let mut display = display_trait::SimpleDisplay {};
+
+        rtds_client
+            .connect_and_listen(|msg| {
+                let _ = display.display_trade(&msg);
+            })
+            .await
+            .context("Failed to connect to RTDS WebSocket")?;
+
+        Ok(())
+    }
+}
+
+#[cfg(feature = "tui")]
+async fn run_watch_event_tui(event_slug: String) -> Result<()> {
+    use crossterm::{
+        event::{DisableMouseCapture, EnableMouseCapture},
+        execute,
+        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    };
+    use ratatui::backend::CrosstermBackend;
+    use ratatui::Terminal;
+    use std::io;
+    use tokio::sync::Mutex as TokioMutex;
 
     // Setup terminal
     enable_raw_mode()?;
@@ -260,17 +310,17 @@ async fn run_watch_event(event: String) -> Result<()> {
     let tui_result = tui::run_tui(terminal, app_state).await;
 
     // Cleanup terminal
-    disable_raw_mode()?;
-    execute!(
+    let _ = disable_raw_mode();
+    let _ = execute!(
         io::stdout(),
         LeaveAlternateScreen,
         DisableMouseCapture
-    )?;
+    );
 
     // Cancel WebSocket task
     ws_handle.abort();
 
-    tui_result?;
+    tui_result.context("TUI error")?;
 
     Ok(())
 }
@@ -290,6 +340,6 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Monitor { rtds, event } => run_monitor(rtds, event).await,
-        Commands::WatchEvent { event } => run_watch_event(event).await,
+        Commands::WatchEvent { event, tui } => run_watch_event(event, tui).await,
     }
 }

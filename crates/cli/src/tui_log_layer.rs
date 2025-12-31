@@ -34,16 +34,15 @@ where
             Level::TRACE => "TRACE",
         };
 
-        // Get all fields to reconstruct the message
-        let mut field_visitor = FieldVisitor::default();
-        event.record(&mut field_visitor);
-        
-        // Get the message field specifically
-        let mut visitor = LogVisitor::default();
+        // Use a simpler approach: format the message using a string buffer
+        // This avoids manual reconstruction and should prevent double prefixes
+        let mut message_parts = Vec::new();
+        let mut visitor = SimpleMessageVisitor::new(&mut message_parts);
         event.record(&mut visitor);
         
-        // The visitor.message should contain the format string (e.g., "🔥 Fetching trending events...")
-        // NOT a formatted message with [INFO] prefix
+        // Get all fields for substitution if needed
+        let mut field_visitor = FieldVisitor::default();
+        event.record(&mut field_visitor);
 
         // Extract the actual message content
         // When using tracing::info!("message: {}", value), the format string is the "message" field
@@ -166,6 +165,63 @@ where
             }
         });
     }
+}
+
+/// A simple visitor that collects message parts
+struct SimpleMessageVisitor<'a> {
+    parts: &'a mut Vec<String>,
+}
+
+impl<'a> SimpleMessageVisitor<'a> {
+    fn new(parts: &'a mut Vec<String>) -> Self {
+        Self { parts }
+    }
+}
+
+impl<'a> tracing::field::Visit for SimpleMessageVisitor<'a> {
+    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+        if field.name() == "message" {
+            // This is the format string - should NOT contain [INFO] or any prefix
+            let cleaned = value.trim();
+            if !cleaned.starts_with("[INFO]") && !cleaned.starts_with("[WARN]") {
+                self.parts.push(cleaned.to_string());
+            }
+        }
+    }
+    
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        if field.name() == "message" {
+            let formatted = format!("{:?}", value);
+            // Remove quotes
+            let cleaned = if formatted.starts_with('"') && formatted.ends_with('"') {
+                &formatted[1..formatted.len()-1]
+            } else {
+                &formatted
+            };
+            // Remove any prefixes
+            let cleaned = cleaned
+                .trim_start_matches("[INFO] ")
+                .trim_start_matches("[WARN] ")
+                .trim_start_matches("[ERROR] ")
+                .trim_start_matches("[DEBUG] ")
+                .trim_start_matches("[TRACE] ")
+                .trim_start_matches("[INFO]")
+                .trim_start_matches("[WARN]")
+                .trim_start_matches("[ERROR]")
+                .trim_start_matches("[DEBUG]")
+                .trim_start_matches("[TRACE]")
+                .trim();
+            if !cleaned.is_empty() {
+                self.parts.push(cleaned.to_string());
+            }
+        }
+    }
+    
+    fn record_f64(&mut self, _field: &tracing::field::Field, _value: f64) {}
+    fn record_i64(&mut self, _field: &tracing::field::Field, _value: i64) {}
+    fn record_u64(&mut self, _field: &tracing::field::Field, _value: u64) {}
+    fn record_bool(&mut self, _field: &tracing::field::Field, _value: bool) {}
+    fn record_error(&mut self, _field: &tracing::field::Field, _value: &(dyn std::error::Error + 'static)) {}
 }
 
 #[derive(Default)]

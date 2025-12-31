@@ -182,8 +182,6 @@ pub async fn run_tui(
     app_state: Arc<TokioMutex<AppState>>,
 ) -> anyhow::Result<()> {
     use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-
-    let mut terminal = terminal;
     loop {
         // Use lock().await to properly handle async context
         let app = app_state.lock().await;

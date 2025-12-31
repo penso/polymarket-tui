@@ -741,6 +741,9 @@ pub async fn run_trending_tui(
                     // Use tracing::Instrument to ensure the tracing context is inherited
                     use tracing::Instrument;
                     let query_for_span = query_clone.clone();
+                    // Create the span in the current context so it's properly registered
+                    let search_span = tracing::info_span!("search_task", query = %query_for_span);
+                    let _enter = search_span.enter(); // Enter the span in the current context
                     let task_handle = tokio::spawn(
                         async move {
                             tracing::info!("Starting search API call for: '{}'", query_clone);

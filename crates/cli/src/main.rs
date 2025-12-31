@@ -460,7 +460,7 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
 
     // Now that tracing is set up, we can log
     info!("🔥 Fetching trending events...");
-    
+
     let gamma_client = GammaClient::new();
     let events = gamma_client
         .get_trending_events(Some(&order_by), Some(!ascending), Some(limit))

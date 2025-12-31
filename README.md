@@ -1,10 +1,10 @@
 # polymarket-bot
 
-[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+[![CI](https://github.com/penso/polymarket-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/penso/polymarket-bot/actions/workflows/ci.yml)
 
 Basic Rust workspace with a library crate and CLI.
 
-Replace `OWNER/REPO` in the badge URL above after pushing to GitHub.
+Badge targets `penso/polymarket-bot` based on the configured origin.
 
 ## Workspace
 - `crates/polymarket-bot`: library exposing `greet()`
@@ -20,4 +20,3 @@ GitHub Actions runs on pushes and PRs:
 - rustfmt check
 - clippy with warnings denied
 - full test suite
-

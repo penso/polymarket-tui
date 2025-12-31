@@ -92,7 +92,10 @@ where
         };
 
         // Remove any existing [LEVEL] prefix from the message (handles double prefixes)
+        // Also remove any leading/trailing whitespace and quotes
         let message_content = raw_message
+            .trim()
+            .trim_matches('"')
             .trim_start_matches("[INFO] ")
             .trim_start_matches("[WARN] ")
             .trim_start_matches("[ERROR] ")

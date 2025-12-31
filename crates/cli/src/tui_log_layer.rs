@@ -93,12 +93,8 @@ where
                 .collect::<Vec<_>>()
                 .join(", ")
         } else {
-            // Fallback to target/module path
-            if !target.is_empty() {
-                format!("{}: {}", target, module_path)
-            } else {
-                module_path.to_string()
-            }
+            // Fallback: use event metadata name
+            event.metadata().name().to_string()
         };
 
         // Clean up the message: remove quotes, trim, and remove any existing level prefixes

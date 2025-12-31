@@ -426,6 +426,7 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
     use ratatui::backend::CrosstermBackend;
     use ratatui::Terminal;
     use std::io;
+    use tokio::sync::Mutex as TokioMutex;
 
     info!("🔥 Fetching trending events...");
     let gamma_client = GammaClient::new();

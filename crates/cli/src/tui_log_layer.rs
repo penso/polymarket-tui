@@ -34,15 +34,13 @@ where
             Level::TRACE => "TRACE",
         };
 
-        // Use a simpler approach: format the message using a string buffer
-        // This avoids manual reconstruction and should prevent double prefixes
-        let mut message_parts = Vec::new();
-        let mut visitor = SimpleMessageVisitor::new(&mut message_parts);
-        event.record(&mut visitor);
-        
-        // Get all fields for substitution if needed
+        // Get all fields to reconstruct the message
         let mut field_visitor = FieldVisitor::default();
         event.record(&mut field_visitor);
+        
+        // Get the message field specifically
+        let mut visitor = LogVisitor::default();
+        event.record(&mut visitor);
 
         // Extract the actual message content
         // When using tracing::info!("message: {}", value), the format string is the "message" field

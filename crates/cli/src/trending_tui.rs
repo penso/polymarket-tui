@@ -216,12 +216,13 @@ impl TrendingAppState {
 }
 
 pub fn render(f: &mut Frame, app: &TrendingAppState) {
+    let header_height = if app.search_mode { 4 } else { 3 };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Header
-            Constraint::Min(0),    // Main content
-            Constraint::Length(3), // Footer
+            Constraint::Length(header_height), // Header (with search if active)
+            Constraint::Min(0),                // Main content
+            Constraint::Length(3),              // Footer
         ])
         .split(f.size());
 
@@ -232,29 +233,58 @@ pub fn render(f: &mut Frame, app: &TrendingAppState) {
         .filter(|et| et.is_watching)
         .count();
     let filtered_count = app.filtered_events().len();
-    let header_text = if app.search_mode {
-        format!(
-            "Search: {} | Showing {}/{} events | Watching: {} | Press Esc to exit search",
-            app.search_query,
+    
+    if app.search_mode {
+        // Split header into info and search input
+        let header_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3), // Info line
+                Constraint::Length(1), // Search input
+            ])
+            .split(chunks[0]);
+        
+        let header_text = format!(
+            "Showing {}/{} events | Watching: {} | Press Esc to exit search",
             filtered_count,
             app.events.len(),
             watched_count
-        )
+        );
+        let header = Paragraph::new(vec![
+            Line::from("🔥 Trending Events".fg(Color::Yellow).bold()),
+            Line::from(header_text),
+        ])
+        .block(Block::default().borders(Borders::ALL).title("Polymarket"))
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true });
+        f.render_widget(header, header_chunks[0]);
+        
+        // Search input field
+        let search_display = format!("🔍 Search: {}", app.search_query);
+        let search_input = Paragraph::new(search_display)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Search (type to filter, Esc to exit)")
+            )
+            .style(Style::default().fg(Color::Cyan))
+            .alignment(Alignment::Left);
+        f.render_widget(search_input, header_chunks[1]);
     } else {
-        format!(
+        let header_text = format!(
             "Showing {} events | Watching: {} | Press '/' to search | Use ↑↓ to navigate | Enter to watch/unwatch | 'q' to quit",
             filtered_count,
             watched_count
-        )
-    };
-    let header = Paragraph::new(vec![
-        Line::from("🔥 Trending Events".fg(Color::Yellow).bold()),
-        Line::from(header_text),
-    ])
-    .block(Block::default().borders(Borders::ALL).title("Polymarket"))
-    .alignment(Alignment::Left)
-    .wrap(Wrap { trim: true });
-    f.render_widget(header, chunks[0]);
+        );
+        let header = Paragraph::new(vec![
+            Line::from("🔥 Trending Events".fg(Color::Yellow).bold()),
+            Line::from(header_text),
+        ])
+        .block(Block::default().borders(Borders::ALL).title("Polymarket"))
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true });
+        f.render_widget(header, chunks[0]);
+    }
 
     // Main content - split into events list and trades view
     let main_chunks = Layout::default()

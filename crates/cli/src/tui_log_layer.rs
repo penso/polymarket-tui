@@ -102,21 +102,36 @@ where
         
         // Remove any existing [LEVEL] prefix from the message (handles double prefixes)
         // Also remove any leading/trailing whitespace and quotes
-        let message_content = raw_message
-            .trim()
-            .trim_matches('"')
-            // Remove any existing level prefixes (with or without space)
-            .trim_start_matches("[INFO] ")
-            .trim_start_matches("[WARN] ")
-            .trim_start_matches("[ERROR] ")
-            .trim_start_matches("[DEBUG] ")
-            .trim_start_matches("[TRACE] ")
-            .trim_start_matches("[INFO]")
-            .trim_start_matches("[WARN]")
-            .trim_start_matches("[ERROR]")
-            .trim_start_matches("[DEBUG]")
-            .trim_start_matches("[TRACE]")
-            .trim();
+        // Process in order: trim, remove quotes, then remove any level prefixes
+        let mut message_content = raw_message.trim().to_string();
+        
+        // Remove surrounding quotes if present
+        if message_content.starts_with('"') && message_content.ends_with('"') {
+            message_content = message_content[1..message_content.len()-1].to_string();
+        }
+        
+        // Remove any existing level prefixes (check multiple times to catch nested prefixes)
+        loop {
+            let original = message_content.clone();
+            message_content = message_content
+                .trim_start_matches("[INFO] ")
+                .trim_start_matches("[WARN] ")
+                .trim_start_matches("[ERROR] ")
+                .trim_start_matches("[DEBUG] ")
+                .trim_start_matches("[TRACE] ")
+                .trim_start_matches("[INFO]")
+                .trim_start_matches("[WARN]")
+                .trim_start_matches("[ERROR]")
+                .trim_start_matches("[DEBUG]")
+                .trim_start_matches("[TRACE]")
+                .trim()
+                .to_string();
+            
+            // If no change, we're done
+            if original == message_content {
+                break;
+            }
+        }
 
         let log_message = format!("[{}] {}", level_str, message_content);
 

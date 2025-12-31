@@ -184,9 +184,14 @@ ws-test input='' first='':
         echo "Press Ctrl+C to exit"
         echo ""
 
-        # Send subscription message after a small delay to ensure connection is established
-        # Use a subshell to send the message, then keep the connection open
-        (sleep 0.3; echo "$RTDS_SUB_MSG"; exec cat) | websocat -t "wss://ws-live-data.polymarket.com/" 2>&1 || \
+        # Send subscription message and handle bidirectional communication
+        # websocat in text mode handles PING/PONG automatically, but we need to send the sub message
+        {
+            sleep 0.5
+            echo "$RTDS_SUB_MSG"
+            # Keep stdin open to receive messages
+            cat
+        } | websocat -t "wss://ws-live-data.polymarket.com/" 2>&1 || \
             (echo "Connection failed. Make sure websocat is installed: brew install websocat" && exit 1)
     else
         # Fallback to CLOB WebSocket if no event slug

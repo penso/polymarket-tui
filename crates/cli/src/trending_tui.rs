@@ -243,7 +243,7 @@ pub fn render(f: &mut Frame, app: &TrendingAppState) {
                 Constraint::Length(3), // Search input (with borders)
             ])
             .split(chunks[0]);
-        
+
         let header_text = format!(
             "Showing {}/{} events | Watching: {} | Press Esc to exit search",
             filtered_count,
@@ -258,20 +258,22 @@ pub fn render(f: &mut Frame, app: &TrendingAppState) {
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: true });
         f.render_widget(header, header_chunks[0]);
-        
+
         // Search input field - show full query with proper spacing
-        let search_display = if app.search_query.is_empty() {
-            "🔍 Search: (type to search)".to_string()
+        let search_lines = if app.search_query.is_empty() {
+            vec![Line::from("🔍 Search: (type to search)".fg(Color::DarkGray))]
         } else {
-            format!("🔍 Search: {}", app.search_query)
+            vec![
+                Line::from("🔍 Search: ".fg(Color::White)),
+                Line::from(app.search_query.clone().fg(Color::Cyan).bold()),
+            ]
         };
-        let search_input = Paragraph::new(search_display)
+        let search_input = Paragraph::new(search_lines)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
                     .title("Search")
             )
-            .style(Style::default().fg(Color::Cyan))
             .alignment(Alignment::Left)
             .wrap(Wrap { trim: true });
         f.render_widget(search_input, header_chunks[1]);

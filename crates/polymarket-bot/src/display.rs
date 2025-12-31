@@ -180,7 +180,7 @@ impl RTDSFormatter {
 
         // Round shares to 2 decimal places
         let rounded_shares = (msg.payload.size * 100.0).round() / 100.0;
-        
+
         // Calculate total value in dollars
         let total_value = msg.payload.price * msg.payload.size;
 

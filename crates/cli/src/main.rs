@@ -1,13 +1,24 @@
+mod tui;
+
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use crossterm::{
+    event::{DisableMouseCapture, EnableMouseCapture},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
 use polymarket_bot::{
     default_cache_dir, lock_mutex, GammaClient, MarketUpdateFormatter, PolymarketWebSocket,
     RTDSClient, RTDSFormatter,
 };
+use ratatui::backend::CrosstermBackend;
+use ratatui::Terminal;
 use std::collections::HashMap;
 use std::env;
+use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use tokio::sync::Mutex as TokioMutex;
 use tracing::info;
 
 #[derive(Parser)]
@@ -217,32 +228,49 @@ async fn run_monitor_rtds(event_slug: Option<String>) -> Result<()> {
 
 async fn run_watch_event(event: String) -> Result<()> {
     let event_slug = extract_event_slug(&event);
-    info!("🎯 Watching trade activity for event: {}", event_slug);
-    info!("Connecting to RTDS WebSocket...");
 
-    // Check for authentication
-    let has_auth =
-        env::var("api_key").is_ok() && env::var("secret").is_ok() && env::var("passphrase").is_ok();
-    if has_auth {
-        info!(
-            "✓ Authentication tokens found (activity subscriptions are public, auth not required)"
-        );
-    } else {
-        info!("ℹ️  No authentication found (activity subscriptions are public data)");
-    }
+    // Setup terminal
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let terminal = Terminal::new(backend)?;
 
-    info!("Press Ctrl+C to exit");
-    info!("{}", "─".repeat(80));
+    // Create app state
+    let app_state = Arc::new(TokioMutex::new(tui::AppState::new(event_slug.clone())));
 
+    // Clone for WebSocket task
+    let app_state_ws = Arc::clone(&app_state);
+
+    // Start WebSocket connection in background
     let rtds_client = RTDSClient::new().with_event_slug(event_slug.clone());
+    let ws_handle = tokio::spawn(async move {
+        let _ = rtds_client
+            .connect_and_listen(|msg| {
+                let app_state = Arc::clone(&app_state_ws);
+                tokio::spawn(async move {
+                    let mut app = app_state.lock().await;
+                    app.add_trade(&msg);
+                });
+            })
+            .await;
+    });
 
-    rtds_client
-        .connect_and_listen(|msg| {
-            let formatted = RTDSFormatter::format_message(&msg);
-            print!("{}", formatted);
-        })
-        .await
-        .context("Failed to connect to RTDS WebSocket")?;
+    // Run TUI
+    let tui_result = tui::run_tui(terminal, app_state).await;
+
+    // Cleanup terminal
+    disable_raw_mode()?;
+    execute!(
+        io::stdout(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+
+    // Cancel WebSocket task
+    ws_handle.abort();
+
+    tui_result?;
 
     Ok(())
 }

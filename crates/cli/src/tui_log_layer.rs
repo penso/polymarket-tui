@@ -22,7 +22,8 @@ where
 {
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
         let level = *event.metadata().level();
-        let message = format!("{}", event.metadata().name());
+        let target = event.metadata().target();
+        let module_path = event.metadata().module_path().unwrap_or("");
 
         // Format the log message
         let level_str = match level {
@@ -34,22 +35,34 @@ where
         };
 
         // Try to get the formatted message from the event
+        // First, get all fields to see what we have
+        let mut field_visitor = FieldVisitor::default();
+        event.record(&mut field_visitor);
+        
+        // Also try to get message specifically
         let mut visitor = LogVisitor::default();
         event.record(&mut visitor);
 
-        // Also try to get all fields
-        let mut field_visitor = FieldVisitor::default();
-        event.record(&mut field_visitor);
-
         // Extract the actual message content
-        // First try to get the message from the visitor
+        // Prefer the "message" field if available, otherwise use all fields
         let raw_message = if !visitor.message.is_empty() {
             visitor.message
         } else if !field_visitor.fields.is_empty() {
             // Format fields nicely - join with spaces for readability
-            field_visitor.fields.join(" ")
+            // Filter out empty fields and format nicely
+            field_visitor.fields
+                .iter()
+                .filter(|f| !f.is_empty())
+                .map(|f| f.as_str())
+                .collect::<Vec<_>>()
+                .join(" ")
         } else {
-            message.to_string()
+            // Fallback to target/module path
+            if !target.is_empty() {
+                format!("{}: {}", target, module_path)
+            } else {
+                module_path.to_string()
+            }
         };
         
         // Remove any existing [LEVEL] prefix from the message (handles double prefixes)

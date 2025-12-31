@@ -152,7 +152,7 @@ ws-test input='' first='':
     # This is what the Polymarket website uses for showing live trades
     echo "Using RTDS WebSocket for activity monitoring..."
     echo ""
-    
+
     # Extract event slug if URL was provided
     EVENT_SLUG=""
     if [[ "{{input}}" =~ ^https?://.*polymarket\.com/event/ ]]; then
@@ -161,19 +161,21 @@ ws-test input='' first='':
         # Get event slug from the random event we fetched
         EVENT_SLUG=$(echo "$EVENT_DATA" | jq -r '.[0].slug' 2>/dev/null || echo "")
     fi
-    
+
     if [ -n "$EVENT_SLUG" ]; then
+        # Build the filters JSON string properly (compact format)
+        FILTERS_JSON=$(jq -nc --arg event_slug "$EVENT_SLUG" '{event_slug: $event_slug}')
         RTDS_SUB_MSG=$(jq -n \
-            --arg event_slug "$EVENT_SLUG" \
+            --arg filters "$FILTERS_JSON" \
             '{
                 action: "subscribe",
                 subscriptions: [{
                     topic: "activity",
                     type: "orders_matched",
-                    filters: "{\"event_slug\":\"" + $event_slug + "\"}"
+                    filters: $filters
                 }]
             }')
-        
+
         echo "RTDS Subscription message:"
         echo "$RTDS_SUB_MSG" | jq .
         echo ""
@@ -181,8 +183,10 @@ ws-test input='' first='':
         echo "Waiting for trade activity (this may take a few seconds)..."
         echo "Press Ctrl+C to exit"
         echo ""
-        
-        (echo "$RTDS_SUB_MSG"; sleep 3600) | websocat -t "wss://ws-live-data.polymarket.com/" 2>&1 || \
+
+        # Send subscription message after a small delay to ensure connection is established
+        # Use a subshell to send the message, then keep the connection open
+        (sleep 0.3; echo "$RTDS_SUB_MSG"; exec cat) | websocat -t "wss://ws-live-data.polymarket.com/" 2>&1 || \
             (echo "Connection failed. Make sure websocat is installed: brew install websocat" && exit 1)
     else
         # Fallback to CLOB WebSocket if no event slug

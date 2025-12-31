@@ -443,7 +443,24 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
     use std::io;
     use tokio::sync::Mutex as TokioMutex;
 
+    // Setup custom tracing layer to capture logs for TUI
+    // IMPORTANT: Set this up BEFORE any tracing calls (including API calls)
+    let logs = Arc::new(TokioMutex::new(Vec::<String>::new()));
+    let log_layer = tui_log_layer::TuiLogLayer::new(Arc::clone(&logs));
+
+    // Replace the default subscriber with one that includes our custom layer
+    use tracing_subscriber::prelude::*;
+    let _guard = tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .with(log_layer)
+        .set_default();
+
+    // Now that tracing is set up, we can log
     info!("🔥 Fetching trending events...");
+    
     let gamma_client = GammaClient::new();
     let events = gamma_client
         .get_trending_events(Some(&order_by), Some(!ascending), Some(limit))
@@ -464,27 +481,6 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
     let terminal = Terminal::new(backend)?;
 
     let app_state = Arc::new(TokioMutex::new(trending_tui::TrendingAppState::new(events)));
-
-    // Setup custom tracing layer to capture logs for TUI
-    // IMPORTANT: Set this up BEFORE any tracing calls
-    let logs = Arc::new(TokioMutex::new(Vec::<String>::new()));
-    let log_layer = tui_log_layer::TuiLogLayer::new(Arc::clone(&logs));
-
-    // Replace the default subscriber with one that includes our custom layer
-    use tracing_subscriber::prelude::*;
-    let _guard = tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .with(log_layer)
-        .set_default();
-
-    // Now that tracing is set up, we can log
-    info!("🔥 Fetching trending events...");
-    
-    // Give tracing a moment to process
-    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
     // Connect logs to app state
     let logs_for_app = Arc::clone(&logs);

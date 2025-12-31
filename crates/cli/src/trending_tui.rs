@@ -79,6 +79,9 @@ pub struct TrendingAppState {
     // Search functionality
     pub search_mode: bool,
     pub search_query: String,
+    pub search_results: Vec<Event>, // Results from API search
+    pub is_searching: bool, // Whether a search API call is in progress
+    pub last_search_query: String, // Last query that was searched
     // Log messages captured from tracing
     pub logs: Vec<String>,
     pub log_scroll: usize,
@@ -95,6 +98,9 @@ impl TrendingAppState {
             ws_handles: HashMap::new(),
             search_mode: false,
             search_query: String::new(),
+            search_results: Vec::new(),
+            is_searching: false,
+            last_search_query: String::new(),
             logs: Vec::new(),
             log_scroll: 0,
         }
@@ -113,11 +119,18 @@ impl TrendingAppState {
     }
 
     /// Get filtered events based on search query
+    /// If search_results is populated (from API), use those; otherwise filter locally
     pub fn filtered_events(&self) -> Vec<&Event> {
         if self.search_query.is_empty() {
             return self.events.iter().collect();
         }
 
+        // If we have API search results, use those
+        if !self.search_results.is_empty() && self.search_query == self.last_search_query {
+            return self.search_results.iter().collect();
+        }
+
+        // Otherwise, fall back to local filtering
         let query_lower = self.search_query.to_lowercase();
         self.events
             .iter()
@@ -164,6 +177,22 @@ impl TrendingAppState {
         self.search_query.pop();
         self.selected_index = 0;
         self.scroll_offset = 0;
+        // Clear search results when query changes
+        if self.search_query != self.last_search_query {
+            self.search_results.clear();
+        }
+    }
+
+    pub fn set_search_results(&mut self, results: Vec<Event>, query: String) {
+        self.search_results = results;
+        self.last_search_query = query;
+        self.is_searching = false;
+        self.selected_index = 0;
+        self.scroll_offset = 0;
+    }
+
+    pub fn set_searching(&mut self, searching: bool) {
+        self.is_searching = searching;
     }
 
     pub fn selected_event(&self) -> Option<&Event> {
@@ -674,9 +703,59 @@ pub async fn run_trending_tui(
     app_state: Arc<TokioMutex<TrendingAppState>>,
 ) -> anyhow::Result<Option<String>> {
     use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-    use polymarket_bot::RTDSClient;
+    use polymarket_bot::{GammaClient, RTDSClient};
+    
+    let gamma_client = GammaClient::new();
+    let mut search_debounce: Option<tokio::time::Instant> = None;
 
     loop {
+        // Handle search debouncing and API calls
+        if let Some(debounce_time) = search_debounce {
+            if debounce_time.elapsed() >= tokio::time::Duration::from_millis(500) {
+                // Debounce period passed, perform search
+                let query = {
+                    let app = app_state.lock().await;
+                    app.search_query.clone()
+                };
+                
+                if !query.is_empty() && query.len() >= 2 {
+                    // Only search if query is at least 2 characters
+                    let app_state_clone = Arc::clone(&app_state);
+                    let gamma_client_clone = gamma_client.clone();
+                    let query_clone = query.clone();
+                    
+                    {
+                        let mut app = app_state.lock().await;
+                        app.set_searching(true);
+                    }
+                    
+                    tokio::spawn(async move {
+                        match gamma_client_clone.search_events(&query_clone, Some(50)).await {
+                            Ok(results) => {
+                                let mut app = app_state_clone.lock().await;
+                                app.set_search_results(results, query_clone);
+                            }
+                            Err(e) => {
+                                // On error, fall back to local search
+                                let mut app = app_state_clone.lock().await;
+                                app.set_searching(false);
+                                app.search_results.clear();
+                                tracing::warn!("Search API error: {}", e);
+                            }
+                        }
+                    });
+                } else if query.is_empty() {
+                    // Clear search results when query is empty
+                    let mut app = app_state.lock().await;
+                    app.search_results.clear();
+                    app.last_search_query.clear();
+                    app.set_searching(false);
+                }
+                
+                search_debounce = None;
+            }
+        }
+        
         {
             let app = app_state.lock().await;
             terminal.draw(|f| {
@@ -723,6 +802,15 @@ pub async fn run_trending_tui(
                         KeyCode::Backspace => {
                             if app.search_mode {
                                 app.delete_search_char();
+                                // Trigger search after backspace (with debounce)
+                                search_debounce = Some(tokio::time::Instant::now());
+                            }
+                        }
+                        KeyCode::Char(c) => {
+                            if app.search_mode {
+                                app.add_search_char(c);
+                                // Trigger search after character input (with debounce)
+                                search_debounce = Some(tokio::time::Instant::now());
                             }
                         }
                         KeyCode::Enter => {
@@ -769,11 +857,6 @@ pub async fn run_trending_tui(
                                         app.start_watching(event_slug_clone, ws_handle);
                                     }
                                 }
-                            }
-                        }
-                        KeyCode::Char(c) => {
-                            if app.search_mode {
-                                app.add_search_char(c);
                             }
                         }
                         _ => {}

@@ -3,11 +3,7 @@
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 use tracing::{Event, Level, Subscriber};
-use tracing_subscriber::{
-    layer::Context,
-    registry::LookupSpan,
-    Layer,
-};
+use tracing_subscriber::{layer::Context, registry::LookupSpan, Layer};
 
 /// A tracing layer that captures log messages and stores them in shared state
 pub struct TuiLogLayer {
@@ -82,7 +78,11 @@ impl tracing::field::Visit for LogVisitor {
     fn record_i64(&mut self, _field: &tracing::field::Field, _value: i64) {}
     fn record_u64(&mut self, _field: &tracing::field::Field, _value: u64) {}
     fn record_bool(&mut self, _field: &tracing::field::Field, _value: bool) {}
-    fn record_error(&mut self, field: &tracing::field::Field, value: &(dyn std::error::Error + 'static)) {
+    fn record_error(
+        &mut self,
+        field: &tracing::field::Field,
+        value: &(dyn std::error::Error + 'static),
+    ) {
         if field.name() == "message" {
             self.message = value.to_string();
         }
@@ -119,8 +119,11 @@ impl tracing::field::Visit for FieldVisitor {
         self.fields.push(format!("{}={}", field.name(), value));
     }
 
-    fn record_error(&mut self, field: &tracing::field::Field, value: &(dyn std::error::Error + 'static)) {
+    fn record_error(
+        &mut self,
+        field: &tracing::field::Field,
+        value: &(dyn std::error::Error + 'static),
+    ) {
         self.fields.push(format!("{}={}", field.name(), value));
     }
 }
-

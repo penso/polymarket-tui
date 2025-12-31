@@ -95,6 +95,18 @@ enum Commands {
         #[arg(long)]
         id: bool,
     },
+    /// Browse trending events in TUI (requires --features tui)
+    Trending {
+        /// Order by field (e.g., volume24hr, volume7d, volume30d)
+        #[arg(long, default_value = "volume24hr")]
+        order_by: String,
+        /// Sort ascending instead of descending
+        #[arg(long)]
+        ascending: bool,
+        /// Limit number of events
+        #[arg(long, default_value = "50")]
+        limit: usize,
+    },
 }
 
 fn extract_event_slug(event_input: &str) -> String {

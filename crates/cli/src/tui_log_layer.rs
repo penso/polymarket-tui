@@ -24,9 +24,7 @@ where
 {
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
         let level = *event.metadata().level();
-        let target = event.metadata().target();
-        let module_path = event.metadata().module_path().unwrap_or("");
-
+        
         // Format the log message
         let level_str = match level {
             Level::ERROR => "ERROR",
@@ -36,14 +34,16 @@ where
             Level::TRACE => "TRACE",
         };
 
-        // Try to get the formatted message from the event
-        // First, get all fields to see what we have
+        // Get all fields to reconstruct the message
         let mut field_visitor = FieldVisitor::default();
         event.record(&mut field_visitor);
-
-        // Also try to get message specifically
+        
+        // Get the message field specifically
         let mut visitor = LogVisitor::default();
         event.record(&mut visitor);
+        
+        // The visitor.message should contain the format string (e.g., "🔥 Fetching trending events...")
+        // NOT a formatted message with [INFO] prefix
 
         // Extract the actual message content
         // When using tracing::info!("message: {}", value), the format string is the "message" field
@@ -105,26 +105,43 @@ where
         // The raw_message should NOT contain [INFO] or any level prefix - if it does, something is wrong
         let mut message_content = raw_message.trim().to_string();
 
-        // Remove surrounding quotes if present
-        if message_content.starts_with('"') && message_content.ends_with('"') {
+        // Remove surrounding quotes if present (defensive)
+        if message_content.starts_with('"') && message_content.ends_with('"') && message_content.len() > 1 {
             message_content = message_content[1..message_content.len() - 1].to_string();
         }
 
         // Remove any existing level prefixes - this should not be necessary if our extraction is correct
         // but we do it defensively to handle any edge cases
-        // Use a regex-like approach: remove all level prefixes until none remain
-        let prefixes = ["[INFO] ", "[WARN] ", "[ERROR] ", "[DEBUG] ", "[TRACE] ", 
-                        "[INFO]", "[WARN]", "[ERROR]", "[DEBUG]", "[TRACE]"];
+        // Remove all level prefixes until none remain
+        let prefixes_with_space = ["[INFO] ", "[WARN] ", "[ERROR] ", "[DEBUG] ", "[TRACE] "];
+        let prefixes_without_space = ["[INFO]", "[WARN]", "[ERROR]", "[DEBUG]", "[TRACE]"];
+        
         loop {
             let original = message_content.clone();
-            for prefix in &prefixes {
+            let mut changed = false;
+            
+            // Check prefixes with space first
+            for prefix in &prefixes_with_space {
                 if message_content.starts_with(prefix) {
                     message_content = message_content[prefix.len()..].trim().to_string();
-                    break; // Start over to check all prefixes again
+                    changed = true;
+                    break;
                 }
             }
+            
+            // If no change, check prefixes without space
+            if !changed {
+                for prefix in &prefixes_without_space {
+                    if message_content.starts_with(prefix) {
+                        message_content = message_content[prefix.len()..].trim().to_string();
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+            
             // If no change after checking all prefixes, we're done
-            if original == message_content {
+            if !changed {
                 break;
             }
         }
@@ -133,6 +150,7 @@ where
         message_content = message_content.trim().to_string();
 
         // Format the final log message with our level prefix
+        // At this point, message_content should NOT contain any [LEVEL] prefix
         let log_message = format!("[{}] {}", level_str, message_content);
 
         // Store in shared state

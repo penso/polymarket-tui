@@ -242,6 +242,11 @@ impl RTDSClient {
         while let Some(msg) = read.next().await {
             match msg {
                 Ok(Message::Text(text)) => {
+                    // Skip empty messages
+                    if text.trim().is_empty() {
+                        continue;
+                    }
+
                     // Try to parse as RTDS message
                     if let Ok(rtds_msg) = serde_json::from_str::<RTDSMessage>(&text) {
                         on_update(rtds_msg);
@@ -255,6 +260,9 @@ impl RTDSClient {
                             eprintln!("Failed to send PONG: {}", e);
                             break;
                         }
+                    } else if text == "PONG" {
+                        // Server responded to our PING, just continue silently
+                        continue;
                     } else {
                         // Try to parse as error message
                         if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&text) {

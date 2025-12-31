@@ -765,9 +765,6 @@ pub async fn run_trending_tui(
                     // Create a new span for this search task in the current context
                     // This ensures the span is registered with the subscriber
                     let search_span = tracing::info_span!("search", query = %query_for_span);
-                    
-                    // Enter the span in the current context to ensure it's active
-                    let _span_guard = search_span.enter();
 
                     // Spawn the task with the span attached via .instrument()
                     // This ensures the tracing context is properly inherited

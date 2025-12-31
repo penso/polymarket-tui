@@ -1,34 +1,36 @@
 use anyhow::{Context, Result};
-use colored::Colorize;
-use polymarket_bot::{GammaClient, MarketUpdateFormatter, PolymarketWebSocket};
+use polymarket_bot::{lock_mutex, GammaClient, MarketUpdateFormatter, PolymarketWebSocket};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    println!("{}", "🚀 Polymarket Real-Time Monitor".bright_cyan().bold());
-    println!("{}", "Connecting to Polymarket WebSocket...".dimmed());
-    println!();
+    // Initialize tracing subscriber
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .with_ansi(true)
+        .init();
+
+    info!("🚀 Polymarket Real-Time Monitor");
+    info!("Connecting to Polymarket WebSocket...");
 
     let gamma_client = GammaClient::new();
 
     // Fetch active markets and get asset IDs
-    println!("{}", "📡 Fetching active markets...".dimmed());
+    info!("📡 Fetching active markets...");
     let asset_ids = gamma_client
         .get_all_active_asset_ids()
         .await
         .context("Failed to fetch active markets")?;
 
-    println!(
-        "{} {} {}",
-        "✓ Found".green(),
-        asset_ids.len().to_string().bright_green().bold(),
-        "active asset IDs".green()
-    );
-    println!();
+    info!("✓ Found {} active asset IDs", asset_ids.len());
 
     // Build market info cache
-    println!("{}", "🔍 Building market info cache...".dimmed());
+    info!("🔍 Building market info cache...");
     let market_info_cache: Arc<Mutex<HashMap<String, polymarket_bot::gamma::MarketInfo>>> =
         Arc::new(std::sync::Mutex::new(HashMap::new()));
 
@@ -39,46 +41,33 @@ async fn main() -> Result<()> {
 
     for asset_id in &sample_asset_ids {
         if let Ok(Some(info)) = gamma_client.get_market_info_by_asset_id(asset_id).await {
-            market_info_cache
-                .lock()
-                .unwrap()
-                .insert(asset_id.clone(), info);
+            let mut cache = lock_mutex(&market_info_cache)?;
+            cache.insert(asset_id.clone(), info);
         }
     }
 
-    println!(
-        "{} {} {}",
-        "✓ Cached".green(),
-        market_info_cache
-            .lock()
-            .unwrap()
-            .len()
-            .to_string()
-            .bright_green()
-            .bold(),
-        "market info entries".green()
-    );
-    println!();
+    let cache_len = {
+        let cache = lock_mutex(&market_info_cache)?;
+        cache.len()
+    };
+    info!("✓ Cached {} market info entries", cache_len);
 
     // Create WebSocket client
     let mut ws_client = PolymarketWebSocket::new(asset_ids.clone());
 
     // Transfer cached info to WebSocket client
     {
-        let cache = market_info_cache.lock().unwrap();
+        let cache = lock_mutex(&market_info_cache)?;
         for (asset_id, info) in cache.iter() {
             ws_client.update_market_info(asset_id.clone(), info.clone());
         }
     }
 
-    println!("{}", "🔌 Connecting to WebSocket...".dimmed());
-    println!(
-        "{}",
-        format!("Monitoring {} assets", asset_ids.len()).dimmed()
-    );
-    println!("{}", "Press Ctrl+C to exit\n".dimmed());
-    println!("{}", "─".repeat(80).dimmed());
-    println!();
+    info!("🔌 Connecting to WebSocket...");
+    info!("Monitoring {} assets", asset_ids.len());
+    info!("Press Ctrl+C to exit");
+    info!("{}", "─".repeat(80));
+    info!("");
 
     // Connect and listen
     let cache_clone = Arc::clone(&market_info_cache);
@@ -104,10 +93,10 @@ async fn main() -> Result<()> {
 
             let market_info = if let Some(asset_id) = asset_id {
                 // Get from cache (synchronous access)
-                if let Ok(cache) = cache_clone.lock() {
-                    cache.get(&asset_id).cloned()
-                } else {
-                    None
+                // Use lock_mutex helper, but handle errors gracefully in callback
+                match lock_mutex(&cache_clone) {
+                    Ok(cache) => cache.get(&asset_id).cloned(),
+                    Err(_) => None, // If lock fails, just skip market info
                 }
             } else {
                 None

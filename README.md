@@ -15,6 +15,7 @@ Badge targets `penso/polymarket-bot` based on the configured origin.
 - 🚀 **Zero configuration** - No API keys required for public market data
 
 ## Workspace
+
 - `crates/polymarket-bot`: Core library with WebSocket client, Gamma API client, and display formatters
 - `crates/cli`: Binary application for real-time monitoring
 
@@ -27,6 +28,7 @@ cargo run -p polymarket-cli
 ```
 
 The CLI will:
+
 1. Fetch all active markets from Polymarket
 2. Connect to the WebSocket stream
 3. Display real-time updates with colored output
@@ -49,6 +51,7 @@ ws.connect_and_listen(|msg| {
 ```
 
 ## Development
+
 - Build: `cargo build`
 - Run CLI: `cargo run -p polymarket-cli`
 - Test: `cargo test`
@@ -63,7 +66,9 @@ The library provides three main modules:
 - **`display`**: Formatters for colored console output
 
 ## CI
+
 GitHub Actions runs on pushes and PRs:
+
 - rustfmt check
 - clippy with warnings denied
 - full test suite

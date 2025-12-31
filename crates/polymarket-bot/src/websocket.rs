@@ -4,7 +4,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
-const WS_URL: &str = "wss://ws-subscriptions-clob.polymarket.com";
+#[cfg(feature = "tracing")]
+use tracing::{error, warn};
+
+const WS_URL: &str = "wss://ws-subscriptions-clob.polymarket.com/ws/market";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubscriptionMessage {
@@ -127,7 +130,7 @@ pub struct SubscribedMessage {
 }
 
 pub struct PolymarketWebSocket {
-    asset_ids: Vec<String>,
+    pub(crate) asset_ids: Vec<String>,
     market_info_cache: HashMap<String, crate::gamma::MarketInfo>,
 }
 
@@ -154,7 +157,7 @@ impl PolymarketWebSocket {
             auth: None, // No auth needed for public market data
             markets: None,
             assets_ids: Some(self.asset_ids.clone()),
-            channel_type: "MARKET".to_string(),
+            channel_type: "market".to_string(), // Use lowercase as per Polymarket docs
             custom_feature_enabled: None,
         };
 
@@ -211,6 +214,9 @@ impl PolymarketWebSocket {
                                     }
                                     _ => {
                                         // Unknown message type, log for debugging
+                                        #[cfg(feature = "tracing")]
+                                        warn!("Unknown message type: {}", text);
+                                        #[cfg(not(feature = "tracing"))]
                                         eprintln!("Unknown message type: {}", text);
                                     }
                                 }
@@ -221,6 +227,9 @@ impl PolymarketWebSocket {
                 Ok(Message::Ping(data)) => {
                     // Respond to ping with pong
                     if let Err(e) = write.send(Message::Pong(data)).await {
+                        #[cfg(feature = "tracing")]
+                        error!("Failed to send pong: {}", e);
+                        #[cfg(not(feature = "tracing"))]
                         eprintln!("Failed to send pong: {}", e);
                         break;
                     }
@@ -229,6 +238,9 @@ impl PolymarketWebSocket {
                     break;
                 }
                 Err(e) => {
+                    #[cfg(feature = "tracing")]
+                    error!("WebSocket error: {}", e);
+                    #[cfg(not(feature = "tracing"))]
                     eprintln!("WebSocket error: {}", e);
                     break;
                 }

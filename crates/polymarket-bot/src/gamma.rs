@@ -1,7 +1,49 @@
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 const GAMMA_API_BASE: &str = "https://gamma-api.polymarket.com";
+
+// Helper function to deserialize clobTokenIds which can be either a JSON string or an array
+fn deserialize_clob_token_ids<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::Error;
+
+    // First try to deserialize as Option
+    let opt: Option<serde_json::Value> = Option::deserialize(deserializer)?;
+
+    let value = match opt {
+        Some(v) => v,
+        None => return Ok(None),
+    };
+
+    if value.is_null() {
+        return Ok(None);
+    }
+
+    match value {
+        serde_json::Value::String(s) => {
+            // It's a JSON string, parse it
+            serde_json::from_str(&s).map(Some).map_err(Error::custom)
+        }
+        serde_json::Value::Array(arr) => {
+            // It's already an array, convert it
+            Ok(Some(
+                arr.into_iter()
+                    .map(|v| {
+                        if let serde_json::Value::String(s) = v {
+                            s
+                        } else {
+                            v.to_string()
+                        }
+                    })
+                    .collect(),
+            ))
+        }
+        _ => Ok(None),
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Event {
@@ -25,10 +67,15 @@ pub struct Tag {
 pub struct Market {
     pub id: String,
     pub question: String,
-    #[serde(rename = "clobTokenIds")]
-    pub clob_token_ids: Vec<String>,
+    #[serde(
+        rename = "clobTokenIds",
+        deserialize_with = "deserialize_clob_token_ids",
+        default
+    )]
+    pub clob_token_ids: Option<Vec<String>>,
+    #[serde(default)]
     pub outcomes: String,
-    #[serde(rename = "outcomePrices")]
+    #[serde(rename = "outcomePrices", default)]
     pub outcome_prices: String,
 }
 
@@ -73,7 +120,9 @@ impl GammaClient {
 
         for event in events {
             for market in event.markets {
-                asset_ids.extend(market.clob_token_ids);
+                if let Some(token_ids) = market.clob_token_ids {
+                    asset_ids.extend(token_ids);
+                }
             }
         }
 
@@ -85,19 +134,29 @@ impl GammaClient {
 
         for event in events {
             for market in event.markets {
-                if market.clob_token_ids.contains(&asset_id.to_string()) {
-                    let outcomes: Vec<String> = serde_json::from_str(&market.outcomes)?;
-                    let prices: Vec<String> = serde_json::from_str(&market.outcome_prices)?;
+                if let Some(ref token_ids) = market.clob_token_ids {
+                    if token_ids.contains(&asset_id.to_string()) {
+                        let outcomes: Vec<String> = if market.outcomes.is_empty() {
+                            vec![]
+                        } else {
+                            serde_json::from_str(&market.outcomes).unwrap_or_default()
+                        };
+                        let prices: Vec<String> = if market.outcome_prices.is_empty() {
+                            vec![]
+                        } else {
+                            serde_json::from_str(&market.outcome_prices).unwrap_or_default()
+                        };
 
-                    return Ok(Some(MarketInfo {
-                        event_title: event.title,
-                        event_slug: event.slug,
-                        market_question: market.question,
-                        market_id: market.id,
-                        asset_id: asset_id.to_string(),
-                        outcomes,
-                        prices,
-                    }));
+                        return Ok(Some(MarketInfo {
+                            event_title: event.title,
+                            event_slug: event.slug,
+                            market_question: market.question,
+                            market_id: market.id,
+                            asset_id: asset_id.to_string(),
+                            outcomes,
+                            prices,
+                        }));
+                    }
                 }
             }
         }

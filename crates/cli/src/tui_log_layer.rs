@@ -44,15 +44,39 @@ where
         event.record(&mut visitor);
 
         // Extract the actual message content
-        // Prefer the "message" field if available, otherwise use all fields
+        // When using tracing::info!("message: {}", value), the format string is the "message" field
+        // and the values are separate fields. We need to reconstruct the formatted message.
         let raw_message = if !visitor.message.is_empty() {
-            visitor.message
+            // If we have a message field, try to format it with other fields
+            // For simple cases like "Triggering search for query: '{}'", the message field
+            // contains the format string, and we need to substitute values
+            let msg_template = visitor.message;
+            
+            // Check if the message template has placeholders and we have fields to substitute
+            if msg_template.contains("{}") && !field_visitor.fields.is_empty() {
+                // Try to format the message with the fields
+                // This is a simplified approach - for complex formatting, we'd need a proper formatter
+                let mut formatted = msg_template;
+                for field in &field_visitor.fields {
+                    // Extract value from field (format: "name=value")
+                    if let Some((name, value)) = field.split_once('=') {
+                        if name != "message" {
+                            // Replace first {} with the value
+                            if let Some(pos) = formatted.find("{}") {
+                                formatted.replace_range(pos..pos+2, value);
+                            }
+                        }
+                    }
+                }
+                formatted
+            } else {
+                msg_template
+            }
         } else if !field_visitor.fields.is_empty() {
-            // Format fields nicely - join with spaces for readability
-            // Filter out empty fields and format nicely
+            // No message field, use all fields
             field_visitor.fields
                 .iter()
-                .filter(|f| !f.is_empty())
+                .filter(|f| !f.is_empty() && !f.starts_with("message="))
                 .map(|f| f.as_str())
                 .collect::<Vec<_>>()
                 .join(" ")

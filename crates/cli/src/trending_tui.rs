@@ -736,6 +736,7 @@ pub async fn run_trending_tui(
                     // Spawn the search task with tracing context
                     // Use tracing::Instrument to ensure the tracing context is inherited
                     use tracing::Instrument;
+                    let query_for_span = query_clone.clone();
                     let task_handle = tokio::spawn(
                         async move {
                             tracing::info!("Starting search API call for: '{}'", query_clone);
@@ -778,7 +779,7 @@ pub async fn run_trending_tui(
                                 }
                             }
                         }
-                        .instrument(tracing::info_span!("search_task", query = %query_clone))
+                        .instrument(tracing::info_span!("search_task", query = %query_for_span))
                     );
 
                     // Monitor the task to ensure it runs

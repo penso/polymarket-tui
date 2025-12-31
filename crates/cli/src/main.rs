@@ -18,7 +18,6 @@ use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tokio::sync::Mutex as TokioMutex;
 use tracing::info;
 
 #[derive(Parser)]
@@ -455,15 +454,14 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
 
     // Cleanup terminal
     let _ = disable_raw_mode();
-    let _ = execute!(
-        io::stdout(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    );
+    let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
 
     if let Ok(Some(event_slug)) = result {
         info!("Selected event: {}", event_slug);
-        info!("You can watch this event with: polymarket-cli watch-event {}", event_slug);
+        info!(
+            "You can watch this event with: polymarket-cli watch-event {}",
+            event_slug
+        );
     }
 
     Ok(())

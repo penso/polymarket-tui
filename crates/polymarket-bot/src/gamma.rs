@@ -126,7 +126,7 @@ impl GammaClient {
     }
 
     /// Get trending events ordered by trading volume
-    /// 
+    ///
     /// # Arguments
     /// * `order_by` - Field to order by (e.g., "volume24hr", "volume7d", "volume30d")
     /// * `ascending` - If true, sort ascending; if false, sort descending
@@ -140,7 +140,7 @@ impl GammaClient {
         let limit = limit.unwrap_or(50);
         let order_by = order_by.unwrap_or("volume24hr");
         let ascending = ascending.unwrap_or(false);
-        
+
         let url = format!(
             "{}/events?active=true&closed=false&order={}&ascending={}&limit={}",
             GAMMA_API_BASE, order_by, ascending, limit

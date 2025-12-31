@@ -179,7 +179,7 @@ impl RTDSClient {
                 topic: "activity".to_string(),
                 topic_type: "orders_matched".to_string(),
                 filters: serde_json::to_string(&filters)
-                    .map_err(|e| PolymarketError::Serialization(e))?,
+                    .map_err(PolymarketError::Serialization)?,
                 clob_auth: None, // Activity subscriptions don't require CLOB auth (public data)
                 gamma_auth: self.gamma_auth.clone(),
             });
@@ -195,7 +195,7 @@ impl RTDSClient {
                 topic: "comments".to_string(),
                 topic_type: "*".to_string(),
                 filters: serde_json::to_string(&filters)
-                    .map_err(|e| PolymarketError::Serialization(e))?,
+                    .map_err(PolymarketError::Serialization)?,
                 clob_auth: None, // Comments don't need CLOB auth
                 gamma_auth: self.gamma_auth.clone(), // Comments might need gamma auth
             });

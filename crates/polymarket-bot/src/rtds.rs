@@ -88,25 +88,22 @@ pub struct RTDSClient {
 impl RTDSClient {
     pub fn new() -> Self {
         // Try to load authentication from environment variables
-        let clob_auth = std::env::var("api_key")
-            .and_then(|key| {
-                std::env::var("secret")
-                    .and_then(|secret| {
-                        std::env::var("passphrase")
-                            .map(|passphrase| ClobAuth {
-                                key,
-                                secret,
-                                passphrase,
-                            })
-                            .ok()
-                    })
-                    .ok()
-            })
-            .ok();
+        let clob_auth = match (
+            std::env::var("api_key"),
+            std::env::var("secret"),
+            std::env::var("passphrase"),
+        ) {
+            (Ok(key), Ok(secret), Ok(passphrase)) => Some(ClobAuth {
+                key,
+                secret,
+                passphrase,
+            }),
+            _ => None,
+        };
 
         let gamma_auth = std::env::var("gamma_address")
-            .map(|address| GammaAuth { address })
-            .ok();
+            .ok()
+            .map(|address| GammaAuth { address });
 
         Self {
             event_slug: None,

@@ -770,6 +770,9 @@ pub async fn run_trending_tui(
                     // This ensures the tracing context is properly inherited
                     tokio::spawn(
                         async move {
+                            // Test log to verify tracing context is inherited
+                            tracing::info!("[TASK] Starting search for: '{}'", query_clone);
+                            
                             let result = gamma_client_for_task
                                 .search_events(&query_clone, Some(50))
                                 .await;

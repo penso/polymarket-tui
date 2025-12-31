@@ -21,7 +21,6 @@ pub struct SimpleDisplay;
 
 impl TradeDisplay for SimpleDisplay {
     fn display_trade(&mut self, msg: &RTDSMessage) -> anyhow::Result<()> {
-        use chrono::DateTime;
         use polymarket_bot::RTDSFormatter;
         
         let formatted = RTDSFormatter::format_message(msg);

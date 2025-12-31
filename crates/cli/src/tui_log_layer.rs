@@ -27,7 +27,7 @@ where
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
         let level = *event.metadata().level();
         let message = format!("{}", event.metadata().name());
-        
+
         // Format the log message
         let level_str = match level {
             Level::ERROR => "ERROR",
@@ -36,17 +36,17 @@ where
             Level::DEBUG => "DEBUG",
             Level::TRACE => "TRACE",
         };
-        
+
         // Try to get the formatted message from the event
         let mut visitor = LogVisitor::default();
         event.record(&mut visitor);
-        
+
         let log_message = if !visitor.message.is_empty() {
             format!("[{}] {}", level_str, visitor.message)
         } else {
             format!("[{}] {}", level_str, message)
         };
-        
+
         // Store in shared state
         let logs = Arc::clone(&self.logs);
         tokio::spawn(async move {

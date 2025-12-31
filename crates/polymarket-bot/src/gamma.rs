@@ -264,21 +264,33 @@ impl GammaClient {
         Ok(events)
     }
 
-    /// Search events by query string
+    /// Search events by query string using the public-search endpoint
     pub async fn search_events(
         &self,
         query: &str,
         limit: Option<usize>,
     ) -> Result<Vec<Event>> {
-        let limit = limit.unwrap_or(50);
+        let limit_per_type = limit.unwrap_or(50);
         let url = format!(
-            "{}/events?query={}&active=true&closed=false&limit={}",
+            "{}/public-search?q={}&optimized=true&limit_per_type={}&type=events&search_tags=true&search_profiles=true&cache=true",
             GAMMA_API_BASE,
             urlencoding::encode(query),
-            limit
+            limit_per_type
         );
-        let events: Vec<Event> = self.client.get(&url).send().await?.json().await?;
-        Ok(events)
+        
+        #[derive(Deserialize)]
+        struct SearchResponse {
+            events: Vec<Event>,
+            #[allow(dead_code)]
+            profiles: Option<serde_json::Value>,
+            #[allow(dead_code)]
+            tags: Option<serde_json::Value>,
+            #[allow(dead_code)]
+            has_more: Option<bool>,
+        }
+        
+        let response: SearchResponse = self.client.get(&url).send().await?.json().await?;
+        Ok(response.events)
     }
 
     pub async fn get_market_info_by_asset_id(&self, asset_id: &str) -> Result<Option<MarketInfo>> {

@@ -704,7 +704,7 @@ pub async fn run_trending_tui(
 ) -> anyhow::Result<Option<String>> {
     use crossterm::event::{self, Event, KeyCode, KeyEventKind};
     use polymarket_bot::{GammaClient, RTDSClient};
-    
+
     let gamma_client = GammaClient::new();
     let mut search_debounce: Option<tokio::time::Instant> = None;
 
@@ -717,19 +717,19 @@ pub async fn run_trending_tui(
                     let app = app_state.lock().await;
                     app.search_query.clone()
                 };
-                
+
                 if !query.is_empty() && query.len() >= 2 {
                     // Only search if query is at least 2 characters
                     let app_state_clone = Arc::clone(&app_state);
                     let query_clone = query.clone();
                     // Create a new GammaClient for the async task
                     let gamma_client_for_task = GammaClient::new();
-                    
+
                     {
                         let mut app = app_state.lock().await;
                         app.set_searching(true);
                     }
-                    
+
                     tokio::spawn(async move {
                         match gamma_client_for_task.search_events(&query_clone, Some(50)).await {
                             Ok(results) => {
@@ -752,11 +752,11 @@ pub async fn run_trending_tui(
                     app.last_search_query.clear();
                     app.set_searching(false);
                 }
-                
+
                 search_debounce = None;
             }
         }
-        
+
         {
             let app = app_state.lock().await;
             terminal.draw(|f| {

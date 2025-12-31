@@ -424,6 +424,12 @@ pub async fn run_trending_tui(
                                 } else {
                                     // Start watching
                                     let event_slug_clone = event_slug.clone();
+                                    
+                                    // Ensure the event_trades entry exists before starting websocket
+                                    app.event_trades
+                                        .entry(event_slug_clone.clone())
+                                        .or_insert_with(EventTrades::new);
+                                    
                                     let app_state_ws = Arc::clone(&app_state);
                                     let event_slug_for_closure = event_slug_clone.clone();
 

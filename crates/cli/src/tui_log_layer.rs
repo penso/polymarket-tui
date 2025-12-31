@@ -101,9 +101,8 @@ where
             }
         };
 
-        // Remove any existing [LEVEL] prefix from the message (handles double prefixes)
-        // Also remove any leading/trailing whitespace and quotes
-        // Process in order: trim, remove quotes, then remove any level prefixes
+        // Clean up the message: remove quotes, trim, and remove any existing level prefixes
+        // The raw_message should NOT contain [INFO] or any level prefix - if it does, something is wrong
         let mut message_content = raw_message.trim().to_string();
 
         // Remove surrounding quotes if present
@@ -111,29 +110,29 @@ where
             message_content = message_content[1..message_content.len() - 1].to_string();
         }
 
-        // Remove any existing level prefixes (check multiple times to catch nested prefixes)
+        // Remove any existing level prefixes - this should not be necessary if our extraction is correct
+        // but we do it defensively to handle any edge cases
+        // Use a regex-like approach: remove all level prefixes until none remain
+        let prefixes = ["[INFO] ", "[WARN] ", "[ERROR] ", "[DEBUG] ", "[TRACE] ", 
+                        "[INFO]", "[WARN]", "[ERROR]", "[DEBUG]", "[TRACE]"];
         loop {
             let original = message_content.clone();
-            message_content = message_content
-                .trim_start_matches("[INFO] ")
-                .trim_start_matches("[WARN] ")
-                .trim_start_matches("[ERROR] ")
-                .trim_start_matches("[DEBUG] ")
-                .trim_start_matches("[TRACE] ")
-                .trim_start_matches("[INFO]")
-                .trim_start_matches("[WARN]")
-                .trim_start_matches("[ERROR]")
-                .trim_start_matches("[DEBUG]")
-                .trim_start_matches("[TRACE]")
-                .trim()
-                .to_string();
-
-            // If no change, we're done
+            for prefix in &prefixes {
+                if message_content.starts_with(prefix) {
+                    message_content = message_content[prefix.len()..].trim().to_string();
+                    break; // Start over to check all prefixes again
+                }
+            }
+            // If no change after checking all prefixes, we're done
             if original == message_content {
                 break;
             }
         }
 
+        // Final trim
+        message_content = message_content.trim().to_string();
+
+        // Format the final log message with our level prefix
         let log_message = format!("[{}] {}", level_str, message_content);
 
         // Store in shared state

@@ -169,7 +169,6 @@ where
     }
 }
 
-
 #[derive(Default)]
 struct LogVisitor {
     message: String,

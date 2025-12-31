@@ -683,7 +683,7 @@ fn truncate(s: &str, max_len: usize) -> String {
 fn render_logs(f: &mut Frame, app: &mut TrendingAppState, area: Rect) {
     // Calculate the actual visible height (accounting for borders)
     let visible_height = (area.height as usize).saturating_sub(2);
-    
+
     // Auto-scroll to bottom if we're near the bottom or if logs have grown
     // This ensures new logs are always visible
     if app.logs.len() > visible_height {
@@ -697,7 +697,7 @@ fn render_logs(f: &mut Frame, app: &mut TrendingAppState, area: Rect) {
         // Not enough logs to scroll, show from the beginning
         app.log_scroll = 0;
     }
-    
+
     let log_items: Vec<ListItem> = app
         .logs
         .iter()
@@ -760,11 +760,23 @@ pub async fn run_trending_tui(
                     tracing::info!("Triggering search for query: '{}'", query_for_logging);
 
                     // Spawn the search task with tracing context
-                    // Use tracing::Instrument to ensure the tracing context is inherited
+                    // Capture the current tracing context before spawning
                     use tracing::Instrument;
                     let query_for_span = query_clone.clone();
+                    
+                    // Get the current tracing context (span) before spawning
+                    let current_span = tracing::Span::current();
+                    
+                    // Create a new span for this search task
+                    let search_span = tracing::info_span!("search_task", query = %query_for_span.clone());
+                    
+                    // Spawn the task with both the current context and the new span
+                    // Use .instrument() which will automatically enter the span
                     let task_handle = tokio::spawn(
                         async move {
+                            // Enter the current span to ensure context inheritance
+                            let _current_guard = current_span.enter();
+                            
                             tracing::info!("Starting search API call for: '{}'", query_clone);
 
                             let result = gamma_client_for_task
@@ -805,7 +817,7 @@ pub async fn run_trending_tui(
                                 }
                             }
                         }
-                        .instrument(tracing::info_span!("search_task", query = %query_for_span.clone()))
+                        .instrument(search_span),
                     );
 
                     // Monitor the task to ensure it runs
@@ -844,12 +856,12 @@ pub async fn run_trending_tui(
             }
         }
 
-            {
-                let mut app = app_state.lock().await;
-                terminal.draw(|f| {
-                    render(f, &mut app);
-                })?;
-            }
+        {
+            let mut app = app_state.lock().await;
+            terminal.draw(|f| {
+                render(f, &mut app);
+            })?;
+        }
 
         if crossterm::event::poll(std::time::Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {

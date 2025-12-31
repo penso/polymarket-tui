@@ -1,6 +1,8 @@
 use crate::error::{PolymarketError, Result};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 #[cfg(feature = "tracing")]
@@ -20,6 +22,22 @@ pub struct SubscriptionTopic {
     #[serde(rename = "type")]
     pub topic_type: String, // "*", "orders_matched", etc.
     pub filters: String, // JSON string with filters
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clob_auth: Option<ClobAuth>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gamma_auth: Option<GammaAuth>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClobAuth {
+    pub key: String,
+    pub secret: String,
+    pub passphrase: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GammaAuth {
+    pub address: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +81,8 @@ pub struct ActivityPayload {
 pub struct RTDSClient {
     event_slug: Option<String>,
     event_id: Option<u64>,
+    clob_auth: Option<ClobAuth>,
+    gamma_auth: Option<GammaAuth>,
 }
 
 impl RTDSClient {
@@ -70,6 +90,8 @@ impl RTDSClient {
         Self {
             event_slug: None,
             event_id: None,
+            clob_auth: None,
+            gamma_auth: None,
         }
     }
 
@@ -83,6 +105,20 @@ impl RTDSClient {
         self
     }
 
+    pub fn with_clob_auth(mut self, key: String, secret: String, passphrase: String) -> Self {
+        self.clob_auth = Some(ClobAuth {
+            key,
+            secret,
+            passphrase,
+        });
+        self
+    }
+
+    pub fn with_gamma_auth(mut self, address: String) -> Self {
+        self.gamma_auth = Some(GammaAuth { address });
+        self
+    }
+
     pub async fn connect_and_listen<F>(&self, mut on_update: F) -> Result<()>
     where
         F: FnMut(RTDSMessage) + Send,
@@ -91,7 +127,8 @@ impl RTDSClient {
             .await
             .map_err(|e| PolymarketError::WebSocket(format!("Failed to connect to RTDS WebSocket: {}", e)))?;
 
-        let (mut write, mut read) = ws_stream.split();
+        let (write, mut read) = ws_stream.split();
+        let write = Arc::new(Mutex::new(write));
 
         // Build subscription message
         let mut subscriptions = Vec::new();
@@ -106,6 +143,8 @@ impl RTDSClient {
                 topic_type: "orders_matched".to_string(),
                 filters: serde_json::to_string(&filters)
                     .map_err(|e| PolymarketError::Serialization(e))?,
+                clob_auth: self.clob_auth.clone(),
+                gamma_auth: self.gamma_auth.clone(),
             });
         }
 
@@ -120,6 +159,8 @@ impl RTDSClient {
                 topic_type: "*".to_string(),
                 filters: serde_json::to_string(&filters)
                     .map_err(|e| PolymarketError::Serialization(e))?,
+                clob_auth: None, // Comments don't need CLOB auth
+                gamma_auth: self.gamma_auth.clone(), // Comments might need gamma auth
             });
         }
 
@@ -136,10 +177,29 @@ impl RTDSClient {
 
         let subscribe_json = serde_json::to_string(&subscribe_msg)
             .map_err(|e| PolymarketError::Serialization(e))?;
-        write
-            .send(Message::Text(subscribe_json))
-            .await
-            .map_err(|e| PolymarketError::WebSocket(format!("Failed to send RTDS subscription message: {}", e)))?;
+        {
+            let mut w = write.lock().await;
+            w.send(Message::Text(subscribe_json))
+                .await
+                .map_err(|e| PolymarketError::WebSocket(format!("Failed to send RTDS subscription message: {}", e)))?;
+        }
+
+        // Start PING task (send PING every 5 seconds as per RTDS docs)
+        let write_ping = Arc::clone(&write);
+        let ping_handle = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
+            loop {
+                interval.tick().await;
+                let mut w = write_ping.lock().await;
+                if let Err(e) = w.send(Message::Text("PING".to_string())).await {
+                    #[cfg(feature = "tracing")]
+                    error!("Failed to send PING: {}", e);
+                    #[cfg(not(feature = "tracing"))]
+                    eprintln!("Failed to send PING: {}", e);
+                    break;
+                }
+            }
+        });
 
         // Listen for messages
         while let Some(msg) = read.next().await {
@@ -148,9 +208,10 @@ impl RTDSClient {
                     // Try to parse as RTDS message
                     if let Ok(rtds_msg) = serde_json::from_str::<RTDSMessage>(&text) {
                         on_update(rtds_msg);
-                    } else if text == "PING" {
-                        // Respond to ping
-                        if let Err(e) = write.send(Message::Text("PONG".to_string())).await {
+                    } else if text.as_str() == "PING" {
+                        // Respond to ping (though we're the ones sending PING, server might send it too)
+                        let mut w = write.lock().await;
+                        if let Err(e) = w.send(Message::Text("PONG".to_string())).await {
                             #[cfg(feature = "tracing")]
                             error!("Failed to send PONG: {}", e);
                             #[cfg(not(feature = "tracing"))]
@@ -160,14 +221,19 @@ impl RTDSClient {
                     } else {
                         // Unknown message, log for debugging
                         #[cfg(feature = "tracing")]
-                        warn!("Unknown RTDS message: {}", text);
+                        {
+                            warn!("Unknown RTDS message: {}", text);
+                        }
                         #[cfg(not(feature = "tracing"))]
-                        eprintln!("Unknown RTDS message: {}", text);
+                        {
+                            eprintln!("Unknown RTDS message: {}", text);
+                        }
                     }
                 }
                 Ok(Message::Ping(data)) => {
                     // Respond to ping with pong
-                    if let Err(e) = write.send(Message::Pong(data)).await {
+                    let mut w = write.lock().await;
+                    if let Err(e) = w.send(Message::Pong(data)).await {
                         #[cfg(feature = "tracing")]
                         error!("Failed to send pong: {}", e);
                         #[cfg(not(feature = "tracing"))]
@@ -188,6 +254,9 @@ impl RTDSClient {
                 _ => {}
             }
         }
+
+        // Cancel PING task
+        ping_handle.abort();
 
         Ok(())
     }

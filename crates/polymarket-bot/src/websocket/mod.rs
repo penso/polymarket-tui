@@ -1,3 +1,12 @@
+//! Polymarket WebSocket client and types
+//!
+//! This module provides a WebSocket client for connecting to Polymarket's
+//! real-time market data stream, along with all the data types for messages
+//! and updates received over the WebSocket connection.
+
+pub mod messages;
+pub mod types;
+
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -7,41 +16,16 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 #[cfg(feature = "tracing")]
 use tracing::{error, warn};
 
+pub use messages::{
+    Auth, SubscribedMessage, SubscriptionMessage, UpdateSubscriptionMessage,
+};
+pub use types::{
+    ErrorMessage, OrderUpdate, OrderbookUpdate, PriceLevel, PriceUpdate, TradeUpdate,
+};
+
 const WS_URL: &str = "wss://ws-subscriptions-clob.polymarket.com/ws/market";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SubscriptionMessage {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub auth: Option<Auth>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub markets: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub assets_ids: Option<Vec<String>>,
-    #[serde(rename = "type")]
-    pub channel_type: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub custom_feature_enabled: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Auth {
-    pub api_key: String,
-    pub api_secret: String,
-    pub timestamp: String,
-    pub signature: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateSubscriptionMessage {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub assets_ids: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub markets: Option<Vec<String>>,
-    pub operation: String, // "subscribe" or "unsubscribe"
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub custom_feature_enabled: Option<bool>,
-}
-
+/// Main WebSocket message enum that can represent any message type received from the API
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum WebSocketMessage {
@@ -61,80 +45,14 @@ pub enum WebSocketMessage {
     Unknown,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OrderbookUpdate {
-    pub market: String,
-    #[serde(rename = "asset_id")]
-    pub asset_id: String,
-    pub bids: Vec<PriceLevel>,
-    pub asks: Vec<PriceLevel>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub timestamp: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PriceLevel {
-    pub price: String,
-    pub size: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TradeUpdate {
-    pub market: String,
-    #[serde(rename = "asset_id")]
-    pub asset_id: String,
-    pub price: String,
-    pub size: String,
-    pub side: String, // "buy" or "sell"
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub timestamp: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OrderUpdate {
-    pub market: String,
-    #[serde(rename = "asset_id")]
-    pub asset_id: String,
-    pub side: String,
-    pub price: String,
-    pub size: String,
-    pub status: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub timestamp: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PriceUpdate {
-    pub market: String,
-    #[serde(rename = "asset_id")]
-    pub asset_id: String,
-    pub price: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub timestamp: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ErrorMessage {
-    pub error: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub message: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SubscribedMessage {
-    pub message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub assets_ids: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub markets: Option<Vec<String>>,
-}
-
+/// WebSocket client for connecting to Polymarket's market data stream
 pub struct PolymarketWebSocket {
     pub(crate) asset_ids: Vec<String>,
     market_info_cache: HashMap<String, crate::gamma::MarketInfo>,
 }
 
 impl PolymarketWebSocket {
+    /// Create a new WebSocket client for the given asset IDs
     pub fn new(asset_ids: Vec<String>) -> Self {
         Self {
             asset_ids,
@@ -142,6 +60,9 @@ impl PolymarketWebSocket {
         }
     }
 
+    /// Connect to the WebSocket and listen for updates
+    ///
+    /// The callback function will be called for each message received.
     pub async fn connect_and_listen<F>(&mut self, mut on_update: F) -> Result<()>
     where
         F: FnMut(WebSocketMessage) + Send,
@@ -174,7 +95,8 @@ impl PolymarketWebSocket {
                     // Try to parse as WebSocketMessage first
                     if let Ok(ws_msg) = serde_json::from_str::<WebSocketMessage>(&text) {
                         on_update(ws_msg);
-                    } else if let Ok(subscribed) = serde_json::from_str::<SubscribedMessage>(&text)
+                    } else if let Ok(subscribed) =
+                        serde_json::from_str::<SubscribedMessage>(&text)
                     {
                         on_update(WebSocketMessage::Subscribed(subscribed));
                     } else if let Ok(err) = serde_json::from_str::<ErrorMessage>(&text) {
@@ -251,11 +173,14 @@ impl PolymarketWebSocket {
         Ok(())
     }
 
+    /// Update cached market info for an asset
     pub fn update_market_info(&mut self, asset_id: String, info: crate::gamma::MarketInfo) {
         self.market_info_cache.insert(asset_id, info);
     }
 
+    /// Get cached market info for an asset
     pub fn get_market_info(&self, asset_id: &str) -> Option<&crate::gamma::MarketInfo> {
         self.market_info_cache.get(asset_id)
     }
 }
+

@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
+use clap::{Parser, Subcommand};
 use polymarket_bot::{
     default_cache_dir, lock_mutex, GammaClient, MarketUpdateFormatter, PolymarketWebSocket,
+    RTDSClient, RTDSFormatter,
 };
 use std::collections::HashMap;
 use std::env;
@@ -8,17 +10,59 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tracing::info;
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    // Initialize tracing subscriber
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .with_ansi(true)
-        .init();
+#[derive(Parser)]
+#[command(name = "polymarket-cli")]
+#[command(about = "Polymarket CLI tool for monitoring market data", long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
 
+#[derive(Subcommand)]
+enum Commands {
+    /// Monitor all active markets via WebSocket
+    Monitor {
+        /// Use RTDS (Real-Time Data Stream) instead of CLOB WebSocket
+        /// RTDS shows actual trade activity that appears on the website
+        #[arg(long)]
+        rtds: bool,
+        /// Event slug to filter RTDS activity (only used with --rtds)
+        #[arg(long)]
+        event: Option<String>,
+    },
+    /// Watch trade activity for a specific event using RTDS
+    WatchEvent {
+        /// Event URL or slug (e.g., https://polymarket.com/event/who-will-die-in-stranger-things-season-5 or who-will-die-in-stranger-things-season-5)
+        #[arg(value_name = "EVENT")]
+        event: String,
+    },
+}
+
+fn extract_event_slug(event_input: &str) -> String {
+    // If it's a URL, extract the slug
+    if event_input.starts_with("http://") || event_input.starts_with("https://") {
+        // Extract slug from URL pattern: https://polymarket.com/event/SLUG
+        if let Some(slug_part) = event_input.split("/event/").nth(1) {
+            // Remove query params and trailing slash if present
+            slug_part
+                .split('?')
+                .next()
+                .unwrap_or(slug_part)
+                .trim_end_matches('/')
+                .to_string()
+        } else {
+            event_input.to_string()
+        }
+    } else {
+        // Already a slug
+        event_input.to_string()
+    }
+}
+
+async fn run_monitor(use_rtds: bool, event_slug: Option<String>) -> Result<()> {
+    if use_rtds {
+        return run_monitor_rtds(event_slug).await;
+    }
     info!("🚀 Polymarket Real-Time Monitor");
     info!("Connecting to Polymarket WebSocket...");
 
@@ -128,4 +172,73 @@ async fn main() -> Result<()> {
         .context("WebSocket connection failed")?;
 
     Ok(())
+}
+
+async fn run_monitor_rtds(event_slug: Option<String>) -> Result<()> {
+    info!("🚀 Polymarket Real-Time Monitor (RTDS)");
+    info!("Connecting to RTDS WebSocket...");
+
+    if let Some(ref slug) = event_slug {
+        info!("Filtering activity for event: {}", slug);
+    } else {
+        info!("⚠️  No event filter specified. You may not see activity.");
+        info!("💡 Tip: Use --event <slug> to filter by event");
+    }
+
+    info!("Press Ctrl+C to exit");
+    info!("{}", "─".repeat(80));
+
+    let mut rtds_client = RTDSClient::new();
+    if let Some(slug) = event_slug {
+        rtds_client = rtds_client.with_event_slug(slug);
+    }
+
+    rtds_client
+        .connect_and_listen(|msg| {
+            let formatted = RTDSFormatter::format_message(&msg);
+            print!("{}", formatted);
+        })
+        .await
+        .context("Failed to connect to RTDS WebSocket")?;
+
+    Ok(())
+}
+
+async fn run_watch_event(event: String) -> Result<()> {
+    let event_slug = extract_event_slug(&event);
+    info!("🎯 Watching trade activity for event: {}", event_slug);
+    info!("Connecting to RTDS WebSocket...");
+    info!("Press Ctrl+C to exit");
+    info!("{}", "─".repeat(80));
+
+    let rtds_client = RTDSClient::new().with_event_slug(event_slug.clone());
+
+    rtds_client
+        .connect_and_listen(|msg| {
+            let formatted = RTDSFormatter::format_message(&msg);
+            print!("{}", formatted);
+        })
+        .await
+        .context("Failed to connect to RTDS WebSocket")?;
+
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Initialize tracing subscriber
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .with_ansi(true)
+        .init();
+
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::Monitor { rtds, event } => run_monitor(rtds, event).await,
+        Commands::WatchEvent { event } => run_watch_event(event).await,
+    }
 }

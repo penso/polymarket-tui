@@ -5,10 +5,11 @@ mod tui;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use colored::Colorize;
 use display_trait::TradeDisplay;
 use polymarket_bot::{
-    default_cache_dir, lock_mutex, GammaClient, MarketUpdateFormatter, PolymarketWebSocket,
-    RTDSClient,
+    default_cache_dir, lock_mutex, ClobClient, DataClient, GammaClient, MarketUpdateFormatter,
+    PolymarketWebSocket, RTDSClient,
 };
 use std::collections::HashMap;
 use std::env;
@@ -44,6 +45,51 @@ enum Commands {
         /// Use TUI mode (requires --features tui)
         #[arg(long)]
         tui: bool,
+    },
+    /// Get orderbook for a market
+    Orderbook {
+        /// Market condition ID or asset ID
+        #[arg(value_name = "MARKET")]
+        market: String,
+        /// Use asset ID instead of condition ID
+        #[arg(long)]
+        asset: bool,
+    },
+    /// Get recent trades for a market
+    Trades {
+        /// Market condition ID, asset ID, event ID, or event slug
+        #[arg(value_name = "MARKET")]
+        market: String,
+        /// Limit number of trades
+        #[arg(long, default_value = "10")]
+        limit: usize,
+        /// Use asset ID instead of condition ID
+        #[arg(long)]
+        asset: bool,
+        /// Use event ID
+        #[arg(long)]
+        event_id: bool,
+        /// Use event slug
+        #[arg(long)]
+        event_slug: bool,
+    },
+    /// Get event information
+    Event {
+        /// Event ID or slug
+        #[arg(value_name = "EVENT")]
+        event: String,
+        /// Use event ID instead of slug
+        #[arg(long)]
+        id: bool,
+    },
+    /// Get market information
+    Market {
+        /// Market ID or slug
+        #[arg(value_name = "MARKET")]
+        market: String,
+        /// Use market ID instead of slug
+        #[arg(long)]
+        id: bool,
     },
 }
 
@@ -337,5 +383,173 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Monitor { rtds, event } => run_monitor(rtds, event).await,
         Commands::WatchEvent { event, tui } => run_watch_event(event, tui).await,
+        Commands::Orderbook { market, asset } => run_orderbook(market, asset).await,
+        Commands::Trades {
+            market,
+            limit,
+            asset,
+            event_id,
+            event_slug,
+        } => run_trades(market, limit, asset, event_id, event_slug).await,
+        Commands::Event { event, id } => run_event(event, id).await,
+        Commands::Market { market, id } => run_market(market, id).await,
+    }
+}
+
+async fn run_orderbook(market: String, use_asset: bool) -> Result<()> {
+    info!("📊 Fetching orderbook for: {}", market);
+    let clob_client = ClobClient::new();
+
+    let orderbook = if use_asset {
+        clob_client.get_orderbook_by_asset(&market).await?
+    } else {
+        clob_client.get_orderbook(&market).await?
+    };
+
+    info!("Bids (buy orders):");
+    for bid in orderbook.bids {
+        info!("  Price: {}, Size: {}", bid.price, bid.size);
+    }
+
+    info!("Asks (sell orders):");
+    for ask in orderbook.asks {
+        info!("  Price: {}, Size: {}", ask.price, ask.size);
+    }
+
+    Ok(())
+}
+
+async fn run_trades(
+    market: String,
+    limit: usize,
+    use_asset: bool,
+    use_event_id: bool,
+    use_event_slug: bool,
+) -> Result<()> {
+    info!("📈 Fetching trades for: {}", market);
+
+    if use_event_id {
+        let event_id: u64 = market.parse().context("Invalid event ID")?;
+        let data_client = DataClient::new();
+        let trades = data_client
+            .get_trades_by_event(event_id, Some(limit), None, None, None)
+            .await?;
+        display_trades(&trades);
+    } else if use_event_slug {
+        let data_client = DataClient::new();
+        let trades = data_client
+            .get_trades_by_event_slug(&market, Some(limit), None)
+            .await?;
+        display_trades(&trades);
+    } else if use_asset {
+        let clob_client = ClobClient::new();
+        let trades = clob_client.get_trades_by_asset(&market, Some(limit)).await?;
+        display_clob_trades(&trades);
+    } else {
+        let clob_client = ClobClient::new();
+        let trades = clob_client.get_trades(&market, Some(limit)).await?;
+        display_clob_trades(&trades);
+    }
+
+    Ok(())
+}
+
+async fn run_event(event: String, use_id: bool) -> Result<()> {
+    info!("📅 Fetching event: {}", event);
+    let gamma_client = GammaClient::new();
+
+    let event_data = if use_id {
+        gamma_client.get_event_by_id(&event).await?
+    } else {
+        gamma_client.get_event_by_slug(&event).await?
+    };
+
+    if let Some(event) = event_data {
+        info!("Title: {}", event.title);
+        info!("Slug: {}", event.slug);
+        info!("Active: {}", event.active);
+        info!("Closed: {}", event.closed);
+        info!("Markets: {}", event.markets.len());
+        for (i, market) in event.markets.iter().enumerate() {
+            info!("  Market {}: {}", i + 1, market.question);
+        }
+    } else {
+        anyhow::bail!("Event not found");
+    }
+
+    Ok(())
+}
+
+async fn run_market(market: String, use_id: bool) -> Result<()> {
+    info!("📊 Fetching market: {}", market);
+    let gamma_client = GammaClient::new();
+
+    if use_id {
+        if let Some(market_data) = gamma_client.get_market_by_id(&market).await? {
+            info!("Question: {}", market_data.question);
+            info!("Market ID: {}", market_data.id);
+            if let Some(token_ids) = market_data.clob_token_ids {
+                info!("Asset IDs: {:?}", token_ids);
+            }
+        } else {
+            anyhow::bail!("Market not found");
+        }
+    } else {
+        let markets = gamma_client.get_market_by_slug(&market).await?;
+        if markets.is_empty() {
+            anyhow::bail!("Market not found");
+        }
+        for market_data in markets {
+            info!("Question: {}", market_data.question);
+            info!("Market ID: {}", market_data.id);
+            if let Some(token_ids) = market_data.clob_token_ids {
+                info!("Asset IDs: {:?}", token_ids);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn display_trades(trades: &[polymarket_bot::data::DataTrade]) {
+    use chrono::DateTime;
+    for trade in trades {
+        let time = DateTime::from_timestamp(trade.timestamp, 0)
+            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+        info!(
+            "{} | {} | {} @ ${:.4} ({} shares) | {} | {}",
+            time,
+            if trade.side == "BUY" {
+                "🟢 BUY".green()
+            } else {
+                "🔴 SELL".red()
+            },
+            trade.outcome,
+            trade.price,
+            trade.size,
+            trade.title,
+            trade.name
+        );
+    }
+}
+
+fn display_clob_trades(trades: &[polymarket_bot::clob::Trade]) {
+    use chrono::DateTime;
+    for trade in trades {
+        let time = DateTime::from_timestamp(trade.timestamp, 0)
+            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+        info!(
+            "{} | {} | @ ${} ({} shares)",
+            time,
+            if trade.side == "BUY" {
+                "🟢 BUY".green()
+            } else {
+                "🔴 SELL".red()
+            },
+            trade.price,
+            trade.size
+        );
     }
 }

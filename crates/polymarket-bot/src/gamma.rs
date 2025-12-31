@@ -154,6 +154,92 @@ impl GammaClient {
         Ok(asset_ids)
     }
 
+    /// Get event by ID
+    pub async fn get_event_by_id(&self, event_id: &str) -> Result<Option<Event>> {
+        let url = format!("{}/events/{}", GAMMA_API_BASE, event_id);
+        let response = self.client.get(&url).send().await?;
+        
+        if response.status() == 404 {
+            return Ok(None);
+        }
+        
+        let event: Event = response.json().await?;
+        Ok(Some(event))
+    }
+
+    /// Get event by slug
+    pub async fn get_event_by_slug(&self, slug: &str) -> Result<Option<Event>> {
+        let url = format!("{}/events?slug={}", GAMMA_API_BASE, slug);
+        let events: Vec<Event> = self.client.get(&url).send().await?.json().await?;
+        Ok(events.into_iter().next())
+    }
+
+    /// Get market by ID
+    pub async fn get_market_by_id(&self, market_id: &str) -> Result<Option<Market>> {
+        let url = format!("{}/markets/{}", GAMMA_API_BASE, market_id);
+        let response = self.client.get(&url).send().await?;
+        
+        if response.status() == 404 {
+            return Ok(None);
+        }
+        
+        let market: Market = response.json().await?;
+        Ok(Some(market))
+    }
+
+    /// Get all markets (with optional filters)
+    pub async fn get_markets(
+        &self,
+        active: Option<bool>,
+        closed: Option<bool>,
+        limit: Option<usize>,
+    ) -> Result<Vec<Market>> {
+        let mut url = format!("{}/markets", GAMMA_API_BASE);
+        let mut params = Vec::new();
+        
+        if let Some(active) = active {
+            params.push(("active", active.to_string()));
+        }
+        if let Some(closed) = closed {
+            params.push(("closed", closed.to_string()));
+        }
+        if let Some(limit) = limit {
+            params.push(("limit", limit.to_string()));
+        }
+        
+        let markets: Vec<Market> = self
+            .client
+            .get(&url)
+            .query(&params)
+            .send()
+            .await?
+            .json()
+            .await?;
+        Ok(markets)
+    }
+
+    /// Get categories/tags
+    pub async fn get_categories(&self) -> Result<Vec<Tag>> {
+        let url = format!("{}/categories", GAMMA_API_BASE);
+        let categories: Vec<Tag> = self.client.get(&url).send().await?.json().await?;
+        Ok(categories)
+    }
+
+    /// Get events by category/tag
+    pub async fn get_events_by_category(
+        &self,
+        category_slug: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<Event>> {
+        let limit = limit.unwrap_or(100);
+        let url = format!(
+            "{}/events?category={}&limit={}",
+            GAMMA_API_BASE, category_slug, limit
+        );
+        let events: Vec<Event> = self.client.get(&url).send().await?.json().await?;
+        Ok(events)
+    }
+
     pub async fn get_market_info_by_asset_id(&self, asset_id: &str) -> Result<Option<MarketInfo>> {
         // Check cache first
         if let Some(ref cache) = self.cache {

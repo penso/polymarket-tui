@@ -737,15 +737,10 @@ pub async fn run_trending_tui(
             let elapsed = debounce_time.elapsed();
             if elapsed >= tokio::time::Duration::from_millis(500) {
                 // Debounce period passed, perform search
-                tracing::info!("Debounce timer elapsed ({:?}), triggering search", elapsed);
-
-                // Debounce period passed, perform search
                 let query = {
                     let app = app_state.lock().await;
                     app.search_query.clone()
                 };
-
-                tracing::info!("Search query from app state: '{}'", query);
 
                 // Clear debounce before processing to prevent race conditions
                 search_debounce = None;
@@ -763,10 +758,7 @@ pub async fn run_trending_tui(
                         app.set_searching(true);
                     }
 
-                    tracing::info!("Triggering search for query: '{}'", query_for_logging);
-
                     // Spawn the search task with tracing context
-                    // Capture the current tracing context before spawning
                     use tracing::Instrument;
                     let query_for_span = query_clone.clone();
 
@@ -775,63 +767,29 @@ pub async fn run_trending_tui(
 
                     // Create a new span for this search task
                     let search_span =
-                        tracing::info_span!("search_task", query = %query_for_span.clone());
+                        tracing::info_span!("search", query = %query_for_span.clone());
 
                     // Spawn the task with both the current context and the new span
-                    // Use .instrument() which will automatically enter the span
-                    tracing::info!("About to spawn search task for query: '{}'", query_clone);
-                    eprintln!(
-                        "[DEBUG] About to spawn search task for query: '{}'",
-                        query_clone
-                    );
                     let task_handle = tokio::spawn(
                         async move {
                             // Enter the current span to ensure context inheritance
                             let _current_guard = current_span.enter();
 
-                            tracing::info!(
-                                "[TASK STARTED] Starting search API call for: '{}'",
-                                query_clone
-                            );
-                            eprintln!("[DEBUG] Task started for query: '{}'", query_clone);
-
-                            eprintln!("[DEBUG] About to call search_events for: '{}'", query_clone);
                             let result = gamma_client_for_task
                                 .search_events(&query_clone, Some(50))
                                 .await;
-                            eprintln!("[DEBUG] search_events returned for: '{}'", query_clone);
 
-                            tracing::info!("Search API call completed for: '{}'", query_clone);
-
-                            let query_for_final_log = query_clone.clone();
                             match result {
                                 Ok(results) => {
-                                    tracing::info!(
-                                        "Search API returned {} results for: '{}'",
-                                        results.len(),
-                                        query_for_final_log
-                                    );
+                                    tracing::info!("Search found {} results", results.len());
                                     let mut app = app_state_clone.lock().await;
                                     app.set_search_results(results, query_clone);
-                                    tracing::info!(
-                                        "Search results set in app state for: '{}'",
-                                        query_for_final_log
-                                    );
                                 }
                                 Err(e) => {
-                                    // On error, fall back to local search
-                                    tracing::error!(
-                                        "Search API error for '{}': {}",
-                                        query_for_final_log,
-                                        e
-                                    );
+                                    tracing::error!("Search failed: {}", e);
                                     let mut app = app_state_clone.lock().await;
                                     app.set_searching(false);
                                     app.search_results.clear();
-                                    tracing::warn!(
-                                        "Cleared search results due to error for: '{}'",
-                                        query_for_final_log
-                                    );
                                 }
                             }
                         }
@@ -864,7 +822,6 @@ pub async fn run_trending_tui(
                     });
                 } else {
                     // Query is empty, clear search results
-                    tracing::info!("Search query is empty, clearing results");
                     let mut app = app_state.lock().await;
                     app.search_results.clear();
                     app.last_search_query.clear();

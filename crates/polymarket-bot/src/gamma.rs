@@ -5,7 +5,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 const GAMMA_API_BASE: &str = "https://gamma-api.polymarket.com";
 
 // Helper function to deserialize clobTokenIds which can be either a JSON string or an array
-fn deserialize_clob_token_ids<'de, D>(deserializer: D) -> std::result::Result<Option<Vec<String>>, D::Error>
+fn deserialize_clob_token_ids<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<Vec<String>>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -274,11 +276,7 @@ impl GammaClient {
     }
 
     /// Search events by query string using the public-search endpoint
-    pub async fn search_events(
-        &self,
-        query: &str,
-        limit: Option<usize>,
-    ) -> Result<Vec<Event>> {
+    pub async fn search_events(&self, query: &str, limit: Option<usize>) -> Result<Vec<Event>> {
         let limit_per_type = limit.unwrap_or(50);
         let url = format!(
             "{}/public-search?q={}&optimized=true&limit_per_type={}&type=events&search_tags=true&search_profiles=true&cache=true",
@@ -287,41 +285,45 @@ impl GammaClient {
             limit_per_type
         );
 
-        // Always log the URL being called
-        tracing::info!("Search API call: GET {}", url);
-        eprintln!("[DEBUG] Search API call: GET {}", url);
+        // Log the API call
+        tracing::info!("GET {}", url);
 
-        eprintln!("[DEBUG] About to send HTTP request...");
-        let response = self.client.get(&url).send().await
-            .map_err(|e| {
-                tracing::error!("Failed to send search request: {}", e);
-                e
-            })?;
+        let response = self.client.get(&url).send().await.map_err(|e| {
+            tracing::error!("Failed to send search request: {}", e);
+            e
+        })?;
 
-        eprintln!("[DEBUG] HTTP request sent, got response");
         let status = response.status();
-        tracing::info!("Search API response status: {}", status);
-        eprintln!("[DEBUG] Search API response status: {}", status);
+        tracing::info!("GET {} -> status: {}", url, status);
 
-        let response_text = response.text().await
-            .map_err(|e| {
-                tracing::error!("Failed to read search response body: {}", e);
-                e
-            })?;
+        let response_text = response.text().await.map_err(|e| {
+            tracing::error!("Failed to read search response body: {}", e);
+            e
+        })?;
 
-        tracing::debug!("Search API response body (first 500 chars): {}",
-            if response_text.len() > 500 {
-                &response_text[..500]
-            } else {
-                &response_text
-            });
+        // Only log response body on error or in debug mode
+        if !status.is_success() {
+            tracing::debug!(
+                "Search API response body (first 500 chars): {}",
+                if response_text.len() > 500 {
+                    &response_text[..500]
+                } else {
+                    &response_text
+                }
+            );
+        }
 
         if !status.is_success() {
-            tracing::warn!("Search API error: status={}, body={}", status, response_text);
+            tracing::warn!(
+                "Search API error: status={}, body={}",
+                status,
+                response_text
+            );
             return Err(crate::error::PolymarketError::InvalidData(format!(
                 "Search API returned status {}: {}",
                 status, response_text
-            )).into());
+            ))
+            .into());
         }
 
         #[derive(Deserialize)]
@@ -335,20 +337,21 @@ impl GammaClient {
             has_more: Option<bool>,
         }
 
-        tracing::info!("Parsing search response JSON...");
-        let search_response: SearchResponse = serde_json::from_str(&response_text)
-            .map_err(|e| {
-                tracing::error!("Failed to parse search response: {}, body (first 1000 chars): {}",
+        let search_response: SearchResponse =
+            serde_json::from_str(&response_text).map_err(|e| {
+                tracing::error!(
+                    "Failed to parse search response: {}, body (first 1000 chars): {}",
                     e,
                     if response_text.len() > 1000 {
                         &response_text[..1000]
                     } else {
                         &response_text
-                    });
+                    }
+                );
                 crate::error::PolymarketError::Serialization(e)
             })?;
 
-        tracing::info!("Search API returned {} events", search_response.events.len());
+        tracing::info!("Search returned {} events", search_response.events.len());
 
         Ok(search_response.events)
     }

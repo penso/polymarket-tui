@@ -109,7 +109,7 @@ impl DataClient {
         offset: Option<usize>,
     ) -> Result<Vec<DataTrade>> {
         let url = format!("{}/trades", DATA_API_BASE);
-        let mut params = vec![
+        let params = vec![
             ("eventSlug", event_slug.to_string()),
             ("limit", limit.unwrap_or(10).to_string()),
             ("offset", offset.unwrap_or(0).to_string()),
@@ -134,7 +134,7 @@ impl DataClient {
         offset: Option<usize>,
     ) -> Result<Vec<DataTrade>> {
         let url = format!("{}/trades", DATA_API_BASE);
-        let mut params = vec![
+        let params = vec![
             ("conditionId", condition_id.to_string()),
             ("limit", limit.unwrap_or(10).to_string()),
             ("offset", offset.unwrap_or(0).to_string()),

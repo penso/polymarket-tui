@@ -52,7 +52,7 @@ impl FileCache {
             .map_err(|e| PolymarketError::InvalidData(format!("Failed to read cache file: {}", e)))?;
 
         let entry: CacheEntry<T> = serde_json::from_str(&content)
-            .map_err(|e| PolymarketError::Serialization(e))?;
+            .map_err(PolymarketError::Serialization)?;
 
         // Check if entry has expired
         if let Some(ttl) = entry.ttl_seconds {
@@ -90,7 +90,7 @@ impl FileCache {
         };
 
         let json = serde_json::to_string_pretty(&entry)
-            .map_err(|e| PolymarketError::Serialization(e))?;
+            .map_err(PolymarketError::Serialization)?;
 
         // Write to temp file first, then rename (atomic operation)
         let temp_file = cache_file.with_extension("tmp");

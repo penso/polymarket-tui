@@ -109,16 +109,12 @@ impl ClobClient {
 
     /// Create a new CLOB client from environment variables
     pub fn from_env() -> Self {
-        let api_key = std::env::var("api_key").ok();
-        let api_secret = std::env::var("secret").ok();
-        let passphrase = std::env::var("passphrase").ok();
-
-        if api_key.is_some() && api_secret.is_some() && passphrase.is_some() {
-            Self::with_auth(
-                api_key.unwrap(),
-                api_secret.unwrap(),
-                passphrase.unwrap(),
-            )
+        if let (Ok(api_key), Ok(api_secret), Ok(passphrase)) = (
+            std::env::var("api_key"),
+            std::env::var("secret"),
+            std::env::var("passphrase"),
+        ) {
+            Self::with_auth(api_key, api_secret, passphrase)
         } else {
             Self::new()
         }
@@ -223,15 +219,15 @@ impl ClobClient {
     /// Place a new order (requires authentication)
     pub async fn place_order(
         &self,
-        market: &str,
-        side: Side,
-        order_type: OrderType,
-        size: &str,
-        price: Option<&str>,
+        _market: &str,
+        _side: Side,
+        _order_type: OrderType,
+        _size: &str,
+        _price: Option<&str>,
     ) -> Result<Order> {
-        let url = format!("{}/orders", CLOB_API_BASE);
         // TODO: Add authentication headers and request body
         // This is a placeholder - actual implementation would need proper auth signing
+        let _url = format!("{}/orders", CLOB_API_BASE);
         todo!("Order placement requires authentication signing")
     }
 

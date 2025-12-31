@@ -264,6 +264,23 @@ impl GammaClient {
         Ok(events)
     }
 
+    /// Search events by query string
+    pub async fn search_events(
+        &self,
+        query: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<Event>> {
+        let limit = limit.unwrap_or(50);
+        let url = format!(
+            "{}/events?query={}&active=true&closed=false&limit={}",
+            GAMMA_API_BASE,
+            urlencoding::encode(query),
+            limit
+        );
+        let events: Vec<Event> = self.client.get(&url).send().await?.json().await?;
+        Ok(events)
+    }
+
     pub async fn get_market_info_by_asset_id(&self, asset_id: &str) -> Result<Option<MarketInfo>> {
         // Check cache first
         if let Some(ref cache) = self.cache {

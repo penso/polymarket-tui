@@ -496,21 +496,38 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
                 last_log_count = logs.len();
                 drop(logs);
 
-                let mut app = app_state_for_logs.lock().await;
-                for log in new_logs {
-                    let level = if log.starts_with("[ERROR]") {
-                        "ERROR"
-                    } else if log.starts_with("[WARN]") {
-                        "WARN"
-                    } else if log.starts_with("[INFO]") {
-                        "INFO"
-                    } else if log.starts_with("[DEBUG]") {
-                        "DEBUG"
-                    } else {
-                        "TRACE"
-                    };
-                    app.add_log(level, log);
-                }
+                       let mut app = app_state_for_logs.lock().await;
+                       for log in new_logs {
+                           // The log already has the [LEVEL] prefix from TuiLogLayer
+                           // So we just pass it directly - add_log will format it
+                           // Extract level for color coding
+                           let level = if log.starts_with("[ERROR]") {
+                               "ERROR"
+                           } else if log.starts_with("[WARN]") {
+                               "WARN"
+                           } else if log.starts_with("[INFO]") {
+                               "INFO"
+                           } else if log.starts_with("[DEBUG]") {
+                               "DEBUG"
+                           } else {
+                               "TRACE"
+                           };
+                           // Pass the log as-is (it already has [LEVEL] prefix)
+                           // add_log will add another prefix, so we need to strip the existing one
+                           let log_without_prefix = log
+                               .trim_start_matches("[ERROR] ")
+                               .trim_start_matches("[WARN] ")
+                               .trim_start_matches("[INFO] ")
+                               .trim_start_matches("[DEBUG] ")
+                               .trim_start_matches("[TRACE] ")
+                               .trim_start_matches("[ERROR]")
+                               .trim_start_matches("[WARN]")
+                               .trim_start_matches("[INFO]")
+                               .trim_start_matches("[DEBUG]")
+                               .trim_start_matches("[TRACE]")
+                               .trim();
+                           app.add_log(level, log_without_prefix.to_string());
+                       }
             }
         }
     });

@@ -24,7 +24,7 @@ where
 {
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
         let level = *event.metadata().level();
-        
+
         // Format the log message
         let level_str = match level {
             Level::ERROR => "ERROR",
@@ -37,7 +37,7 @@ where
         // Get all fields to reconstruct the message
         let mut field_visitor = FieldVisitor::default();
         event.record(&mut field_visitor);
-        
+
         // Get the message field specifically
         let mut visitor = LogVisitor::default();
         event.record(&mut visitor);
@@ -99,7 +99,10 @@ where
         let mut message_content = raw_message.trim().to_string();
 
         // Remove surrounding quotes if present (defensive)
-        if message_content.starts_with('"') && message_content.ends_with('"') && message_content.len() > 1 {
+        if message_content.starts_with('"')
+            && message_content.ends_with('"')
+            && message_content.len() > 1
+        {
             message_content = message_content[1..message_content.len() - 1].to_string();
         }
 
@@ -108,11 +111,11 @@ where
         // Remove all level prefixes until none remain
         let prefixes_with_space = ["[INFO] ", "[WARN] ", "[ERROR] ", "[DEBUG] ", "[TRACE] "];
         let prefixes_without_space = ["[INFO]", "[WARN]", "[ERROR]", "[DEBUG]", "[TRACE]"];
-        
+
         loop {
             let original = message_content.clone();
             let mut changed = false;
-            
+
             // Check prefixes with space first
             for prefix in &prefixes_with_space {
                 if message_content.starts_with(prefix) {
@@ -121,7 +124,7 @@ where
                     break;
                 }
             }
-            
+
             // If no change, check prefixes without space
             if !changed {
                 for prefix in &prefixes_without_space {
@@ -132,7 +135,7 @@ where
                     }
                 }
             }
-            
+
             // If no change after checking all prefixes, we're done
             if !changed {
                 break;
@@ -186,13 +189,13 @@ impl<'a> tracing::field::Visit for SimpleMessageVisitor<'a> {
             }
         }
     }
-    
+
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
         if field.name() == "message" {
             let formatted = format!("{:?}", value);
             // Remove quotes
             let cleaned = if formatted.starts_with('"') && formatted.ends_with('"') {
-                &formatted[1..formatted.len()-1]
+                &formatted[1..formatted.len() - 1]
             } else {
                 &formatted
             };
@@ -214,12 +217,17 @@ impl<'a> tracing::field::Visit for SimpleMessageVisitor<'a> {
             }
         }
     }
-    
+
     fn record_f64(&mut self, _field: &tracing::field::Field, _value: f64) {}
     fn record_i64(&mut self, _field: &tracing::field::Field, _value: i64) {}
     fn record_u64(&mut self, _field: &tracing::field::Field, _value: u64) {}
     fn record_bool(&mut self, _field: &tracing::field::Field, _value: bool) {}
-    fn record_error(&mut self, _field: &tracing::field::Field, _value: &(dyn std::error::Error + 'static)) {}
+    fn record_error(
+        &mut self,
+        _field: &tracing::field::Field,
+        _value: &(dyn std::error::Error + 'static),
+    ) {
+    }
 }
 
 #[derive(Default)]

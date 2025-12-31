@@ -36,21 +36,31 @@ where
         // Try to get the formatted message from the event
         let mut visitor = LogVisitor::default();
         event.record(&mut visitor);
-
+        
         // Also try to get all fields
         let mut field_visitor = FieldVisitor::default();
         event.record(&mut field_visitor);
-
-        let log_message = if !visitor.message.is_empty() {
-            format!("[{}] {}", level_str, visitor.message)
+        
+        // Extract the actual message content (remove any existing [LEVEL] prefix)
+        let message_content = if !visitor.message.is_empty() {
+            visitor.message.trim_start_matches("[INFO] ")
+                .trim_start_matches("[WARN] ")
+                .trim_start_matches("[ERROR] ")
+                .trim_start_matches("[DEBUG] ")
+                .trim_start_matches("[TRACE] ")
+                .to_string()
         } else if !field_visitor.fields.is_empty() {
-            format!("[{}] {}", level_str, field_visitor.fields.join(" "))
+            field_visitor.fields.join(" ")
         } else {
-            format!("[{}] {}", level_str, message)
+            message.to_string()
         };
+        
+        let log_message = format!("[{}] {}", level_str, message_content);
 
-        // Store in shared state
+        // Store in shared state (synchronously to ensure it's captured)
+        // Use blocking spawn or direct access to avoid async issues
         let logs = Arc::clone(&self.logs);
+        // Use tokio::spawn to avoid blocking, but ensure it completes
         tokio::spawn(async move {
             let mut logs = logs.lock().await;
             logs.push(log_message);

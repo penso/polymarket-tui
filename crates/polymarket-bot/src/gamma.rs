@@ -281,13 +281,13 @@ impl GammaClient {
 
         // Always log the URL being called
         tracing::info!("Search API call: GET {}", url);
-        
+
         let response = self.client.get(&url).send().await
             .map_err(|e| {
                 tracing::error!("Failed to send search request: {}", e);
                 e
             })?;
-        
+
         let status = response.status();
         tracing::info!("Search API response status: {}", status);
 
@@ -296,14 +296,14 @@ impl GammaClient {
                 tracing::error!("Failed to read search response body: {}", e);
                 e
             })?;
-        
-        tracing::debug!("Search API response body (first 500 chars): {}", 
-            if response_text.len() > 500 { 
-                &response_text[..500] 
-            } else { 
-                &response_text 
+
+        tracing::debug!("Search API response body (first 500 chars): {}",
+            if response_text.len() > 500 {
+                &response_text[..500]
+            } else {
+                &response_text
             });
-        
+
         if !status.is_success() {
             tracing::warn!("Search API error: status={}, body={}", status, response_text);
             return Err(crate::error::PolymarketError::InvalidData(format!(
@@ -326,16 +326,16 @@ impl GammaClient {
         tracing::info!("Parsing search response JSON...");
         let search_response: SearchResponse = serde_json::from_str(&response_text)
             .map_err(|e| {
-                tracing::error!("Failed to parse search response: {}, body (first 1000 chars): {}", 
-                    e, 
-                    if response_text.len() > 1000 { 
-                        &response_text[..1000] 
-                    } else { 
-                        &response_text 
+                tracing::error!("Failed to parse search response: {}, body (first 1000 chars): {}",
+                    e,
+                    if response_text.len() > 1000 {
+                        &response_text[..1000]
+                    } else {
+                        &response_text
                     });
                 crate::error::PolymarketError::Serialization(e)
             })?;
-        
+
         tracing::info!("Search API returned {} events", search_response.events.len());
 
         Ok(search_response.events)

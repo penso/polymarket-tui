@@ -178,14 +178,21 @@ impl RTDSFormatter {
             msg.payload.outcome.bright_red()
         };
 
+        // Round shares to 2 decimal places
+        let rounded_shares = (msg.payload.size * 100.0).round() / 100.0;
+        
+        // Calculate total value in dollars
+        let total_value = msg.payload.price * msg.payload.size;
+
         format!(
-            "\n{} {} {} {} @ ${:.4} ({} shares) - {} - {}\n  User: {} ({})\n",
+            "\n{} {} {} {} @ ${:.4} ({} shares, ${:.2}) - {} - {}\n  User: {} ({})\n",
             "💸 TRADE".bright_yellow().bold(),
             timestamp.dimmed(),
             side_color,
             outcome_color.bold(),
             msg.payload.price,
-            msg.payload.size,
+            rounded_shares,
+            total_value,
             msg.payload.title.bold(),
             msg.payload.event_slug.dimmed(),
             msg.payload.name.bright_white(),

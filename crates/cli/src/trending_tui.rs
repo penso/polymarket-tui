@@ -786,7 +786,7 @@ pub async fn run_trending_tui(
                                 }
                             }
                         }
-                        .instrument(tracing::info_span!("search_task", query = %query_for_span))
+                        .instrument(tracing::info_span!("search_task", query = %query_for_span.clone()))
                     );
 
                     // Monitor the task to ensure it runs

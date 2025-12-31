@@ -479,7 +479,7 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
         )
         .with(log_layer)
         .set_default();
-    
+
     // Now that tracing is set up, we can log
     info!("🔥 Fetching trending events...");
 

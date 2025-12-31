@@ -1,10 +1,10 @@
 //! Custom tracing layer that captures logs for TUI display
 
+use std::fmt::Write;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::{layer::Context, registry::LookupSpan, Layer};
-use std::fmt::Write;
 
 /// A tracing layer that captures log messages and stores them in shared state
 pub struct TuiLogLayer {
@@ -51,37 +51,46 @@ where
             // If we have a message field, try to format it with other fields
             // For simple cases like "Triggering search for query: '{}'", the message field
             // contains the format string, and we need to substitute values
-            let msg_template = visitor.message;
+            let msg_template = visitor.message.trim_matches('"').trim();
 
             // Check if the message template has placeholders and we have fields to substitute
             if msg_template.contains("{}") && !field_visitor.fields.is_empty() {
                 // Try to format the message with the fields
                 // This is a simplified approach - for complex formatting, we'd need a proper formatter
-                let mut formatted = msg_template;
-                for field in &field_visitor.fields {
+                let mut formatted = msg_template.to_string();
+                for field_str in &field_visitor.fields {
                     // Extract value from field (format: "name=value")
-                    if let Some((name, value)) = field.split_once('=') {
+                    if let Some((name, value)) = field_str.split_once('=') {
                         if name != "message" {
+                            // Extract value, removing quotes if present
+                            let clean_value = value.trim_matches('"').trim();
                             // Replace first {} with the value
                             if let Some(pos) = formatted.find("{}") {
-                                formatted.replace_range(pos..pos + 2, value);
+                                formatted.replace_range(pos..pos+2, clean_value);
                             }
                         }
                     }
                 }
                 formatted
             } else {
-                msg_template
+                msg_template.to_string()
             }
         } else if !field_visitor.fields.is_empty() {
-            // No message field, use all fields
+            // No message field, use all fields (excluding message itself)
             field_visitor
                 .fields
                 .iter()
                 .filter(|f| !f.is_empty() && !f.starts_with("message="))
-                .map(|f| f.as_str())
+                .map(|f| {
+                    // Format as "name: value" for readability
+                    if let Some((name, value)) = f.split_once('=') {
+                        format!("{}: {}", name, value.trim_matches('"').trim())
+                    } else {
+                        f.clone()
+                    }
+                })
                 .collect::<Vec<_>>()
-                .join(" ")
+                .join(", ")
         } else {
             // Fallback to target/module path
             if !target.is_empty() {
@@ -90,12 +99,13 @@ where
                 module_path.to_string()
             }
         };
-
+        
         // Remove any existing [LEVEL] prefix from the message (handles double prefixes)
         // Also remove any leading/trailing whitespace and quotes
         let message_content = raw_message
             .trim()
             .trim_matches('"')
+            // Remove any existing level prefixes (with or without space)
             .trim_start_matches("[INFO] ")
             .trim_start_matches("[WARN] ")
             .trim_start_matches("[ERROR] ")

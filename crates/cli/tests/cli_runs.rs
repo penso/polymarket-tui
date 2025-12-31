@@ -13,4 +13,3 @@ fn cli_prints_greeting() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Hello from polymarket-bot library"));
 }
-

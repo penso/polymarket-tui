@@ -710,6 +710,7 @@ pub async fn run_trending_tui(
 
     loop {
         // Handle search debouncing and API calls
+        // Check debounce timer and trigger search if needed
         if let Some(debounce_time) = search_debounce {
             if debounce_time.elapsed() >= tokio::time::Duration::from_millis(500) {
                 // Debounce period passed, perform search
@@ -717,6 +718,9 @@ pub async fn run_trending_tui(
                     let app = app_state.lock().await;
                     app.search_query.clone()
                 };
+
+                // Clear debounce before processing
+                search_debounce = None;
 
                 if !query.is_empty() {
                     // Search for any non-empty query (removed 2-char minimum for debugging)

@@ -216,7 +216,7 @@ impl TrendingAppState {
 }
 
 pub fn render(f: &mut Frame, app: &TrendingAppState) {
-    let header_height = if app.search_mode { 4 } else { 3 };
+    let header_height = if app.search_mode { 5 } else { 3 };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -233,14 +233,14 @@ pub fn render(f: &mut Frame, app: &TrendingAppState) {
         .filter(|et| et.is_watching)
         .count();
     let filtered_count = app.filtered_events().len();
-    
+
     if app.search_mode {
         // Split header into info and search input
         let header_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(3), // Info line
-                Constraint::Length(1), // Search input
+                Constraint::Length(3), // Search input (with borders)
             ])
             .split(chunks[0]);
         
@@ -259,16 +259,21 @@ pub fn render(f: &mut Frame, app: &TrendingAppState) {
         .wrap(Wrap { trim: true });
         f.render_widget(header, header_chunks[0]);
         
-        // Search input field
-        let search_display = format!("🔍 Search: {}", app.search_query);
+        // Search input field - show full query with proper spacing
+        let search_display = if app.search_query.is_empty() {
+            "🔍 Search: (type to search)".to_string()
+        } else {
+            format!("🔍 Search: {}", app.search_query)
+        };
         let search_input = Paragraph::new(search_display)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("Search (type to filter, Esc to exit)")
+                    .title("Search")
             )
             .style(Style::default().fg(Color::Cyan))
-            .alignment(Alignment::Left);
+            .alignment(Alignment::Left)
+            .wrap(Wrap { trim: true });
         f.render_widget(search_input, header_chunks[1]);
     } else {
         let header_text = format!(

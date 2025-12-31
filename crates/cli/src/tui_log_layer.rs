@@ -36,9 +36,15 @@ where
         // Try to get the formatted message from the event
         let mut visitor = LogVisitor::default();
         event.record(&mut visitor);
-
+        
+        // Also try to get all fields
+        let mut field_visitor = FieldVisitor::default();
+        event.record(&mut field_visitor);
+        
         let log_message = if !visitor.message.is_empty() {
             format!("[{}] {}", level_str, visitor.message)
+        } else if !field_visitor.fields.is_empty() {
+            format!("[{}] {}", level_str, field_visitor.fields.join(" "))
         } else {
             format!("[{}] {}", level_str, message)
         };

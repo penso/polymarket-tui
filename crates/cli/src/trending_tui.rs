@@ -718,30 +718,34 @@ pub async fn run_trending_tui(
                     app.search_query.clone()
                 };
 
-                if !query.is_empty() && query.len() >= 2 {
-                    // Only search if query is at least 2 characters
+                if !query.is_empty() {
+                    // Search for any non-empty query (removed 2-char minimum for debugging)
                     let app_state_clone = Arc::clone(&app_state);
                     let query_clone = query.clone();
                     // Create a new GammaClient for the async task
                     let gamma_client_for_task = GammaClient::new();
-
+                    
                     {
                         let mut app = app_state.lock().await;
                         app.set_searching(true);
                     }
-
+                    
+                    tracing::info!("Triggering search for query: '{}'", query_clone);
+                    
                     tokio::spawn(async move {
+                        tracing::info!("Starting search API call for: '{}'", query_clone);
                         match gamma_client_for_task.search_events(&query_clone, Some(50)).await {
                             Ok(results) => {
+                                tracing::info!("Search API returned {} results for: '{}'", results.len(), query_clone);
                                 let mut app = app_state_clone.lock().await;
                                 app.set_search_results(results, query_clone);
                             }
                             Err(e) => {
                                 // On error, fall back to local search
+                                tracing::error!("Search API error for '{}': {}", query_clone, e);
                                 let mut app = app_state_clone.lock().await;
                                 app.set_searching(false);
                                 app.search_results.clear();
-                                tracing::warn!("Search API error: {}", e);
                             }
                         }
                     });

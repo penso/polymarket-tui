@@ -278,10 +278,24 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
 }
 
 fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
-    if let Some(event_slug) = app.selected_event_slug() {
-        let trades = app.get_trades(&event_slug);
-        let is_watching = app.is_watching(&event_slug);
+    if let Some(event) = app.selected_event() {
+        let event_slug = &event.slug;
+        let trades = app.get_trades(event_slug);
+        let is_watching = app.is_watching(event_slug);
 
+        // Split area into event details and trades
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(12), // Event details
+                Constraint::Min(0),     // Trades table
+            ])
+            .split(area);
+
+        // Render event details
+        render_event_details(f, event, is_watching, trades.len(), chunks[0]);
+
+        // Render trades table
         if trades.is_empty() {
             let status_text = if is_watching {
                 "Watching for trades... (Press Enter to stop)"
@@ -289,18 +303,14 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 "Not watching. Press Enter to start watching this event."
             };
             let paragraph = Paragraph::new(status_text)
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(format!("Trades - {}", truncate(&event_slug, 50))),
-                )
+                .block(Block::default().borders(Borders::ALL).title("Trades"))
                 .alignment(Alignment::Center)
                 .style(Style::default().fg(Color::Gray));
-            f.render_widget(paragraph, area);
+            f.render_widget(paragraph, chunks[1]);
         } else {
             let rows: Vec<Row> = trades
                 .iter()
-                .take((area.height as usize).saturating_sub(3))
+                .take((chunks[1].height as usize).saturating_sub(3))
                 .map(|trade| {
                     let time = DateTime::from_timestamp(trade.timestamp, 0)
                         .map(|dt| dt.format("%H:%M:%S").to_string())
@@ -363,22 +373,102 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 Block::default()
                     .borders(Borders::ALL)
                     .title(format!(
-                        "Trades - {} ({})",
-                        truncate(&event_slug, 40),
+                        "Trades ({})",
                         if is_watching { "🔴 Watching" } else { "Stopped" }
                     )),
             )
             .column_spacing(1);
 
-            f.render_widget(table, area);
+            f.render_widget(table, chunks[1]);
         }
     } else {
         let paragraph = Paragraph::new("No event selected")
-            .block(Block::default().borders(Borders::ALL).title("Trades"))
+            .block(Block::default().borders(Borders::ALL).title("Event Details & Trades"))
             .alignment(Alignment::Center)
             .style(Style::default().fg(Color::Gray));
         f.render_widget(paragraph, area);
     }
+}
+
+fn render_event_details(f: &mut Frame, event: &Event, is_watching: bool, trade_count: usize, area: Rect) {
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled("Title: ", Style::default().fg(Color::Yellow).bold()),
+            Span::styled(truncate(&event.title, 60), Style::default().fg(Color::White)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Slug: ", Style::default().fg(Color::Yellow).bold()),
+            Span::styled(truncate(&event.slug, 60), Style::default().fg(Color::Blue)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Event ID: ", Style::default().fg(Color::Yellow).bold()),
+            Span::styled(truncate(&event.id, 50), Style::default().fg(Color::White)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Status: ", Style::default().fg(Color::Yellow).bold()),
+            Span::styled(
+                if event.active {
+                    "Active"
+                } else {
+                    "Inactive"
+                },
+                Style::default().fg(if event.active { Color::Green } else { Color::Red }),
+            ),
+            Span::styled(" | ", Style::default().fg(Color::Gray)),
+            Span::styled(
+                if event.closed {
+                    "Closed"
+                } else {
+                    "Open"
+                },
+                Style::default().fg(if event.closed { Color::Red } else { Color::Green }),
+            ),
+            Span::styled(" | ", Style::default().fg(Color::Gray)),
+            Span::styled(
+                if is_watching {
+                    "🔴 Watching"
+                } else {
+                    "Not Watching"
+                },
+                Style::default().fg(if is_watching { Color::Red } else { Color::Gray }),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Markets: ", Style::default().fg(Color::Yellow).bold()),
+            Span::styled(
+                event.markets.len().to_string(),
+                Style::default().fg(Color::Cyan),
+            ),
+            Span::styled(" | ", Style::default().fg(Color::Gray)),
+            Span::styled("Trades: ", Style::default().fg(Color::Yellow).bold()),
+            Span::styled(
+                trade_count.to_string(),
+                Style::default().fg(if is_watching { Color::Green } else { Color::Gray }),
+            ),
+        ]),
+    ];
+
+    if !event.tags.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("Tags: ", Style::default().fg(Color::Yellow).bold()),
+        ]));
+        for tag in &event.tags {
+            lines.push(Line::from(vec![
+                Span::styled("  • ", Style::default().fg(Color::Gray)),
+                Span::styled(truncate(&tag.label, 50), Style::default().fg(Color::Cyan)),
+            ]));
+        }
+    }
+
+    let paragraph = Paragraph::new(lines)
+        .block(Block::default().borders(Borders::ALL).title("Event Details"))
+        .wrap(Wrap { trim: true });
+    f.render_widget(paragraph, area);
 }
 
 fn truncate(s: &str, max_len: usize) -> String {

@@ -260,15 +260,18 @@ pub fn render(f: &mut Frame, app: &TrendingAppState) {
         f.render_widget(header, header_chunks[0]);
 
         // Search input field - show full query with proper spacing
-        let search_lines = if app.search_query.is_empty() {
-            vec![Line::from("🔍 Search: (type to search)".fg(Color::DarkGray))]
+        let search_line = if app.search_query.is_empty() {
+            Line::from("🔍 Search: (type to search)".fg(Color::DarkGray))
         } else {
-            vec![
-                Line::from("🔍 Search: ".fg(Color::White)),
-                Line::from(app.search_query.clone().fg(Color::Cyan).bold()),
-            ]
+            Line::from(vec![
+                Span::styled("🔍 Search: ", Style::default().fg(Color::White)),
+                Span::styled(
+                    app.search_query.clone(),
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                ),
+            ])
         };
-        let search_input = Paragraph::new(search_lines)
+        let search_input = Paragraph::new(vec![search_line])
             .block(
                 Block::default()
                     .borders(Borders::ALL)

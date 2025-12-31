@@ -289,15 +289,19 @@ impl GammaClient {
 
         // Always log the URL being called
         tracing::info!("Search API call: GET {}", url);
+        eprintln!("[DEBUG] Search API call: GET {}", url);
 
+        eprintln!("[DEBUG] About to send HTTP request...");
         let response = self.client.get(&url).send().await
             .map_err(|e| {
                 tracing::error!("Failed to send search request: {}", e);
                 e
             })?;
 
+        eprintln!("[DEBUG] HTTP request sent, got response");
         let status = response.status();
         tracing::info!("Search API response status: {}", status);
+        eprintln!("[DEBUG] Search API response status: {}", status);
 
         let response_text = response.text().await
             .map_err(|e| {

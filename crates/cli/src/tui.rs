@@ -179,17 +179,19 @@ fn truncate(s: &str, max_len: usize) -> String {
 
 pub async fn run_tui(
     mut terminal: Terminal<CrosstermBackend<io::Stdout>>,
-    app_state: Arc<Mutex<AppState>>,
+    app_state: Arc<TokioMutex<AppState>>,
 ) -> anyhow::Result<()> {
     use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 
     let mut terminal = terminal;
     loop {
+        // Use lock().await to properly handle async context
+        let app = app_state.lock().await;
         terminal.draw(|f| {
-            let app = app_state.blocking_lock();
             render(f, &app);
         })
         .map_err(|e| anyhow::anyhow!("Terminal draw error: {}", e))?;
+        drop(app); // Release lock before polling events
 
         if crossterm::event::poll(std::time::Duration::from_millis(100))
             .map_err(|e| anyhow::anyhow!("Event poll error: {}", e))?

@@ -36,34 +36,49 @@ where
         // Try to get the formatted message from the event
         let mut visitor = LogVisitor::default();
         event.record(&mut visitor);
-        
+
         // Also try to get all fields
         let mut field_visitor = FieldVisitor::default();
         event.record(&mut field_visitor);
-        
-        // Extract the actual message content (remove any existing [LEVEL] prefix)
-        let message_content = if !visitor.message.is_empty() {
-            visitor.message.trim_start_matches("[INFO] ")
-                .trim_start_matches("[WARN] ")
-                .trim_start_matches("[ERROR] ")
-                .trim_start_matches("[DEBUG] ")
-                .trim_start_matches("[TRACE] ")
-                .to_string()
+
+        // Extract the actual message content
+        // First try to get the message from the visitor
+        let raw_message = if !visitor.message.is_empty() {
+            visitor.message
         } else if !field_visitor.fields.is_empty() {
+            // Format fields nicely - join with spaces for readability
             field_visitor.fields.join(" ")
         } else {
             message.to_string()
         };
         
+        // Remove any existing [LEVEL] prefix from the message (handles double prefixes)
+        let message_content = raw_message
+            .trim_start_matches("[INFO] ")
+            .trim_start_matches("[WARN] ")
+            .trim_start_matches("[ERROR] ")
+            .trim_start_matches("[DEBUG] ")
+            .trim_start_matches("[TRACE] ")
+            .trim_start_matches("[INFO]")
+            .trim_start_matches("[WARN]")
+            .trim_start_matches("[ERROR]")
+            .trim_start_matches("[DEBUG]")
+            .trim_start_matches("[TRACE]")
+            .trim();
+        
         let log_message = format!("[{}] {}", level_str, message_content);
 
-        // Store in shared state (synchronously to ensure it's captured)
-        // Use blocking spawn or direct access to avoid async issues
+        // Store in shared state
+        // We need to use blocking or ensure this completes
+        // Since we're in an async context, use spawn but make sure it's not dropped
         let logs = Arc::clone(&self.logs);
-        // Use tokio::spawn to avoid blocking, but ensure it completes
+        let log_msg = log_message.clone();
+        
+        // Try to push synchronously if possible, otherwise spawn
+        // For now, use spawn but ensure it's awaited somewhere
         tokio::spawn(async move {
             let mut logs = logs.lock().await;
-            logs.push(log_message);
+            logs.push(log_msg);
             // Keep only last 1000 logs
             if logs.len() > 1000 {
                 logs.remove(0);

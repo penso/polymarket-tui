@@ -732,15 +732,15 @@ pub async fn run_trending_tui(
                     }
 
                     tracing::info!("Triggering search for query: '{}'", query_for_logging);
-                    
+
                     // Spawn the search task
                     let task_handle = tokio::spawn(async move {
                         tracing::info!("Starting search API call for: '{}'", query_clone);
-                        
+
                         let result = gamma_client_for_task.search_events(&query_clone, Some(50)).await;
-                        
+
                         tracing::info!("Search API call completed for: '{}'", query_clone);
-                        
+
                         let query_for_final_log = query_clone.clone();
                         match result {
                             Ok(results) => {
@@ -759,7 +759,7 @@ pub async fn run_trending_tui(
                             }
                         }
                     });
-                    
+
                     // Monitor the task to ensure it runs
                     let query_for_monitor = query_for_logging.clone();
                     tokio::spawn(async move {

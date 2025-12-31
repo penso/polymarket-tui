@@ -155,10 +155,15 @@ where
         let logs = Arc::clone(&self.logs);
         let log_msg = log_message.clone();
 
-        // Try to push synchronously if possible, otherwise spawn
-        // For now, use spawn but ensure it's awaited somewhere
+        // Store the log message synchronously using a blocking approach
+        // Since we're in an async context but need to avoid spawning, we'll use a channel
+        // or we can use tokio::spawn but ensure it completes
+        // Actually, let's use a blocking approach with tokio::task::spawn_blocking
+        // But first, let's try using a simpler approach - just spawn and don't await
+        // The key is that the log layer should capture ALL events, including from spawned tasks
+        let logs_clone = Arc::clone(&self.logs);
         tokio::spawn(async move {
-            let mut logs = logs.lock().await;
+            let mut logs = logs_clone.lock().await;
             logs.push(log_msg);
             // Keep only last 1000 logs
             if logs.len() > 1000 {

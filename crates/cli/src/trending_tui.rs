@@ -76,6 +76,9 @@ pub struct TrendingAppState {
     pub event_trades: HashMap<String, EventTrades>,
     // Map from event slug to websocket task handle
     pub ws_handles: HashMap<String, JoinHandle<()>>,
+    // Search functionality
+    pub search_mode: bool,
+    pub search_query: String,
 }
 
 impl TrendingAppState {
@@ -87,11 +90,65 @@ impl TrendingAppState {
             should_quit: false,
             event_trades: HashMap::new(),
             ws_handles: HashMap::new(),
+            search_mode: false,
+            search_query: String::new(),
         }
     }
 
+    /// Get filtered events based on search query
+    pub fn filtered_events(&self) -> Vec<&Event> {
+        if self.search_query.is_empty() {
+            return self.events.iter().collect();
+        }
+
+        let query_lower = self.search_query.to_lowercase();
+        self.events
+            .iter()
+            .filter(|event| {
+                event.title.to_lowercase().contains(&query_lower)
+                    || event.slug.to_lowercase().contains(&query_lower)
+                    || event.tags.iter().any(|tag| tag.label.to_lowercase().contains(&query_lower))
+                    || event.markets.iter().any(|market| market.question.to_lowercase().contains(&query_lower))
+            })
+            .collect()
+    }
+
+    /// Get the currently selected event from filtered list
+    pub fn selected_event_filtered(&self) -> Option<&Event> {
+        let filtered = self.filtered_events();
+        filtered.get(self.selected_index).copied()
+    }
+
+    pub fn enter_search_mode(&mut self) {
+        self.search_mode = true;
+        self.search_query.clear();
+    }
+
+    pub fn exit_search_mode(&mut self) {
+        self.search_mode = false;
+        self.search_query.clear();
+        self.selected_index = 0;
+        self.scroll_offset = 0;
+    }
+
+    pub fn add_search_char(&mut self, c: char) {
+        self.search_query.push(c);
+        self.selected_index = 0;
+        self.scroll_offset = 0;
+    }
+
+    pub fn delete_search_char(&mut self) {
+        self.search_query.pop();
+        self.selected_index = 0;
+        self.scroll_offset = 0;
+    }
+
     pub fn selected_event(&self) -> Option<&Event> {
-        self.events.get(self.selected_index)
+        if self.search_mode {
+            self.selected_event_filtered()
+        } else {
+            self.events.get(self.selected_index)
+        }
     }
 
     pub fn selected_event_slug(&self) -> Option<String> {
@@ -99,6 +156,7 @@ impl TrendingAppState {
     }
 
     pub fn move_up(&mut self) {
+        let filtered_len = self.filtered_events().len();
         if self.selected_index > 0 {
             self.selected_index -= 1;
             if self.selected_index < self.scroll_offset {
@@ -108,7 +166,8 @@ impl TrendingAppState {
     }
 
     pub fn move_down(&mut self) {
-        if self.selected_index < self.events.len().saturating_sub(1) {
+        let filtered_len = self.filtered_events().len();
+        if self.selected_index < filtered_len.saturating_sub(1) {
             self.selected_index += 1;
             let visible_height = 20;
             if self.selected_index >= self.scroll_offset + visible_height {
@@ -208,8 +267,8 @@ pub fn render(f: &mut Frame, app: &TrendingAppState) {
 }
 
 fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
-    let items: Vec<ListItem> = app
-        .events
+    let filtered_events = app.filtered_events();
+    let items: Vec<ListItem> = filtered_events
         .iter()
         .enumerate()
         .skip(app.scroll_offset)
@@ -514,12 +573,12 @@ pub async fn run_trending_tui(
                                 } else {
                                     // Start watching
                                     let event_slug_clone = event_slug.clone();
-                                    
+
                                     // Ensure the event_trades entry exists before starting websocket
                                     app.event_trades
                                         .entry(event_slug_clone.clone())
                                         .or_insert_with(EventTrades::new);
-                                    
+
                                     let app_state_ws = Arc::clone(&app_state);
                                     let event_slug_for_closure = event_slug_clone.clone();
 
@@ -541,6 +600,11 @@ pub async fn run_trending_tui(
 
                                     app.start_watching(event_slug_clone, ws_handle);
                                 }
+                            }
+                        }
+                        KeyCode::Char(c) => {
+                            if app.search_mode {
+                                app.add_search_char(c);
                             }
                         }
                         _ => {}

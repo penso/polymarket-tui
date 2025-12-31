@@ -231,13 +231,25 @@ pub fn render(f: &mut Frame, app: &TrendingAppState) {
         .values()
         .filter(|et| et.is_watching)
         .count();
-    let header = Paragraph::new(vec![
-        Line::from("🔥 Trending Events".fg(Color::Yellow).bold()),
-        Line::from(format!(
-            "Showing {} events | Watching: {} | Use ↑↓ to navigate | Enter to watch/unwatch | 'q' to quit",
+    let filtered_count = app.filtered_events().len();
+    let header_text = if app.search_mode {
+        format!(
+            "Search: {} | Showing {}/{} events | Watching: {} | Press Esc to exit search",
+            app.search_query,
+            filtered_count,
             app.events.len(),
             watched_count
-        )),
+        )
+    } else {
+        format!(
+            "Showing {} events | Watching: {} | Press '/' to search | Use ↑↓ to navigate | Enter to watch/unwatch | 'q' to quit",
+            filtered_count,
+            watched_count
+        )
+    };
+    let header = Paragraph::new(vec![
+        Line::from("🔥 Trending Events".fg(Color::Yellow).bold()),
+        Line::from(header_text),
     ])
     .block(Block::default().borders(Borders::ALL).title("Polymarket"))
     .alignment(Alignment::Left)
@@ -257,12 +269,15 @@ pub fn render(f: &mut Frame, app: &TrendingAppState) {
     render_trades(f, app, main_chunks[1]);
 
     // Footer
-    let footer = Paragraph::new(
-        "Press 'q' to quit | ↑↓ to navigate | Enter to watch/unwatch selected event",
-    )
-    .block(Block::default().borders(Borders::ALL))
-    .alignment(Alignment::Center)
-    .style(Style::default().fg(Color::Gray));
+    let footer_text = if app.search_mode {
+        "Type to search | Esc to exit search | Enter to watch/unwatch | 'q' to quit"
+    } else {
+        "Press '/' to search | 'q' to quit | ↑↓ to navigate | Enter to watch/unwatch selected event"
+    };
+    let footer = Paragraph::new(footer_text)
+        .block(Block::default().borders(Borders::ALL))
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(Color::Gray));
     f.render_widget(footer, chunks[2]);
 }
 

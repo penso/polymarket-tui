@@ -70,9 +70,10 @@ ws-test asset_id='':
     echo ""
     
     # Connect and send subscription, then listen
-    # Use websocat with text mode, echo input, and keep connection open
+    # Use websocat with text mode and keep connection open
     echo "Waiting for messages (this may take a few seconds)..."
+    echo "You should see incoming WebSocket messages below:"
     echo ""
-    (echo "$SUB_MSG"; sleep 3600) | websocat -t --echo "wss://ws-subscriptions-clob.polymarket.com/ws/market" 2>&1 || \
+    (echo "$SUB_MSG"; sleep 3600) | websocat -t "wss://ws-subscriptions-clob.polymarket.com/ws/market" 2>&1 || \
         (echo "Connection failed. Make sure websocat is installed: brew install websocat" && exit 1)
 

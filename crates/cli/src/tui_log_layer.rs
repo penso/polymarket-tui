@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::{layer::Context, registry::LookupSpan, Layer};
+use std::fmt::Write;
 
 /// A tracing layer that captures log messages and stores them in shared state
 pub struct TuiLogLayer {
@@ -137,7 +138,7 @@ impl tracing::field::Visit for LogVisitor {
             let formatted = format!("{:?}", value);
             // Remove quotes if the value is a string (tracing adds quotes)
             if formatted.starts_with('"') && formatted.ends_with('"') {
-                self.message = formatted[1..formatted.len()-1].to_string();
+                self.message = formatted[1..formatted.len() - 1].to_string();
             } else {
                 self.message = formatted;
             }

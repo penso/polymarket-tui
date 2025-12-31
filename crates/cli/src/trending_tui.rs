@@ -740,13 +740,13 @@ pub async fn run_trending_tui(
                     let task_handle = tokio::spawn(
                         async move {
                             tracing::info!("Starting search API call for: '{}'", query_clone);
-                            
+
                             let result = gamma_client_for_task
                                 .search_events(&query_clone, Some(50))
                                 .await;
-                            
+
                             tracing::info!("Search API call completed for: '{}'", query_clone);
-                            
+
                             let query_for_final_log = query_clone.clone();
                             match result {
                                 Ok(results) => {

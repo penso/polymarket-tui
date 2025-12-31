@@ -466,6 +466,7 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
     let app_state = Arc::new(TokioMutex::new(trending_tui::TrendingAppState::new(events)));
 
     // Setup custom tracing layer to capture logs for TUI
+    // IMPORTANT: Set this up BEFORE any tracing calls
     let logs = Arc::new(TokioMutex::new(Vec::<String>::new()));
     let log_layer = tui_log_layer::TuiLogLayer::new(Arc::clone(&logs));
 
@@ -478,6 +479,9 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
         )
         .with(log_layer)
         .set_default();
+    
+    // Now that tracing is set up, we can log
+    info!("🔥 Fetching trending events...");
 
     // Connect logs to app state
     let logs_for_app = Arc::clone(&logs);

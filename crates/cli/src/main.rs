@@ -178,6 +178,16 @@ async fn run_monitor_rtds(event_slug: Option<String>) -> Result<()> {
     info!("🚀 Polymarket Real-Time Monitor (RTDS)");
     info!("Connecting to RTDS WebSocket...");
 
+    // Check for authentication
+    let has_auth = env::var("api_key").is_ok()
+        && env::var("secret").is_ok()
+        && env::var("passphrase").is_ok();
+    if has_auth {
+        info!("✓ Using authentication from environment variables");
+    } else {
+        info!("ℹ️  No authentication found (using public data only)");
+    }
+
     if let Some(ref slug) = event_slug {
         info!("Filtering activity for event: {}", slug);
     } else {
@@ -208,6 +218,17 @@ async fn run_watch_event(event: String) -> Result<()> {
     let event_slug = extract_event_slug(&event);
     info!("🎯 Watching trade activity for event: {}", event_slug);
     info!("Connecting to RTDS WebSocket...");
+
+    // Check for authentication
+    let has_auth = env::var("api_key").is_ok()
+        && env::var("secret").is_ok()
+        && env::var("passphrase").is_ok();
+    if has_auth {
+        info!("✓ Using authentication from environment variables");
+    } else {
+        info!("ℹ️  No authentication found (using public data only)");
+    }
+
     info!("Press Ctrl+C to exit");
     info!("{}", "─".repeat(80));
 

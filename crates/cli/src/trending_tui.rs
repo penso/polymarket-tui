@@ -425,15 +425,17 @@ pub async fn run_trending_tui(
                                     // Start watching
                                     let event_slug_clone = event_slug.clone();
                                     let app_state_ws = Arc::clone(&app_state);
+                                    let event_slug_for_closure = event_slug_clone.clone();
 
                                     let rtds_client = RTDSClient::new().with_event_slug(event_slug_clone.clone());
                                     let ws_handle = tokio::spawn(async move {
                                         let _ = rtds_client
                                             .connect_and_listen(move |msg| {
                                                 let app_state = Arc::clone(&app_state_ws);
+                                                let event_slug = event_slug_for_closure.clone();
                                                 tokio::spawn(async move {
                                                     let mut app = app_state.lock().await;
-                                                    if let Some(event_trades) = app.event_trades.get_mut(&event_slug_clone) {
+                                                    if let Some(event_trades) = app.event_trades.get_mut(&event_slug) {
                                                         event_trades.add_trade(&msg);
                                                     }
                                                 });

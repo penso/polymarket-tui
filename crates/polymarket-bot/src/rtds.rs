@@ -87,6 +87,12 @@ pub struct RTDSClient {
 
 impl RTDSClient {
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for RTDSClient {
+    fn default() -> Self {
         // Try to load authentication from environment variables
         // Note: Activity subscriptions (orders_matched) typically don't require auth
         // Only include auth if explicitly needed for protected subscriptions
@@ -213,7 +219,7 @@ impl RTDSClient {
         };
 
         let subscribe_json = serde_json::to_string(&subscribe_msg)
-            .map_err(|e| PolymarketError::Serialization(e))?;
+            .map_err(PolymarketError::Serialization)?;
         {
             let mut w = write.lock().await;
             w.send(Message::Text(subscribe_json))

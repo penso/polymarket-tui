@@ -53,6 +53,7 @@ pub struct Event {
     pub title: String,
     pub active: bool,
     pub closed: bool,
+    #[serde(default)]
     pub tags: Vec<Tag>,
     pub markets: Vec<Market>,
 }

@@ -1,10 +1,11 @@
-use anyhow::Result;
+use crate::cache::FileCache;
+use crate::error::Result;
 use serde::{Deserialize, Deserializer, Serialize};
 
 const GAMMA_API_BASE: &str = "https://gamma-api.polymarket.com";
 
 // Helper function to deserialize clobTokenIds which can be either a JSON string or an array
-fn deserialize_clob_token_ids<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+fn deserialize_clob_token_ids<'de, D>(deserializer: D) -> std::result::Result<Option<Vec<String>>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -81,13 +82,37 @@ pub struct Market {
 
 pub struct GammaClient {
     client: reqwest::Client,
+    cache: Option<FileCache>,
 }
 
 impl GammaClient {
     pub fn new() -> Self {
         Self {
             client: reqwest::Client::new(),
+            cache: None,
         }
+    }
+
+    /// Create a new GammaClient with file-based caching
+    pub fn with_cache<P: AsRef<std::path::Path>>(cache_dir: P) -> Result<Self> {
+        let cache = FileCache::new(cache_dir)?;
+        Ok(Self {
+            client: reqwest::Client::new(),
+            cache: Some(cache),
+        })
+    }
+
+    /// Set cache TTL (time to live) in seconds
+    pub fn set_cache_ttl(&mut self, ttl_seconds: u64) -> Result<()> {
+        if let Some(ref mut cache) = self.cache {
+            *cache = cache.clone().with_default_ttl(ttl_seconds);
+        }
+        Ok(())
+    }
+
+    /// Set cache for this client
+    pub fn set_cache(&mut self, cache: FileCache) {
+        self.cache = Some(cache);
     }
 
     pub async fn get_active_events(&self, limit: Option<usize>) -> Result<Vec<Event>> {
@@ -130,6 +155,14 @@ impl GammaClient {
     }
 
     pub async fn get_market_info_by_asset_id(&self, asset_id: &str) -> Result<Option<MarketInfo>> {
+        // Check cache first
+        if let Some(ref cache) = self.cache {
+            let cache_key = format!("market_info_{}", asset_id);
+            if let Some(cached_info) = cache.get::<MarketInfo>(&cache_key)? {
+                return Ok(Some(cached_info));
+            }
+        }
+
         let events = self.get_active_events(Some(1000)).await?;
 
         for event in events {
@@ -147,7 +180,7 @@ impl GammaClient {
                             serde_json::from_str(&market.outcome_prices).unwrap_or_default()
                         };
 
-                        return Ok(Some(MarketInfo {
+                        let market_info = MarketInfo {
                             event_title: event.title,
                             event_slug: event.slug,
                             market_question: market.question,
@@ -155,7 +188,15 @@ impl GammaClient {
                             asset_id: asset_id.to_string(),
                             outcomes,
                             prices,
-                        }));
+                        };
+
+                        // Cache the result
+                        if let Some(ref cache) = self.cache {
+                            let cache_key = format!("market_info_{}", asset_id);
+                            let _ = cache.set(&cache_key, &market_info);
+                        }
+
+                        return Ok(Some(market_info));
                     }
                 }
             }
@@ -165,7 +206,7 @@ impl GammaClient {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketInfo {
     pub event_title: String,
     pub event_slug: String,

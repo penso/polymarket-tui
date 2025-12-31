@@ -1,6 +1,10 @@
 use anyhow::{Context, Result};
-use polymarket_bot::{lock_mutex, GammaClient, MarketUpdateFormatter, PolymarketWebSocket};
+use polymarket_bot::{
+    default_cache_dir, lock_mutex, GammaClient, MarketUpdateFormatter, PolymarketWebSocket,
+};
 use std::collections::HashMap;
+use std::env;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tracing::info;
 
@@ -18,7 +22,21 @@ async fn main() -> Result<()> {
     info!("🚀 Polymarket Real-Time Monitor");
     info!("Connecting to Polymarket WebSocket...");
 
-    let gamma_client = GammaClient::new();
+    // Setup cache directory (configurable via POLYMARKET_CACHE_DIR env var)
+    let cache_dir = env::var("POLYMARKET_CACHE_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| default_cache_dir());
+    
+    info!("Using cache directory: {}", cache_dir.display());
+    
+    // Create Gamma client with file-based caching
+    // Market info is cached for 24 hours (market data rarely changes)
+    let mut gamma_client = GammaClient::with_cache(&cache_dir)
+        .context("Failed to create Gamma client with cache")?;
+    
+    // Set cache TTL to 24 hours
+    gamma_client.set_cache_ttl(24 * 60 * 60)
+        .context("Failed to set cache TTL")?;
 
     // Fetch active markets and get asset IDs
     info!("📡 Fetching active markets...");
@@ -67,7 +85,6 @@ async fn main() -> Result<()> {
     info!("Monitoring {} assets", asset_ids.len());
     info!("Press Ctrl+C to exit");
     info!("{}", "─".repeat(80));
-    info!("");
 
     // Connect and listen
     let cache_clone = Arc::clone(&market_info_cache);

@@ -23,7 +23,7 @@ build-release:
     cargo build --release
 
 # Test WebSocket connection using websocat
-# Usage: 
+# Usage:
 #   just ws-test <polymarket_url>           - Test with a Polymarket event URL (all markets)
 #   just ws-test <polymarket_url> --first   - Test with only the first market
 #   just ws-test <asset_id>                 - Test with a specific asset ID
@@ -52,7 +52,7 @@ ws-test input='' first='':
         MARKET_COUNT=$(echo "$EVENT_DATA" | jq '.[0].markets | length')
         echo "Found event: $EVENT_TITLE"
         echo "Found $MARKET_COUNT market(s) in this event"
-        
+
         # Get all asset IDs from all markets
         ALL_ASSET_IDS=""
         while IFS= read -r token_ids_json; do
@@ -64,7 +64,7 @@ ws-test input='' first='':
                 fi
             fi
         done < <(echo "$EVENT_DATA" | jq -r '.[0].markets[]?.clobTokenIds // empty')
-        
+
         # Convert to JSON array, removing duplicates and empty entries
         ASSET_IDS_ARRAY=$(echo "$ALL_ASSET_IDS" | tr ' ' '\n' | grep -v '^$' | sort -u | jq -R -s 'split("\n") | map(select(length > 0))' 2>/dev/null || echo "[]")
     elif [[ "{{input}}" =~ ^https?://.*polymarket\.com/event/ ]]; then
@@ -100,7 +100,7 @@ ws-test input='' first='':
             echo "Found $MARKET_COUNT market(s) in this event:"
             echo "$EVENT_DATA" | jq -r '.[0].markets[] | "  - \(.question)"'
             echo ""
-            
+
             ALL_ASSET_IDS=""
             while IFS= read -r token_ids_json; do
                 if [ -n "$token_ids_json" ] && [ "$token_ids_json" != "null" ]; then
@@ -111,16 +111,16 @@ ws-test input='' first='':
                     fi
                 fi
             done < <(echo "$EVENT_DATA" | jq -r '.[0].markets[]?.clobTokenIds // empty')
-            
+
             # Convert to JSON array, removing duplicates and empty entries
             ASSET_IDS_ARRAY=$(echo "$ALL_ASSET_IDS" | tr ' ' '\n' | grep -v '^$' | sort -u | jq -R -s 'split("\n") | map(select(length > 0))' 2>/dev/null || echo "[]")
         fi
-        
+
         if [ "$ASSET_IDS_ARRAY" = "[]" ] || [ -z "$ASSET_IDS_ARRAY" ]; then
             echo "Error: No active markets found for this event."
             exit 1
         fi
-        
+
         ASSET_COUNT=$(echo "$ASSET_IDS_ARRAY" | jq 'length')
         echo "Subscribing to $ASSET_COUNT asset ID(s)"
     else
@@ -148,7 +148,46 @@ ws-test input='' first='':
     echo "Press Ctrl+C to exit"
     echo ""
 
-    # Connect and send subscription, then listen
-    (echo "$SUB_MSG"; sleep 3600) | websocat -t "wss://ws-subscriptions-clob.polymarket.com/ws/market" 2>&1 || \
-        (echo "Connection failed. Make sure websocat is installed: brew install websocat" && exit 1)
+    # Connect to RTDS WebSocket (Real-Time Data Stream) for activity/trades
+    # This is what the Polymarket website uses for showing live trades
+    echo "Using RTDS WebSocket for activity monitoring..."
+    echo ""
+    
+    # Extract event slug if URL was provided
+    EVENT_SLUG=""
+    if [[ "{{input}}" =~ ^https?://.*polymarket\.com/event/ ]]; then
+        EVENT_SLUG=$(echo "{{input}}" | sed -E 's|.*polymarket\.com/event/([^/?]+).*|\1|')
+    elif [ -z "{{input}}" ]; then
+        # Get event slug from the random event we fetched
+        EVENT_SLUG=$(echo "$EVENT_DATA" | jq -r '.[0].slug' 2>/dev/null || echo "")
+    fi
+    
+    if [ -n "$EVENT_SLUG" ]; then
+        RTDS_SUB_MSG=$(jq -n \
+            --arg event_slug "$EVENT_SLUG" \
+            '{
+                action: "subscribe",
+                subscriptions: [{
+                    topic: "activity",
+                    type: "orders_matched",
+                    filters: "{\"event_slug\":\"" + $event_slug + "\"}"
+                }]
+            }')
+        
+        echo "RTDS Subscription message:"
+        echo "$RTDS_SUB_MSG" | jq .
+        echo ""
+        echo "Connecting to RTDS WebSocket..."
+        echo "Waiting for trade activity (this may take a few seconds)..."
+        echo "Press Ctrl+C to exit"
+        echo ""
+        
+        (echo "$RTDS_SUB_MSG"; sleep 3600) | websocat -t "wss://ws-live-data.polymarket.com/" 2>&1 || \
+            (echo "Connection failed. Make sure websocat is installed: brew install websocat" && exit 1)
+    else
+        # Fallback to CLOB WebSocket if no event slug
+        echo "Connecting to CLOB WebSocket..."
+        (echo "$SUB_MSG"; sleep 3600) | websocat -t "wss://ws-subscriptions-clob.polymarket.com/ws/market" 2>&1 || \
+            (echo "Connection failed. Make sure websocat is installed: brew install websocat" && exit 1)
+    fi
 

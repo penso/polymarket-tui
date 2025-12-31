@@ -1,9 +1,12 @@
 use crate::gamma::MarketInfo;
+use crate::rtds::RTDSMessage;
 use crate::websocket::{OrderUpdate, OrderbookUpdate, PriceUpdate, TradeUpdate, WebSocketMessage};
 use chrono::DateTime;
 use colored::*;
 
 pub struct MarketUpdateFormatter;
+
+pub struct RTDSFormatter;
 
 impl MarketUpdateFormatter {
     pub fn format_message(msg: &WebSocketMessage, market_info: Option<&MarketInfo>) -> String {
@@ -153,6 +156,40 @@ impl MarketUpdateFormatter {
             timestamp.dimmed(),
             update.price.bright_white().bold(),
             title
+        )
+    }
+}
+
+impl RTDSFormatter {
+    pub fn format_message(msg: &RTDSMessage) -> String {
+        let timestamp = DateTime::from_timestamp(msg.payload.timestamp, 0)
+            .map(|dt| dt.format("%H:%M:%S").to_string())
+            .unwrap_or_else(|| "now".to_string());
+
+        let side_color = if msg.payload.side == "BUY" {
+            "🟢 BUY".green().bold()
+        } else {
+            "🔴 SELL".red().bold()
+        };
+
+        let outcome_color = if msg.payload.outcome == "Yes" {
+            msg.payload.outcome.bright_green()
+        } else {
+            msg.payload.outcome.bright_red()
+        };
+
+        format!(
+            "\n{} {} {} {} @ ${:.4} ({} shares) - {} - {}\n  User: {} ({})\n",
+            "💸 TRADE".bright_yellow().bold(),
+            timestamp.dimmed(),
+            side_color,
+            outcome_color.bold(),
+            msg.payload.price,
+            msg.payload.size,
+            msg.payload.title.bold(),
+            msg.payload.event_slug.dimmed(),
+            msg.payload.name.bright_white(),
+            msg.payload.pseudonym.dimmed()
         )
     }
 }

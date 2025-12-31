@@ -26,16 +26,17 @@ async fn main() -> Result<()> {
     let cache_dir = env::var("POLYMARKET_CACHE_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|_| default_cache_dir());
-    
+
     info!("Using cache directory: {}", cache_dir.display());
-    
+
     // Create Gamma client with file-based caching
     // Market info is cached for 24 hours (market data rarely changes)
-    let mut gamma_client = GammaClient::with_cache(&cache_dir)
-        .context("Failed to create Gamma client with cache")?;
-    
+    let mut gamma_client =
+        GammaClient::with_cache(&cache_dir).context("Failed to create Gamma client with cache")?;
+
     // Set cache TTL to 24 hours
-    gamma_client.set_cache_ttl(24 * 60 * 60)
+    gamma_client
+        .set_cache_ttl(24 * 60 * 60)
         .context("Failed to set cache TTL")?;
 
     // Fetch active markets and get asset IDs

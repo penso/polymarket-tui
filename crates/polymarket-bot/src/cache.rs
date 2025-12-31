@@ -43,7 +43,7 @@ impl FileCache {
         T: for<'de> Deserialize<'de>,
     {
         let cache_file = self.cache_file_path(key);
-        
+
         if !cache_file.exists() {
             return Ok(None);
         }
@@ -77,7 +77,7 @@ impl FileCache {
         T: Serialize,
     {
         let cache_file = self.cache_file_path(key);
-        
+
         let cached_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|e| PolymarketError::InvalidData(format!("System time error: {}", e)))?
@@ -96,7 +96,7 @@ impl FileCache {
         let temp_file = cache_file.with_extension("tmp");
         fs::write(&temp_file, json)
             .map_err(|e| PolymarketError::InvalidData(format!("Failed to write cache file: {}", e)))?;
-        
+
         fs::rename(&temp_file, &cache_file)
             .map_err(|e| PolymarketError::InvalidData(format!("Failed to rename cache file: {}", e)))?;
 

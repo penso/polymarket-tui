@@ -79,6 +79,9 @@ pub struct TrendingAppState {
     // Search functionality
     pub search_mode: bool,
     pub search_query: String,
+    // Log messages captured from tracing
+    pub logs: Vec<String>,
+    pub log_scroll: usize,
 }
 
 impl TrendingAppState {
@@ -92,7 +95,21 @@ impl TrendingAppState {
             ws_handles: HashMap::new(),
             search_mode: false,
             search_query: String::new(),
+            logs: Vec::new(),
+            log_scroll: 0,
         }
+    }
+
+    pub fn add_log(&mut self, level: &str, message: String) {
+        // Format: [LEVEL] message
+        let formatted = format!("[{}] {}", level, message);
+        self.logs.push(formatted);
+        // Keep only last 1000 logs
+        if self.logs.len() > 1000 {
+            self.logs.remove(0);
+        }
+        // Auto-scroll to bottom
+        self.log_scroll = self.logs.len().saturating_sub(10);
     }
 
     /// Get filtered events based on search query
@@ -222,6 +239,7 @@ pub fn render(f: &mut Frame, app: &TrendingAppState) {
         .constraints([
             Constraint::Length(header_height), // Header (with search if active)
             Constraint::Min(0),                // Main content
+            Constraint::Length(8),              // Logs area
             Constraint::Length(3),              // Footer
         ])
         .split(f.size());
@@ -308,6 +326,9 @@ pub fn render(f: &mut Frame, app: &TrendingAppState) {
     render_events_list(f, app, main_chunks[0]);
     render_trades(f, app, main_chunks[1]);
 
+    // Logs area
+    render_logs(f, app, chunks[2]);
+
     // Footer
     let footer_text = if app.search_mode {
         "Type to search | Esc to exit search | Enter to watch/unwatch | 'q' to quit"
@@ -318,7 +339,7 @@ pub fn render(f: &mut Frame, app: &TrendingAppState) {
         .block(Block::default().borders(Borders::ALL))
         .alignment(Alignment::Center)
         .style(Style::default().fg(Color::Gray));
-    f.render_widget(footer, chunks[2]);
+    f.render_widget(footer, chunks[3]);
 }
 
 fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
@@ -591,6 +612,30 @@ fn truncate(s: &str, max_len: usize) -> String {
     } else {
         format!("{}...", &s[..max_len.saturating_sub(3)])
     }
+}
+
+fn render_logs(f: &mut Frame, app: &TrendingAppState, area: Rect) {
+    let log_items: Vec<ListItem> = app
+        .logs
+        .iter()
+        .skip(app.log_scroll)
+        .take(area.height as usize - 2) // Reserve space for borders
+        .map(|log| {
+            let color = if log.starts_with("[WARN]") {
+                Color::Yellow
+            } else if log.starts_with("[ERROR]") {
+                Color::Red
+            } else {
+                Color::Gray
+            };
+            ListItem::new(log.as_str()).style(Style::default().fg(color))
+        })
+        .collect();
+
+    let logs_list = List::new(log_items)
+        .block(Block::default().borders(Borders::ALL).title("Logs"))
+        .style(Style::default().fg(Color::White));
+    f.render_widget(logs_list, area);
 }
 
 pub async fn run_trending_tui(

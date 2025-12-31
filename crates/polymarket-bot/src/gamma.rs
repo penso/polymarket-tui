@@ -279,34 +279,33 @@ impl GammaClient {
             limit_per_type
         );
 
-        #[cfg(feature = "tracing")]
+        // Always log the URL being called
         tracing::info!("Search API call: GET {}", url);
-        #[cfg(not(feature = "tracing"))]
-        eprintln!("Search API call: GET {}", url);
-
-        let response = self.client.get(&url).send().await?;
-
-        #[cfg(feature = "tracing")]
-        tracing::info!("Search API response status: {}", response.status());
-        #[cfg(not(feature = "tracing"))]
-        eprintln!("Search API response status: {}", response.status());
-
+        
+        let response = self.client.get(&url).send().await
+            .map_err(|e| {
+                tracing::error!("Failed to send search request: {}", e);
+                e
+            })?;
+        
         let status = response.status();
-        let response_text = response.text().await?;
+        tracing::info!("Search API response status: {}", status);
 
-        #[cfg(feature = "tracing")]
-        tracing::debug!("Search API response body (first 500 chars): {}",
-            if response_text.len() > 500 {
-                &response_text[..500]
-            } else {
-                &response_text
+        let response_text = response.text().await
+            .map_err(|e| {
+                tracing::error!("Failed to read search response body: {}", e);
+                e
+            })?;
+        
+        tracing::debug!("Search API response body (first 500 chars): {}", 
+            if response_text.len() > 500 { 
+                &response_text[..500] 
+            } else { 
+                &response_text 
             });
-
+        
         if !status.is_success() {
-            #[cfg(feature = "tracing")]
             tracing::warn!("Search API error: status={}, body={}", status, response_text);
-            #[cfg(not(feature = "tracing"))]
-            eprintln!("Search API error: status={}, body={}", status, response_text);
             return Err(crate::error::PolymarketError::InvalidData(format!(
                 "Search API returned status {}: {}",
                 status, response_text
@@ -324,19 +323,20 @@ impl GammaClient {
             has_more: Option<bool>,
         }
 
+        tracing::info!("Parsing search response JSON...");
         let search_response: SearchResponse = serde_json::from_str(&response_text)
             .map_err(|e| {
-                #[cfg(feature = "tracing")]
-                tracing::error!("Failed to parse search response: {}, body: {}", e, response_text);
-                #[cfg(not(feature = "tracing"))]
-                eprintln!("Failed to parse search response: {}, body: {}", e, response_text);
+                tracing::error!("Failed to parse search response: {}, body (first 1000 chars): {}", 
+                    e, 
+                    if response_text.len() > 1000 { 
+                        &response_text[..1000] 
+                    } else { 
+                        &response_text 
+                    });
                 crate::error::PolymarketError::Serialization(e)
             })?;
-
-        #[cfg(feature = "tracing")]
+        
         tracing::info!("Search API returned {} events", search_response.events.len());
-        #[cfg(not(feature = "tracing"))]
-        eprintln!("Search API returned {} events", search_response.events.len());
 
         Ok(search_response.events)
     }

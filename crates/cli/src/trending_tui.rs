@@ -724,21 +724,25 @@ pub async fn run_trending_tui(
                     let query_clone = query.clone();
                     // Create a new GammaClient for the async task
                     let gamma_client_for_task = GammaClient::new();
-                    
+
                     {
                         let mut app = app_state.lock().await;
                         app.set_searching(true);
                     }
-                    
+
                     tracing::info!("Triggering search for query: '{}'", query_clone);
                     
-                    tokio::spawn(async move {
+                    let search_handle = tokio::spawn(async move {
                         tracing::info!("Starting search API call for: '{}'", query_clone);
-                        match gamma_client_for_task.search_events(&query_clone, Some(50)).await {
+                        let result = gamma_client_for_task.search_events(&query_clone, Some(50)).await;
+                        tracing::info!("Search API call completed for: '{}'", query_clone);
+                        
+                        match result {
                             Ok(results) => {
                                 tracing::info!("Search API returned {} results for: '{}'", results.len(), query_clone);
                                 let mut app = app_state_clone.lock().await;
                                 app.set_search_results(results, query_clone);
+                                tracing::info!("Search results set in app state for: '{}'", query_clone);
                             }
                             Err(e) => {
                                 // On error, fall back to local search
@@ -746,7 +750,16 @@ pub async fn run_trending_tui(
                                 let mut app = app_state_clone.lock().await;
                                 app.set_searching(false);
                                 app.search_results.clear();
+                                tracing::warn!("Cleared search results due to error for: '{}'", query_clone);
                             }
+                        }
+                    });
+                    
+                    // Log if the task panics
+                    let query_for_error = query_clone.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = search_handle.await {
+                            tracing::error!("Search task panicked for '{}': {:?}", query_for_error, e);
                         }
                     });
                 } else if query.is_empty() {

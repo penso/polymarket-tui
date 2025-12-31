@@ -194,7 +194,7 @@ impl GammaClient {
         closed: Option<bool>,
         limit: Option<usize>,
     ) -> Result<Vec<Market>> {
-        let mut url = format!("{}/markets", GAMMA_API_BASE);
+        let url = format!("{}/markets", GAMMA_API_BASE);
         let mut params = Vec::new();
         
         if let Some(active) = active {

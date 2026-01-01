@@ -160,6 +160,34 @@ fn get_panel_at_position(
     }
 }
 
+/// Fetch trade count for an event's markets using authenticated CLOB API
+/// Returns total number of trades across all markets in the event
+async fn fetch_event_trade_count(
+    clob_client: &ClobClient,
+    condition_ids: Vec<String>,
+) -> Option<usize> {
+    if !clob_client.has_auth() {
+        return None;
+    }
+
+    let mut total_count = 0;
+    for condition_id in condition_ids {
+        match clob_client
+            .get_trades_authenticated(&condition_id, Some(1000))
+            .await
+        {
+            Ok(trades) => {
+                total_count += trades.len();
+            },
+            Err(_e) => {
+                log_debug!("Failed to fetch trades for market {}: {}", condition_id, _e);
+                // Continue with other markets even if one fails
+            },
+        }
+    }
+    Some(total_count)
+}
+
 /// Fetch market prices using the batch API
 /// Returns a HashMap mapping asset_id to the best ask price
 async fn fetch_market_prices_batch(
@@ -246,6 +274,33 @@ pub async fn run_trending_tui(
     let mut last_selected_event_slug: Option<String> = None;
     let mut last_click: Option<(tokio::time::Instant, u16, u16)> = None; // (time, column, row)
 
+    // Fetch trade counts for the initially selected event (if authenticated)
+    {
+        let app = app_state.lock().await;
+        if app.has_clob_auth
+            && let Some(event) = app.selected_event()
+        {
+            let current_slug = event.slug.clone();
+            let condition_ids: Vec<String> =
+                event.markets.iter().filter_map(|m| m.id.clone()).collect();
+            if !condition_ids.is_empty() {
+                let app_state_clone = Arc::clone(&app_state);
+                let slug_clone = current_slug.clone();
+                let clob_client = ClobClient::from_env();
+                last_selected_event_slug = Some(current_slug);
+
+                tokio::spawn(async move {
+                    if let Some(count) = fetch_event_trade_count(&clob_client, condition_ids).await
+                    {
+                        let mut app = app_state_clone.lock().await;
+                        app.event_trade_counts.insert(slug_clone, count);
+                        log_info!("Fetched initial trade count: {} trades", count);
+                    }
+                });
+            }
+        }
+    }
+
     loop {
         // Handle search debouncing and API calls
         // Check debounce timer and trigger search if needed
@@ -323,7 +378,8 @@ pub async fn run_trending_tui(
                 // Focus panel on hover (mouse move)
                 if let MouseEventKind::Moved = mouse.kind {
                     let mut app = app_state.lock().await;
-                    let size = terminal.size()?;
+                    let term_size = terminal.size()?;
+                    let size = Rect::new(0, 0, term_size.width, term_size.height);
                     if let Some(panel) = get_panel_at_position(
                         mouse.column,
                         mouse.row,
@@ -347,7 +403,38 @@ pub async fn run_trending_tui(
                     last_click = Some((now, mouse.column, mouse.row));
 
                     let mut app = app_state.lock().await;
-                    let size = terminal.size()?;
+                    let term_size = terminal.size()?;
+                    let size = Rect::new(0, 0, term_size.width, term_size.height);
+
+                    // Check for tab clicks first (tabs are on the first line)
+                    if let Some(new_filter) = render::get_clicked_tab(mouse.column, mouse.row, size)
+                    {
+                        if new_filter != app.event_filter {
+                            app.event_filter = new_filter;
+                            app.pagination.order_by = new_filter.order_by().to_string();
+                            app.pagination.ascending = false;
+                            app.navigation.selected_index = 0;
+                            app.scroll.events_list = 0;
+
+                            // Trigger refresh with new filter
+                            let app_state_clone = Arc::clone(&app_state);
+                            let gamma_client = GammaClient::new();
+                            let order_by = new_filter.order_by().to_string();
+
+                            tokio::spawn(async move {
+                                if let Ok(events) = gamma_client
+                                    .get_trending_events(Some(&order_by), Some(false), Some(150))
+                                    .await
+                                {
+                                    let mut app = app_state_clone.lock().await;
+                                    app.events = events;
+                                    app.pagination.current_limit = app.events.len();
+                                }
+                            });
+                        }
+                        continue;
+                    }
+
                     let (_, events_list_area, ..) =
                         calculate_panel_areas(size, app.is_in_filter_mode());
 
@@ -371,60 +458,59 @@ pub async fn run_trending_tui(
                                 app.scroll.markets = 0;
 
                                 // Double-click toggles watching (same as Enter)
-                                if is_double_click {
-                                    if let Some(event_slug) = app.selected_event_slug() {
-                                        if app.is_watching(&event_slug) {
-                                            // Stop watching
-                                            app.stop_watching(&event_slug);
-                                        } else {
-                                            // Start watching
-                                            let event_slug_clone = event_slug.clone();
+                                if is_double_click
+                                    && let Some(event_slug) = app.selected_event_slug()
+                                {
+                                    if app.is_watching(&event_slug) {
+                                        // Stop watching
+                                        app.stop_watching(&event_slug);
+                                    } else {
+                                        // Start watching
+                                        let event_slug_clone = event_slug.clone();
 
-                                            app.trades
-                                                .event_trades
-                                                .entry(event_slug_clone.clone())
-                                                .or_insert_with(EventTrades::new);
+                                        app.trades
+                                            .event_trades
+                                            .entry(event_slug_clone.clone())
+                                            .or_insert_with(EventTrades::new);
 
-                                            let app_state_ws = Arc::clone(&app_state);
-                                            let event_slug_for_closure = event_slug_clone.clone();
+                                        let app_state_ws = Arc::clone(&app_state);
+                                        let event_slug_for_closure = event_slug_clone.clone();
 
-                                            let rtds_client = RTDSClient::new()
-                                                .with_event_slug(event_slug_clone.clone());
+                                        let rtds_client = RTDSClient::new()
+                                            .with_event_slug(event_slug_clone.clone());
 
-                                            log_info!(
-                                                "Starting RTDS WebSocket for event: {}",
-                                                event_slug_clone
-                                            );
+                                        log_info!(
+                                            "Starting RTDS WebSocket for event: {}",
+                                            event_slug_clone
+                                        );
 
-                                            let ws_handle = tokio::spawn(async move {
-                                                match rtds_client
-                                                    .connect_and_listen(move |msg| {
-                                                        let app_state = Arc::clone(&app_state_ws);
-                                                        let event_slug =
-                                                            event_slug_for_closure.clone();
+                                        let ws_handle = tokio::spawn(async move {
+                                            match rtds_client
+                                                .connect_and_listen(move |msg| {
+                                                    let app_state = Arc::clone(&app_state_ws);
+                                                    let event_slug = event_slug_for_closure.clone();
 
-                                                        tokio::spawn(async move {
-                                                            let mut app = app_state.lock().await;
-                                                            if let Some(event_trades) = app
-                                                                .trades
-                                                                .event_trades
-                                                                .get_mut(&event_slug)
-                                                            {
-                                                                event_trades.add_trade(&msg);
-                                                            }
-                                                        });
-                                                    })
-                                                    .await
-                                                {
-                                                    Ok(()) => {},
-                                                    Err(_e) => {
-                                                        log_error!("RTDS WebSocket error: {}", _e);
-                                                    },
-                                                }
-                                            });
+                                                    tokio::spawn(async move {
+                                                        let mut app = app_state.lock().await;
+                                                        if let Some(event_trades) = app
+                                                            .trades
+                                                            .event_trades
+                                                            .get_mut(&event_slug)
+                                                        {
+                                                            event_trades.add_trade(&msg);
+                                                        }
+                                                    });
+                                                })
+                                                .await
+                                            {
+                                                Ok(()) => {},
+                                                Err(_e) => {
+                                                    log_error!("RTDS WebSocket error: {}", _e);
+                                                },
+                                            }
+                                        });
 
-                                            app.start_watching(event_slug_clone, ws_handle);
-                                        }
+                                        app.start_watching(event_slug_clone, ws_handle);
                                     }
                                 }
                             }
@@ -434,7 +520,8 @@ pub async fn run_trending_tui(
                 // Handle scroll wheel
                 if let MouseEventKind::ScrollUp = mouse.kind {
                     let mut app = app_state.lock().await;
-                    let size = terminal.size()?;
+                    let term_size = terminal.size()?;
+                    let size = Rect::new(0, 0, term_size.width, term_size.height);
                     if let Some(panel) = get_panel_at_position(
                         mouse.column,
                         mouse.row,
@@ -469,7 +556,8 @@ pub async fn run_trending_tui(
                 }
                 if let MouseEventKind::ScrollDown = mouse.kind {
                     let mut app = app_state.lock().await;
-                    let size = terminal.size()?;
+                    let term_size = terminal.size()?;
+                    let size = Rect::new(0, 0, term_size.width, term_size.height);
                     if let Some(panel) = get_panel_at_position(
                         mouse.column,
                         mouse.row,
@@ -602,11 +690,20 @@ pub async fn run_trending_tui(
                         }
                     },
                     KeyCode::Esc => {
-                        if app.is_in_filter_mode() {
+                        // Close popup first, then filter mode, then quit
+                        if app.has_popup() {
+                            app.close_popup();
+                        } else if app.is_in_filter_mode() {
                             app.exit_search_mode();
                         } else {
                             app.should_quit = true;
                             break;
+                        }
+                    },
+                    KeyCode::Char('?') => {
+                        // Show help popup
+                        if !app.is_in_filter_mode() {
+                            app.show_popup(state::PopupType::Help);
                         }
                     },
                     KeyCode::Char('/') => {
@@ -675,8 +772,8 @@ pub async fn run_trending_tui(
                                         app.events = new_events;
                                         log_info!("Events refreshed ({} events)", app.events.len());
                                     },
-                                    Err(e) => {
-                                        log_info!("Failed to refresh events: {}", e);
+                                    Err(_e) => {
+                                        log_info!("Failed to refresh events: {}", _e);
                                     },
                                 }
                             });
@@ -857,12 +954,12 @@ pub async fn run_trending_tui(
                                 },
                                 FocusedPanel::EventsList => {
                                     app.move_up();
-                                    // Fetch market prices when event selection changes
+                                    // Fetch market prices and trade counts when event selection changes
                                     if let Some(event) = app.selected_event() {
                                         let current_slug = event.slug.clone();
                                         if last_selected_event_slug.as_ref() != Some(&current_slug)
                                         {
-                                            last_selected_event_slug = Some(current_slug);
+                                            last_selected_event_slug = Some(current_slug.clone());
                                             // Only fetch prices for active (non-closed) markets
                                             let active_markets: Vec<_> = event
                                                 .markets
@@ -873,7 +970,7 @@ pub async fn run_trending_tui(
 
                                             if !active_markets.is_empty() {
                                                 let app_state_clone = Arc::clone(&app_state);
-                                                let clob_client = ClobClient::new();
+                                                let clob_client = ClobClient::from_env();
 
                                                 tokio::spawn(async move {
                                                     let prices = fetch_market_prices_batch(
@@ -884,6 +981,43 @@ pub async fn run_trending_tui(
                                                     let mut app = app_state_clone.lock().await;
                                                     app.market_prices.extend(prices);
                                                 });
+                                            }
+
+                                            // Fetch trade counts if authenticated and not already fetched
+                                            let has_auth = app.has_clob_auth;
+                                            let already_fetched =
+                                                app.event_trade_counts.contains_key(&current_slug);
+                                            if has_auth && !already_fetched {
+                                                // Market ID is the condition_id used by CLOB API
+                                                let condition_ids: Vec<String> = event
+                                                    .markets
+                                                    .iter()
+                                                    .filter_map(|m| m.id.clone())
+                                                    .collect();
+                                                if !condition_ids.is_empty() {
+                                                    let app_state_clone = Arc::clone(&app_state);
+                                                    let slug_clone = current_slug.clone();
+                                                    let clob_client = ClobClient::from_env();
+
+                                                    tokio::spawn(async move {
+                                                        if let Some(count) =
+                                                            fetch_event_trade_count(
+                                                                &clob_client,
+                                                                condition_ids,
+                                                            )
+                                                            .await
+                                                        {
+                                                            let mut app =
+                                                                app_state_clone.lock().await;
+                                                            app.event_trade_counts
+                                                                .insert(slug_clone, count);
+                                                            log_info!(
+                                                                "Fetched trade count: {} trades",
+                                                                count
+                                                            );
+                                                        }
+                                                    });
+                                                }
                                             }
                                         }
                                     }
@@ -919,12 +1053,12 @@ pub async fn run_trending_tui(
                                 },
                                 FocusedPanel::EventsList => {
                                     app.move_down();
-                                    // Fetch market prices when event selection changes
+                                    // Fetch market prices and trade counts when event selection changes
                                     if let Some(event) = app.selected_event() {
                                         let current_slug = event.slug.clone();
                                         if last_selected_event_slug.as_ref() != Some(&current_slug)
                                         {
-                                            last_selected_event_slug = Some(current_slug);
+                                            last_selected_event_slug = Some(current_slug.clone());
                                             // Only fetch prices for active (non-closed) markets
                                             let active_markets: Vec<_> = event
                                                 .markets
@@ -935,7 +1069,7 @@ pub async fn run_trending_tui(
 
                                             if !active_markets.is_empty() {
                                                 let app_state_clone = Arc::clone(&app_state);
-                                                let clob_client = ClobClient::new();
+                                                let clob_client = ClobClient::from_env();
 
                                                 tokio::spawn(async move {
                                                     let prices = fetch_market_prices_batch(
@@ -946,6 +1080,43 @@ pub async fn run_trending_tui(
                                                     let mut app = app_state_clone.lock().await;
                                                     app.market_prices.extend(prices);
                                                 });
+                                            }
+
+                                            // Fetch trade counts if authenticated and not already fetched
+                                            let has_auth = app.has_clob_auth;
+                                            let already_fetched =
+                                                app.event_trade_counts.contains_key(&current_slug);
+                                            if has_auth && !already_fetched {
+                                                // Market ID is the condition_id used by CLOB API
+                                                let condition_ids: Vec<String> = event
+                                                    .markets
+                                                    .iter()
+                                                    .filter_map(|m| m.id.clone())
+                                                    .collect();
+                                                if !condition_ids.is_empty() {
+                                                    let app_state_clone = Arc::clone(&app_state);
+                                                    let slug_clone = current_slug.clone();
+                                                    let clob_client = ClobClient::from_env();
+
+                                                    tokio::spawn(async move {
+                                                        if let Some(count) =
+                                                            fetch_event_trade_count(
+                                                                &clob_client,
+                                                                condition_ids,
+                                                            )
+                                                            .await
+                                                        {
+                                                            let mut app =
+                                                                app_state_clone.lock().await;
+                                                            app.event_trade_counts
+                                                                .insert(slug_clone, count);
+                                                            log_info!(
+                                                                "Fetched trade count: {} trades",
+                                                                count
+                                                            );
+                                                        }
+                                                    });
+                                                }
                                             }
                                         }
                                     }

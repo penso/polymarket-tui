@@ -5,7 +5,12 @@
 
 use {
     crate::error::Result,
+    base64::{Engine, engine::general_purpose::STANDARD},
+    hmac::{Hmac, Mac},
+    reqwest::header::{HeaderMap, HeaderValue},
     serde::{Deserialize, Serialize},
+    sha2::Sha256,
+    std::time::{SystemTime, UNIX_EPOCH},
 };
 
 /// Macro for conditional info logging based on tracing feature
@@ -199,12 +204,11 @@ pub struct Order {
 /// CLOB REST API client
 pub struct ClobClient {
     client: reqwest::Client,
-    #[allow(dead_code)] // Will be used for authentication signing
     api_key: Option<String>,
-    #[allow(dead_code)] // Will be used for authentication signing
     api_secret: Option<String>,
-    #[allow(dead_code)] // Will be used for authentication signing
     passphrase: Option<String>,
+    /// Polygon wallet address (required for L2 authentication)
+    address: Option<String>,
 }
 
 impl ClobClient {
@@ -215,29 +219,84 @@ impl ClobClient {
             api_key: None,
             api_secret: None,
             passphrase: None,
+            address: None,
         }
     }
 
     /// Create a new CLOB client with authentication
-    pub fn with_auth(api_key: String, api_secret: String, passphrase: String) -> Self {
+    pub fn with_auth(
+        api_key: String,
+        api_secret: String,
+        passphrase: String,
+        address: String,
+    ) -> Self {
         Self {
             client: reqwest::Client::new(),
             api_key: Some(api_key),
             api_secret: Some(api_secret),
             passphrase: Some(passphrase),
+            address: Some(address),
         }
     }
 
     /// Create a new CLOB client from environment variables
+    /// Requires: api_key, secret, passphrase, address (or poly_address)
     pub fn from_env() -> Self {
-        if let (Ok(api_key), Ok(api_secret), Ok(passphrase)) = (
+        let address = std::env::var("address")
+            .or_else(|_| std::env::var("poly_address"))
+            .or_else(|_| std::env::var("POLY_ADDRESS"))
+            .ok();
+
+        if let (Ok(api_key), Ok(api_secret), Ok(passphrase), Some(addr)) = (
             std::env::var("api_key"),
             std::env::var("secret"),
             std::env::var("passphrase"),
+            address,
         ) {
-            Self::with_auth(api_key, api_secret, passphrase)
+            Self::with_auth(api_key, api_secret, passphrase, addr)
         } else {
             Self::new()
+        }
+    }
+
+    /// Check if the client has authentication credentials
+    pub fn has_auth(&self) -> bool {
+        self.api_key.is_some()
+            && self.api_secret.is_some()
+            && self.passphrase.is_some()
+            && self.address.is_some()
+    }
+
+    /// Create L2 authentication headers for a request
+    fn create_l2_headers(
+        &self,
+        method: &str,
+        request_path: &str,
+        body: Option<&str>,
+    ) -> Option<HeaderMap> {
+        if let (Some(api_key), Some(secret), Some(passphrase), Some(address)) = (
+            &self.api_key,
+            &self.api_secret,
+            &self.passphrase,
+            &self.address,
+        ) {
+            match L2Headers::new(
+                api_key,
+                secret,
+                passphrase,
+                address,
+                method,
+                request_path,
+                body,
+            ) {
+                Ok(headers) => Some(headers.to_header_map()),
+                Err(e) => {
+                    log_debug!("Failed to create L2 headers: {}", e);
+                    None
+                },
+            }
+        } else {
+            None
         }
     }
 
@@ -386,6 +445,67 @@ impl ClobClient {
             .json()
             .await?;
         Ok(trades)
+    }
+
+    /// Get recent trades for a specific market with authentication
+    /// Returns trade count if authenticated, otherwise returns an error
+    pub async fn get_trades_authenticated(
+        &self,
+        market: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<Trade>> {
+        // Build the query string
+        let mut query_parts = vec![format!("market={}", market)];
+        if let Some(limit) = limit {
+            query_parts.push(format!("limit={}", limit));
+        }
+        let query_string = query_parts.join("&");
+        let request_path = format!("/trades?{}", query_string);
+
+        log_info!("GET {}{} (authenticated)", CLOB_API_BASE, request_path);
+
+        // Create L2 auth headers
+        let headers = self
+            .create_l2_headers("GET", &request_path, None)
+            .ok_or_else(|| {
+                crate::error::PolymarketError::InvalidData(
+                    "Missing authentication credentials".to_string(),
+                )
+            })?;
+
+        let url = format!("{}{}", CLOB_API_BASE, request_path);
+        let response = self.client.get(&url).headers(headers).send().await?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            log_info!("GET {} -> error: {} - {}", request_path, status, error_text);
+            return Err(crate::error::PolymarketError::InvalidData(format!(
+                "HTTP {}: {}",
+                status, error_text
+            )));
+        }
+
+        let trades: Vec<Trade> = response.json().await?;
+        log_info!("GET {} -> {} trades", request_path, trades.len());
+        Ok(trades)
+    }
+
+    /// Get trade count for a market (uses authenticated endpoint if credentials available)
+    pub async fn get_trade_count(&self, market: &str) -> Result<usize> {
+        if self.has_auth() {
+            // Use authenticated endpoint to get all trades
+            let trades = self.get_trades_authenticated(market, Some(1000)).await?;
+            Ok(trades.len())
+        } else {
+            // Without auth, we can't get trade counts reliably
+            Err(crate::error::PolymarketError::InvalidData(
+                "Authentication required to fetch trade counts".to_string(),
+            ))
+        }
     }
 
     /// Get user's orders (requires authentication)
@@ -600,5 +720,107 @@ impl ClobClient {
 impl Default for ClobClient {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+type HmacSha256 = Hmac<Sha256>;
+
+/// Build HMAC-SHA256 signature for L2 authentication
+///
+/// The signature is created by concatenating: timestamp + method + requestPath + body (optional)
+/// Then signing with HMAC-SHA256 using the base64-decoded secret.
+fn build_hmac_signature(
+    secret: &str,
+    timestamp: i64,
+    method: &str,
+    request_path: &str,
+    body: Option<&str>,
+) -> std::result::Result<String, String> {
+    // Decode the base64 standard secret
+    let secret_bytes = STANDARD
+        .decode(secret)
+        .map_err(|e| format!("Failed to decode secret: {}", e))?;
+
+    // Build the message: timestamp + method + requestPath + body
+    let mut message = format!("{}{}{}", timestamp, method, request_path);
+    if let Some(body) = body {
+        message.push_str(body);
+    }
+
+    // Create HMAC-SHA256
+    let mut mac = HmacSha256::new_from_slice(&secret_bytes)
+        .map_err(|e| format!("Failed to create HMAC: {}", e))?;
+    mac.update(message.as_bytes());
+
+    // Get the signature and encode as base64 standard
+    let result = mac.finalize();
+    let signature = STANDARD.encode(result.into_bytes());
+
+    Ok(signature)
+}
+
+/// L2 authentication headers for CLOB API requests
+pub struct L2Headers {
+    pub api_key: String,
+    pub signature: String,
+    pub timestamp: i64,
+    pub passphrase: String,
+    pub address: String,
+}
+
+impl L2Headers {
+    /// Create L2 authentication headers
+    pub fn new(
+        api_key: &str,
+        secret: &str,
+        passphrase: &str,
+        address: &str,
+        method: &str,
+        request_path: &str,
+        body: Option<&str>,
+    ) -> std::result::Result<Self, String> {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| format!("Failed to get timestamp: {}", e))?
+            .as_secs() as i64;
+
+        let signature = build_hmac_signature(secret, timestamp, method, request_path, body)?;
+
+        Ok(Self {
+            api_key: api_key.to_string(),
+            signature,
+            timestamp,
+            passphrase: passphrase.to_string(),
+            address: address.to_string(),
+        })
+    }
+
+    /// Convert to reqwest HeaderMap
+    /// Uses underscore format as per Polymarket API spec: POLY_API_KEY, POLY_SIGNATURE, etc.
+    pub fn to_header_map(&self) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "POLY_ADDRESS",
+            HeaderValue::from_str(&self.address).unwrap_or_else(|_| HeaderValue::from_static("")),
+        );
+        headers.insert(
+            "POLY_API_KEY",
+            HeaderValue::from_str(&self.api_key).unwrap_or_else(|_| HeaderValue::from_static("")),
+        );
+        headers.insert(
+            "POLY_SIGNATURE",
+            HeaderValue::from_str(&self.signature).unwrap_or_else(|_| HeaderValue::from_static("")),
+        );
+        headers.insert(
+            "POLY_TIMESTAMP",
+            HeaderValue::from_str(&self.timestamp.to_string())
+                .unwrap_or_else(|_| HeaderValue::from_static("")),
+        );
+        headers.insert(
+            "POLY_PASSPHRASE",
+            HeaderValue::from_str(&self.passphrase)
+                .unwrap_or_else(|_| HeaderValue::from_static("")),
+        );
+        headers
     }
 }

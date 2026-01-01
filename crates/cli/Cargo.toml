@@ -27,7 +27,7 @@ clap = { version = "4.5", features = ["derive"] }
 colored = "2.1"
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "ansi"], optional = true }
-ratatui = { version = "0.27", optional = true }
+ratatui = { version = "0.29", optional = true }
 crossterm = { version = "0.28", optional = true }
 unicode-width = { version = "0.2", optional = true }
 chrono = "0.4"

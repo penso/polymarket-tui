@@ -92,7 +92,7 @@ pub fn render(f: &mut Frame, app: &AppState) {
             Constraint::Min(0),    // Trades Table
             Constraint::Length(3), // Footer
         ])
-        .split(f.size());
+        .split(f.area());
 
     // Header
     let loading_indicator = if app.is_loading {

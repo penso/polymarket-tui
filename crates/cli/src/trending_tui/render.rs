@@ -1,22 +1,49 @@
 //! Render functions for the trending TUI
 
 use {
-    super::state::{EventFilter, FocusedPanel, SearchMode, TrendingAppState},
+    super::state::{EventFilter, FocusedPanel, PopupType, SearchMode, TrendingAppState},
     chrono::{DateTime, Utc},
     polymarket_api::gamma::Event,
     ratatui::{
         Frame,
-        layout::{Alignment, Constraint, Direction, Layout, Rect},
+        layout::{Alignment, Constraint, Direction, Layout, Rect, Spacing},
         prelude::Stylize,
         style::{Color, Modifier, Style},
         text::{Line, Span},
         widgets::{
-            Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Scrollbar,
-            ScrollbarOrientation, ScrollbarState, Table, Wrap,
+            Block, Borders, Cell, Clear, LineGauge, List, ListItem, ListState, Paragraph, Row,
+            Scrollbar, ScrollbarOrientation, ScrollbarState, Table, Tabs, Wrap,
         },
     },
     unicode_width::UnicodeWidthStr,
 };
+
+/// Check if a click is on a tab and return which filter it corresponds to
+/// Tabs are rendered on the first line of the header area
+/// Tab format with default padding: " Trending  Breaking  New "
+pub fn get_clicked_tab(x: u16, y: u16, _size: Rect) -> Option<EventFilter> {
+    // Tabs are on the first line (y = 0)
+    if y != 0 {
+        return None;
+    }
+
+    // Tabs widget with default padding (" ") and divider (" "):
+    // Format: " Trending  Breaking  New "
+    // Positions: 0-9 = " Trending", 10-19 = " Breaking", 20-24 = " New"
+    // Each tab has 1 space padding on each side, divider is 1 space
+    let tab_ranges = [
+        (0u16, 10u16, EventFilter::Trending),  // " Trending "
+        (10u16, 20u16, EventFilter::Breaking), // " Breaking "
+        (20u16, 25u16, EventFilter::New),      // " New "
+    ];
+
+    for (start, end, filter) in tab_ranges {
+        if x >= start && x < end {
+            return Some(filter);
+        }
+    }
+    None
+}
 
 /// Format a price (0.0-1.0) as cents like the Polymarket website
 /// Examples: 0.01 -> "1¢", 0.11 -> "11¢", 0.89 -> "89¢", 0.004 -> "<1¢"
@@ -38,15 +65,17 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
     } else {
         4
     };
+    // Use Spacing::Overlap(1) to collapse borders between vertical sections
     let chunks = Layout::default()
         .direction(Direction::Vertical)
+        .spacing(Spacing::Overlap(1))
         .constraints([
             Constraint::Length(header_height), // Header (with search if active)
             Constraint::Min(0),                // Main content
             Constraint::Length(8),             // Logs area
             Constraint::Length(3),             // Footer
         ])
-        .split(f.size());
+        .split(f.area());
 
     // Header
     let watched_count = app
@@ -57,78 +86,52 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
         .count();
     let filtered_count = app.filtered_events().len();
 
+    // Helper to get selected tab index
+    let selected_tab_index = match app.event_filter {
+        EventFilter::Trending => 0,
+        EventFilter::Breaking => 1,
+        EventFilter::New => 2,
+    };
+
     if app.is_in_filter_mode() {
-        // Split header into info and search input
+        // Split header into tabs, info, and search input
         let header_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3), // Info line
-                Constraint::Length(4), // Search input (with borders - increased height)
+                Constraint::Length(1), // Tabs line
+                Constraint::Length(2), // Info line
+                Constraint::Length(3), // Search input
             ])
             .split(chunks[0]);
 
-        // Render filter options in header (even in search mode, show current filter)
         let is_header_focused = app.navigation.focused_panel == FocusedPanel::Header;
-        let header_block_style = if is_header_focused {
-            Style::default().fg(Color::Yellow)
-        } else {
-            Style::default()
-        };
 
-        // Build filter options line with selection highlighting
-        let filter_options = vec![
-            (EventFilter::Trending, "Trending"),
-            (EventFilter::Breaking, "Breaking"),
-            (EventFilter::New, "New"),
-        ];
+        // Render tabs using Tabs widget
+        let tab_titles = vec!["Trending", "Breaking", "New"];
+        let tabs = Tabs::new(tab_titles)
+            .select(selected_tab_index)
+            .style(Style::default().fg(Color::DarkGray))
+            .highlight_style(
+                Style::default()
+                    .fg(if is_header_focused {
+                        Color::Yellow
+                    } else {
+                        Color::Cyan
+                    })
+                    .add_modifier(Modifier::BOLD),
+            )
+            .divider(" ");
+        f.render_widget(tabs, header_chunks[0]);
 
-        let mut filter_spans = Vec::new();
-        for (filter, label) in &filter_options {
-            let is_selected = *filter == app.event_filter;
-            let style = if is_selected {
-                if is_header_focused {
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD | Modifier::REVERSED)
-                } else {
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD)
-                }
-            } else {
-                Style::default().fg(Color::Gray)
-            };
-
-            if !filter_spans.is_empty() {
-                filter_spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
-            }
-            filter_spans.push(Span::styled(*label, style));
-        }
-
+        // Info line
         let header_text = format!(
-            "Showing {}/{} events | Watching: {} | Press Esc to exit search",
-            filtered_count,
-            app.events.len(),
-            watched_count
+            "🔥 {} events | Watching: {} | Esc to exit",
+            filtered_count, watched_count
         );
-        let header = Paragraph::new(vec![
-            Line::from("🔥 Polymarket".fg(Color::Yellow).bold()),
-            Line::from(filter_spans),
-            Line::from(header_text),
-        ])
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(if is_header_focused {
-                    "Polymarket (Focused)"
-                } else {
-                    "Polymarket"
-                })
-                .border_style(header_block_style),
-        )
-        .alignment(Alignment::Left)
-        .wrap(Wrap { trim: true });
-        f.render_widget(header, header_chunks[0]);
+        let info = Paragraph::new(header_text)
+            .style(Style::default().fg(Color::Gray))
+            .alignment(Alignment::Left);
+        f.render_widget(info, header_chunks[1]);
 
         // Search input field - show full query with proper spacing
         let search_line = if app.search.query.is_empty() {
@@ -169,73 +172,61 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
             .block(Block::default().borders(Borders::ALL).title(search_title))
             .alignment(Alignment::Left)
             .wrap(Wrap { trim: true });
-        f.render_widget(search_input, header_chunks[1]);
+        f.render_widget(search_input, header_chunks[2]);
     } else {
-        // Render filter options in header
+        // Normal mode: Split header into tabs and info
+        let header_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1), // Tabs line
+                Constraint::Length(3), // Info with border
+            ])
+            .split(chunks[0]);
+
         let is_header_focused = app.navigation.focused_panel == FocusedPanel::Header;
-        let header_block_style = if is_header_focused {
-            Style::default().fg(Color::Yellow)
-        } else {
-            Style::default()
-        };
 
-        // Build filter options line with selection highlighting
-        let filter_options = vec![
-            (EventFilter::Trending, "Trending"),
-            (EventFilter::Breaking, "Breaking"),
-            (EventFilter::New, "New"),
-        ];
+        // Render tabs using Tabs widget
+        let tab_titles = vec!["Trending", "Breaking", "New"];
+        let tabs = Tabs::new(tab_titles)
+            .select(selected_tab_index)
+            .style(Style::default().fg(Color::DarkGray))
+            .highlight_style(
+                Style::default()
+                    .fg(if is_header_focused {
+                        Color::Yellow
+                    } else {
+                        Color::Cyan
+                    })
+                    .add_modifier(Modifier::BOLD),
+            )
+            .divider(" ");
+        f.render_widget(tabs, header_chunks[0]);
 
-        let mut filter_spans = Vec::new();
-        for (filter, label) in &filter_options {
-            let is_selected = *filter == app.event_filter;
-            let style = if is_selected {
-                if is_header_focused {
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD | Modifier::REVERSED)
-                } else {
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD)
-                }
-            } else {
-                Style::default().fg(Color::Gray)
-            };
-
-            if !filter_spans.is_empty() {
-                filter_spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
-            }
-            filter_spans.push(Span::styled(*label, style));
-        }
-
+        // Info block
         let header_text = format!(
-            "Showing {} events | Watching: {} | Press '/' for API search, 'f' for local filter | Use ↑↓ to navigate | Enter to watch/unwatch | 'q' to quit",
+            "🔥 {} events | Watching: {} | /: Search | f: Filter | ←→: Tabs | q: Quit",
             filtered_count, watched_count
         );
-        let header = Paragraph::new(vec![
-            Line::from("🔥 Polymarket".fg(Color::Yellow).bold()),
-            Line::from(filter_spans),
-            Line::from(header_text),
-        ])
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(if is_header_focused {
-                    "Polymarket (Focused)"
-                } else {
-                    "Polymarket"
-                })
-                .border_style(header_block_style),
-        )
-        .alignment(Alignment::Left)
-        .wrap(Wrap { trim: true });
-        f.render_widget(header, chunks[0]);
+        let info = Paragraph::new(header_text)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(if is_header_focused {
+                        Style::default().fg(Color::Yellow)
+                    } else {
+                        Style::default()
+                    }),
+            )
+            .style(Style::default().fg(Color::Gray))
+            .alignment(Alignment::Left);
+        f.render_widget(info, header_chunks[1]);
     }
 
     // Main content - split into events list and trades view
+    // Use Spacing::Overlap(1) to collapse borders between panels
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
+        .spacing(Spacing::Overlap(1))
         .constraints([
             Constraint::Percentage(40), // Events list
             Constraint::Percentage(60), // Trades view
@@ -263,6 +254,139 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
         .alignment(Alignment::Center)
         .style(Style::default().fg(Color::Gray));
     f.render_widget(footer, chunks[3]);
+
+    // Render popup if active (on top of everything)
+    if let Some(ref popup) = app.popup {
+        render_popup(f, popup);
+    }
+
+    // Render loading gauge if actively loading
+    if app.pagination.is_fetching_more || app.search.is_searching {
+        render_loading_gauge(f, app);
+    }
+}
+
+/// Helper function to center a rectangle
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
+}
+
+/// Render a popup/modal dialog
+fn render_popup(f: &mut Frame, popup: &PopupType) {
+    let area = centered_rect(60, 50, f.area());
+
+    // Clear the area behind the popup
+    f.render_widget(Clear, area);
+
+    let (title, content) = match popup {
+        PopupType::Help => ("Help - Keyboard Shortcuts", vec![
+            Line::from(vec![Span::styled(
+                "Navigation:",
+                Style::default().fg(Color::Yellow).bold(),
+            )]),
+            Line::from("  ↑/k, ↓/j  - Move up/down in lists"),
+            Line::from("  Tab       - Switch between panels"),
+            Line::from("  ←/→       - Switch between tabs (Trending/Breaking/New)"),
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                "Actions:",
+                Style::default().fg(Color::Yellow).bold(),
+            )]),
+            Line::from("  Enter     - Toggle watching event for live trades"),
+            Line::from("  /         - API search (searches Polymarket)"),
+            Line::from("  f         - Local filter (filters current list)"),
+            Line::from("  Esc       - Cancel search/filter or close popup"),
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                "Other:",
+                Style::default().fg(Color::Yellow).bold(),
+            )]),
+            Line::from("  ?         - Show this help"),
+            Line::from("  q         - Quit"),
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                "Press Esc to close",
+                Style::default().fg(Color::DarkGray),
+            )]),
+        ]),
+        PopupType::ConfirmQuit => ("Confirm Quit", vec![
+            Line::from(""),
+            Line::from("Are you sure you want to quit?"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("  y  ", Style::default().fg(Color::Green).bold()),
+                Span::styled("- Yes, quit", Style::default().fg(Color::White)),
+            ]),
+            Line::from(vec![
+                Span::styled("  n  ", Style::default().fg(Color::Red).bold()),
+                Span::styled("- No, cancel", Style::default().fg(Color::White)),
+            ]),
+        ]),
+        PopupType::EventInfo(slug) => ("Event Info", vec![
+            Line::from(format!("Slug: {}", slug)),
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                "Press Esc to close",
+                Style::default().fg(Color::DarkGray),
+            )]),
+        ]),
+    };
+
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .style(Style::default().bg(Color::Black));
+
+    let paragraph = Paragraph::new(content)
+        .block(block)
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(paragraph, area);
+}
+
+/// Render a loading gauge at the bottom of the screen
+fn render_loading_gauge(f: &mut Frame, app: &TrendingAppState) {
+    // Position at the very bottom, above the footer
+    let area = Rect {
+        x: 1,
+        y: f.area().height.saturating_sub(4),
+        width: f.area().width.saturating_sub(2),
+        height: 1,
+    };
+
+    let label = if app.search.is_searching {
+        "Searching..."
+    } else {
+        "Loading more events..."
+    };
+
+    // Use an indeterminate progress (pulse effect via loading_progress)
+    let gauge = LineGauge::default()
+        .filled_style(Style::default().fg(Color::Cyan))
+        .unfilled_style(Style::default().fg(Color::DarkGray))
+        .line_set(ratatui::symbols::line::THICK)
+        .ratio(app.loading_progress)
+        .label(label);
+
+    f.render_widget(gauge, area);
 }
 
 fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
@@ -274,7 +398,6 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         .take(area.height as usize - 2)
         .map(|(idx, event)| {
             let is_selected = idx == app.navigation.selected_index;
-            let is_watching = app.is_watching(&event.slug);
 
             // Check if event is closed/inactive (not accepting trades)
             let is_closed = event.closed || !event.active;
@@ -307,16 +430,23 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 String::new()
             };
 
-            // Format: "title ...spaces... [👁] volume markets" (right-aligned)
+            // Format: "title ...spaces... [trades] volume markets" (right-aligned)
             // Account for List widget borders (2 chars) and some padding
             let usable_width = area.width.saturating_sub(2) as usize; // -2 for borders
 
-            // Build the right-aligned text: "[👁] volume markets"
-            let watching_indicator = if is_watching { "👁 " } else { "" };
-            let right_text = if volume_str.is_empty() {
-                format!("{}{}", watching_indicator, markets_count)
+            // Get received trade count for this event (from websocket)
+            let trade_count = app.get_trades(&event.slug).len();
+            let trade_count_str = if trade_count > 0 {
+                format!("{} ", trade_count)
             } else {
-                format!("{}{} {}", watching_indicator, volume_str, markets_count)
+                String::new()
+            };
+
+            // Build the right-aligned text: "[trades] volume markets"
+            let right_text = if volume_str.is_empty() {
+                format!("{}{}", trade_count_str, markets_count)
+            } else {
+                format!("{}{} {}", trade_count_str, volume_str, markets_count)
             };
             let right_text_width = right_text.width();
 
@@ -351,9 +481,12 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             }
 
             // Add the right-aligned text with appropriate styling
-            // Watching indicator in yellow, volume in green, markets in cyan
-            if is_watching {
-                line_spans.push(Span::styled("👁 ", Style::default().fg(Color::Yellow)));
+            // Trade count in yellow, volume in green, markets in cyan
+            if trade_count > 0 {
+                line_spans.push(Span::styled(
+                    format!("{} ", trade_count),
+                    Style::default().fg(Color::Yellow),
+                ));
             }
             if !volume_str.is_empty() {
                 line_spans.push(Span::styled(
@@ -367,7 +500,14 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 Style::default().fg(Color::Cyan),
             ));
 
-            ListItem::new(Line::from(line_spans))
+            // Alternating row colors (zebra striping) for better readability
+            let bg_color = if idx % 2 == 0 {
+                Color::Reset // Default background
+            } else {
+                Color::Rgb(30, 30, 40) // Slightly darker for odd rows
+            };
+
+            ListItem::new(Line::from(line_spans)).style(Style::default().bg(bg_color))
         })
         .collect();
 
@@ -443,8 +583,10 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         let min_event_details_height = 10; // Minimum height (8 base lines + 2 for borders)
 
         // Split area into event details, markets, and trades
+        // Use Spacing::Overlap(1) to collapse borders between panels
         let chunks = Layout::default()
             .direction(Direction::Vertical)
+            .spacing(Spacing::Overlap(1))
             .constraints([
                 Constraint::Length(min_event_details_height as u16), // Event details (minimum height, scrollable)
                 Constraint::Length(7), // Markets panel (5 lines + 2 for borders)
@@ -496,9 +638,10 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
 
             let rows: Vec<Row> = trades
                 .iter()
+                .enumerate()
                 .skip(scroll)
                 .take(visible_height)
-                .map(|trade| {
+                .map(|(idx, trade)| {
                     let time = DateTime::from_timestamp(trade.timestamp, 0)
                         .map(|dt| dt.format("%H:%M:%S").to_string())
                         .unwrap_or_else(|| "now".to_string());
@@ -537,6 +680,13 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                     let side_text = trade.side.clone();
                     let outcome_text = trade.outcome.clone();
 
+                    // Alternating row colors (zebra striping) for better readability
+                    let bg_color = if idx % 2 == 0 {
+                        Color::Reset
+                    } else {
+                        Color::Rgb(30, 30, 40)
+                    };
+
                     Row::new(vec![
                         Cell::from(time).style(Style::default().fg(Color::Gray)),
                         Cell::from(side_text).style(side_style),
@@ -547,6 +697,7 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                         Cell::from(title_truncated),
                         Cell::from(user_truncated),
                     ])
+                    .style(Style::default().bg(bg_color))
                 })
                 .collect();
 
@@ -586,9 +737,26 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                     })
                     .border_style(block_style)
             })
-            .column_spacing(1);
+            .column_spacing(1)
+            .row_highlight_style(
+                Style::default()
+                    .bg(Color::Rgb(60, 60, 80))
+                    .add_modifier(Modifier::BOLD),
+            );
 
-            f.render_widget(table, chunks[2]);
+            // Use TableState for proper row selection (when Trades panel is focused)
+            let is_focused = app.navigation.focused_panel == FocusedPanel::Trades;
+            if is_focused && !trades.is_empty() {
+                // Clone the state to avoid borrow issues
+                let mut table_state = app.trades_table_state.clone();
+                // Set selection if not already set
+                if table_state.selected().is_none() {
+                    table_state.select(Some(0));
+                }
+                f.render_stateful_widget(table, chunks[2], &mut table_state);
+            } else {
+                f.render_widget(table, chunks[2]);
+            }
 
             // Render scrollbar for trades if needed
             // ScrollbarState automatically calculates proportional thumb size
@@ -624,9 +792,20 @@ fn render_event_details(
     app: &TrendingAppState,
     event: &Event,
     is_watching: bool,
-    trade_count: usize,
+    ws_trade_count: usize,
     area: Rect,
 ) {
+    // Use API trade count (your trades) if available, otherwise show websocket count
+    let (trade_count_display, trade_label) =
+        if let Some(&api_count) = app.event_trade_counts.get(&event.slug) {
+            (format!("{}", api_count), "Your Trades")
+        } else if app.has_clob_auth {
+            ("...".to_string(), "Your Trades")
+        } else if is_watching && ws_trade_count > 0 {
+            (format!("{}", ws_trade_count), "Live Trades")
+        } else {
+            ("-".to_string(), "Trades")
+        };
     // Calculate total volume from all markets (use 24hr volume, more reliable)
     let total_volume: f64 = event
         .markets
@@ -737,7 +916,8 @@ fn render_event_details(
     } else {
         format!("${:.0}", total_volume)
     };
-    lines.push(Line::from(vec![
+    // Build trades display with label
+    let trades_spans = vec![
         Span::styled("Total Volume: ", Style::default().fg(Color::Yellow).bold()),
         Span::styled(
             volume_str,
@@ -746,16 +926,24 @@ fn render_event_details(
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(" | ", Style::default().fg(Color::Gray)),
-        Span::styled("Trades: ", Style::default().fg(Color::Yellow).bold()),
         Span::styled(
-            trade_count.to_string(),
-            Style::default().fg(if is_watching {
+            format!("{}: ", trade_label),
+            Style::default().fg(Color::Yellow).bold(),
+        ),
+        Span::styled(
+            trade_count_display.clone(),
+            Style::default().fg(if trade_label == "Your Trades" {
                 Color::Green
+            } else if trade_count_display == "..." {
+                Color::Yellow
+            } else if is_watching {
+                Color::Cyan
             } else {
                 Color::Gray
             }),
         ),
-    ]));
+    ];
+    lines.push(Line::from(trades_spans));
 
     // Add tags - may wrap to multiple lines
     if !event.tags.is_empty() {
@@ -900,9 +1088,10 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
     // Create list items for markets with scroll
     let items: Vec<ListItem> = sorted_markets
         .iter()
+        .enumerate()
         .skip(scroll)
         .take(visible_height)
-        .map(|market| {
+        .map(|(idx, market)| {
             // Use 24hr volume (more reliable) or fall back to total volume
             let volume = market.volume_24hr.or(market.volume_total);
             let volume_str = volume
@@ -1057,7 +1246,14 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
                 ));
             }
 
-            ListItem::new(Line::from(line_spans))
+            // Alternating row colors (zebra striping) for better readability
+            let bg_color = if idx % 2 == 0 {
+                Color::Reset
+            } else {
+                Color::Rgb(30, 30, 40)
+            };
+
+            ListItem::new(Line::from(line_spans)).style(Style::default().bg(bg_color))
         })
         .collect();
 

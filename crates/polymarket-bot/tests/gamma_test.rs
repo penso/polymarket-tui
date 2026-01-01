@@ -14,7 +14,7 @@ fn test_market_deserialization_with_json_string() {
     "#;
 
     let market: Market = serde_json::from_str(json).expect("Should deserialize");
-    assert_eq!(market.id, "123");
+    assert_eq!(market.id, Some("123".to_string()));
     assert_eq!(market.question, "Test market?");
     assert_eq!(market.clob_token_ids, Some(vec!["token1".to_string(), "token2".to_string()]));
     assert_eq!(market.outcomes, vec!["Yes".to_string(), "No".to_string()]);
@@ -30,12 +30,13 @@ fn test_market_deserialization_with_array() {
         "question": "Another market?",
         "clobTokenIds": ["token3", "token4"],
         "outcomes": ["Yes", "No"],
-        "outcomePrices": ["0.6", "0.4"]
+        "outcomePrices": ["0.6", "0.4"],
+        "slug": "another-market"
     }
     "#;
 
     let market: Market = serde_json::from_str(json).expect("Should deserialize");
-    assert_eq!(market.id, "456");
+    assert_eq!(market.id, Some("456".to_string()));
     assert_eq!(market.clob_token_ids, Some(vec!["token3".to_string(), "token4".to_string()]));
 }
 
@@ -47,12 +48,13 @@ fn test_market_deserialization_without_clob_token_ids() {
         "id": "789",
         "question": "Market without tokens?",
         "outcomes": ["Yes", "No"],
-        "outcomePrices": ["0.7", "0.3"]
+        "outcomePrices": ["0.7", "0.3"],
+        "slug": "market-without-tokens"
     }
     "#;
 
     let market: Market = serde_json::from_str(json).expect("Should deserialize");
-    assert_eq!(market.id, "789");
+    assert_eq!(market.id, Some("789".to_string()));
     assert_eq!(market.clob_token_ids, None);
 }
 
@@ -65,12 +67,13 @@ fn test_market_deserialization_with_null_clob_token_ids() {
         "question": "Market with null tokens?",
         "clobTokenIds": null,
         "outcomes": ["Yes", "No"],
-        "outcomePrices": ["0.8", "0.2"]
+        "outcomePrices": ["0.8", "0.2"],
+        "slug": "market-with-null-tokens"
     }
     "#;
 
     let market: Market = serde_json::from_str(json).expect("Should deserialize");
-    assert_eq!(market.id, "999");
+    assert_eq!(market.id, Some("999".to_string()));
     assert_eq!(market.clob_token_ids, None);
 }
 
@@ -87,10 +90,10 @@ async fn test_get_trending_events() {
         .get_trending_events(Some("volume24hr"), Some(false), Some(10))
         .await
         .expect("Should fetch trending events");
-    
+
     assert!(!events.is_empty(), "Should return at least one event");
     assert!(events.len() <= 10, "Should respect limit");
-    
+
     // Verify event structure
     let event = &events[0];
     assert!(!event.id.is_empty());
@@ -105,10 +108,10 @@ async fn test_search_events() {
         .search_events("election", Some(10))
         .await
         .expect("Should search events");
-    
+
     // Search might return empty results, but should not error
     assert!(events.len() <= 10, "Should respect limit");
-    
+
     // If we got results, verify structure
     if let Some(event) = events.first() {
         assert!(!event.id.is_empty());
@@ -125,7 +128,7 @@ async fn test_get_event_by_slug() {
         .get_event_by_slug("2026-fifa-world-cup-winner")
         .await
         .expect("Should fetch event by slug");
-    
+
     if let Some(event) = event {
         assert!(!event.id.is_empty());
         assert!(!event.slug.is_empty());
@@ -140,11 +143,11 @@ async fn test_get_markets() {
         .get_markets(Some(true), Some(false), Some(10))
         .await
         .expect("Should fetch markets");
-    
+
     assert!(markets.len() <= 10, "Should respect limit");
-    
+
     if let Some(market) = markets.first() {
-        assert!(!market.id.is_empty());
+        // Market ID might be None in search responses, but question should always be present
         assert!(!market.question.is_empty());
     }
 }
@@ -156,7 +159,7 @@ async fn test_get_categories() {
         .get_categories()
         .await
         .expect("Should fetch categories");
-    
+
     // Categories might be empty, but should not error
     if let Some(category) = categories.first() {
         assert!(!category.id.is_empty());

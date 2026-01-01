@@ -13,11 +13,11 @@ async fn test_get_trades_by_event_slug() {
     let trades = client
         .get_trades_by_event_slug("who-will-die-in-stranger-things-season-5", Some(10), None)
         .await;
-    
+
     // Trades might be empty, but should not error
     if let Ok(trades) = trades {
         assert!(trades.len() <= 10, "Should respect limit");
-        
+
         // If we got trades, verify structure
         if let Some(trade) = trades.first() {
             assert!(!trade.asset.is_empty());
@@ -33,7 +33,7 @@ async fn test_get_trades_by_event() {
     let trades = client
         .get_trades_by_event(96664, Some(10), None, None, None)
         .await;
-    
+
     // Trades might be empty, but should not error
     if let Ok(trades) = trades {
         assert!(trades.len() <= 10, "Should respect limit");
@@ -47,7 +47,7 @@ async fn test_get_trades_by_market() {
     let trades = client
         .get_trades_by_market("will-mike-wheeler-die-in-stranger-things-season-5", Some(10), None)
         .await;
-    
+
     // Trades might be empty, but should not error
     if let Ok(trades) = trades {
         assert!(trades.len() <= 10, "Should respect limit");

@@ -48,6 +48,37 @@ where
     }
 }
 
+// Helper function to deserialize outcomes/outcomePrices which can be either a JSON string or an array
+fn deserialize_string_array<'de, D>(deserializer: D) -> std::result::Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::Error;
+
+    let value: serde_json::Value = serde_json::Value::deserialize(deserializer)?;
+
+    match value {
+        serde_json::Value::String(s) => {
+            // It's a JSON string, parse it
+            serde_json::from_str(&s).map_err(Error::custom)
+        }
+        serde_json::Value::Array(arr) => {
+            // It's already an array, convert it
+            Ok(arr
+                .into_iter()
+                .map(|v| {
+                    if let serde_json::Value::String(s) = v {
+                        s
+                    } else {
+                        v.to_string()
+                    }
+                })
+                .collect())
+        }
+        _ => Ok(vec![]),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Event {
     pub id: String,
@@ -69,7 +100,8 @@ pub struct Tag {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Market {
-    pub id: String,
+    #[serde(default)]
+    pub id: Option<String>,
     pub question: String,
     #[serde(
         rename = "clobTokenIds",
@@ -77,9 +109,13 @@ pub struct Market {
         default
     )]
     pub clob_token_ids: Option<Vec<String>>,
-    #[serde(default)]
+    #[serde(deserialize_with = "deserialize_string_array", default)]
     pub outcomes: Vec<String>,
-    #[serde(rename = "outcomePrices", default)]
+    #[serde(
+        rename = "outcomePrices",
+        deserialize_with = "deserialize_string_array",
+        default
+    )]
     pub outcome_prices: Vec<String>,
 }
 
@@ -378,7 +414,7 @@ impl GammaClient {
                             event_title: event.title,
                             event_slug: event.slug,
                             market_question: market.question,
-                            market_id: market.id,
+                            market_id: market.id.clone().unwrap_or_default(),
                             asset_id: asset_id.to_string(),
                             outcomes,
                             prices,

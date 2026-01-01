@@ -874,20 +874,29 @@ pub async fn run_trending_tui(
                                         let rtds_client = RTDSClient::new()
                                             .with_event_slug(event_slug_clone.clone());
                                         let event_slug_for_log = event_slug_clone.clone();
-                                        
-                                        tracing::info!("Starting RTDS WebSocket for event: {}", event_slug_clone);
-                                        
+
+                                        tracing::info!(
+                                            "Starting RTDS WebSocket for event: {}",
+                                            event_slug_clone
+                                        );
+
                                         let ws_handle = tokio::spawn(async move {
                                             match rtds_client
                                                 .connect_and_listen(move |msg| {
                                                     let app_state = Arc::clone(&app_state_ws);
                                                     let event_slug = event_slug_for_closure.clone();
+                                                    
+                                                    tracing::info!("Received RTDS trade for event: {}", event_slug);
+                                                    
                                                     tokio::spawn(async move {
                                                         let mut app = app_state.lock().await;
                                                         if let Some(event_trades) =
                                                             app.event_trades.get_mut(&event_slug)
                                                         {
                                                             event_trades.add_trade(&msg);
+                                                            tracing::info!("Trade added to event_trades for: {}", event_slug);
+                                                        } else {
+                                                            tracing::warn!("No event_trades entry found for: {}", event_slug);
                                                         }
                                                     });
                                                 })
@@ -897,7 +906,11 @@ pub async fn run_trending_tui(
                                                     tracing::info!("RTDS WebSocket connection closed normally for event: {}", event_slug_for_log);
                                                 }
                                                 Err(e) => {
-                                                    tracing::error!("RTDS WebSocket error for event {}: {}", event_slug_for_log, e);
+                                                    tracing::error!(
+                                                        "RTDS WebSocket error for event {}: {}",
+                                                        event_slug_for_log,
+                                                        e
+                                                    );
                                                 }
                                             }
                                         });

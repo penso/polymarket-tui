@@ -160,7 +160,7 @@ impl RTDSClient {
     {
         #[cfg(feature = "tracing")]
         info!("Connecting to RTDS WebSocket: {}", RTDS_WS_URL);
-        
+
         let (ws_stream, _) = connect_async(RTDS_WS_URL)
             .await
             .map_err(|e| PolymarketError::WebSocket(format!("Failed to connect to RTDS WebSocket: {}", e)))?;
@@ -220,17 +220,17 @@ impl RTDSClient {
 
         let subscribe_json = serde_json::to_string(&subscribe_msg)
             .map_err(PolymarketError::Serialization)?;
-        
+
         #[cfg(feature = "tracing")]
         info!("Sending RTDS subscription: {}", subscribe_json);
-        
+
         {
             let mut w = write.lock().await;
             w.send(Message::Text(subscribe_json.clone()))
                 .await
                 .map_err(|e| PolymarketError::WebSocket(format!("Failed to send RTDS subscription message: {}", e)))?;
         }
-        
+
         #[cfg(feature = "tracing")]
         info!("RTDS subscription sent successfully");
 

@@ -516,7 +516,31 @@ impl GammaClient {
 
         log_info!("Search returned {} events", search_response.events.len());
 
-        Ok(search_response.events)
+        // The search endpoint doesn't return volume data, so we need to fetch
+        // full event details for each result to get market volumes
+        let mut full_events = Vec::with_capacity(search_response.events.len());
+        for event in &search_response.events {
+            match self.get_event_by_slug(&event.slug).await {
+                Ok(Some(full_event)) => full_events.push(full_event),
+                Ok(None) => {
+                    // Event not found, use the search result as-is
+                    log_debug!("Event not found by slug: {}", event.slug);
+                    full_events.push(event.clone());
+                }
+                Err(_e) => {
+                    // Failed to fetch, use the search result as-is
+                    log_debug!("Failed to fetch event {}: {}", event.slug, _e);
+                    full_events.push(event.clone());
+                }
+            }
+        }
+
+        log_info!(
+            "Enriched {} search results with full event data",
+            full_events.len()
+        );
+
+        Ok(full_events)
     }
 
     pub async fn get_market_info_by_asset_id(&self, asset_id: &str) -> Result<Option<MarketInfo>> {

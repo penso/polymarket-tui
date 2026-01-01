@@ -289,18 +289,13 @@ impl TrendingAppState {
     }
 
     pub fn selected_event(&self) -> Option<&Event> {
-        // Always use filtered events if we have active search results
-        // This ensures we get the correct event even after exiting search mode
-        if !self.search_results.is_empty()
-            && self.search_query == self.last_search_query
-            && !self.local_filter_mode
-        {
-            self.selected_event_filtered()
-        } else if self.is_in_filter_mode() {
-            self.selected_event_filtered()
-        } else {
-            self.events.get(self.selected_index)
-        }
+        // Always use filtered events to ensure we get the event from the currently displayed list
+        // This works for:
+        // - Local filter mode (filters current list)
+        // - API search mode (uses search results)
+        // - Normal mode (uses all events)
+        // Using filtered_events() ensures consistency between what's displayed and what's selected
+        self.selected_event_filtered()
     }
 
     pub fn selected_event_slug(&self) -> Option<String> {

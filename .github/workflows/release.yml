@@ -30,14 +30,14 @@ jobs:
             artifact_name: polymarket-cli-linux-arm64
             cross: true
 
-          # macOS x86_64
+          # macOS x86_64 (cross-compile from ARM)
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-latest
             artifact_name: polymarket-cli-darwin-amd64
 
           # macOS ARM64 (Apple Silicon)
           - target: aarch64-apple-darwin
-            os: macos-14
+            os: macos-latest
             artifact_name: polymarket-cli-darwin-arm64
 
     steps:

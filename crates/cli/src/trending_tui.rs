@@ -84,9 +84,9 @@ pub enum FocusedPanel {
 /// Search mode enum to replace boolean flags
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchMode {
-    None,         // No search/filter active
-    ApiSearch,    // API search mode (triggered by '/')
-    LocalFilter,  // Local filter mode (triggered by 'f')
+    None,        // No search/filter active
+    ApiSearch,   // API search mode (triggered by '/')
+    LocalFilter, // Local filter mode (triggered by 'f')
 }
 
 /// Search-related state
@@ -94,8 +94,8 @@ pub enum SearchMode {
 pub struct SearchState {
     pub mode: SearchMode,
     pub query: String,
-    pub results: Vec<Event>,        // Results from API search
-    pub is_searching: bool,        // Whether a search API call is in progress
+    pub results: Vec<Event>,         // Results from API search
+    pub is_searching: bool,          // Whether a search API call is in progress
     pub last_searched_query: String, // Last query that was searched
 }
 
@@ -118,11 +118,11 @@ impl SearchState {
 /// Scroll positions for all panels
 #[derive(Debug)]
 pub struct ScrollState {
-    pub events_list: usize,      // Scroll position for events list
-    pub markets: usize,           // Scroll position for markets panel
-    pub trades: usize,            // Scroll position for trades table
-    pub event_details: usize,     // Scroll position for event details
-    pub logs: usize,              // Scroll position for logs panel
+    pub events_list: usize,   // Scroll position for events list
+    pub markets: usize,       // Scroll position for markets panel
+    pub trades: usize,        // Scroll position for trades table
+    pub event_details: usize, // Scroll position for event details
+    pub logs: usize,          // Scroll position for logs panel
 }
 
 impl ScrollState {
@@ -140,10 +140,10 @@ impl ScrollState {
 /// Pagination and infinite scrolling state
 #[derive(Debug)]
 pub struct PaginationState {
-    pub current_limit: usize,    // Current number of events fetched
-    pub is_fetching_more: bool,  // Whether we're currently fetching more events
-    pub order_by: String,        // Order by parameter for API calls
-    pub ascending: bool,         // Ascending parameter for API calls
+    pub current_limit: usize,   // Current number of events fetched
+    pub is_fetching_more: bool, // Whether we're currently fetching more events
+    pub order_by: String,       // Order by parameter for API calls
+    pub ascending: bool,        // Ascending parameter for API calls
 }
 
 impl PaginationState {
@@ -237,13 +237,17 @@ impl TrendingAppState {
     /// Check if we need to fetch more events (when user is near the end)
     pub fn should_fetch_more(&self) -> bool {
         // Only fetch more if not in search/filter mode and not already fetching
-        if self.search.is_active() || !self.search.query.is_empty() || self.pagination.is_fetching_more {
+        if self.search.is_active()
+            || !self.search.query.is_empty()
+            || self.pagination.is_fetching_more
+        {
             return false;
         }
 
         let filtered_len = self.filtered_events().len();
         // Fetch more when user is within 5 items of the end
-        self.navigation.selected_index >= filtered_len.saturating_sub(5) && filtered_len >= self.pagination.current_limit
+        self.navigation.selected_index >= filtered_len.saturating_sub(5)
+            && filtered_len >= self.pagination.current_limit
     }
 
     pub fn add_log(&mut self, level: &str, message: String) {
@@ -273,7 +277,10 @@ impl TrendingAppState {
         if self.search.query.is_empty() {
             // No query, return all events from the current source
             // If we have search results and not in local filter mode, return those; otherwise return all events
-            if !self.search.results.is_empty() && self.search.mode != SearchMode::LocalFilter && self.search.mode == SearchMode::ApiSearch {
+            if !self.search.results.is_empty()
+                && self.search.mode != SearchMode::LocalFilter
+                && self.search.mode == SearchMode::ApiSearch
+            {
                 return self.search.results.iter().collect();
             }
             return self.events.iter().collect();
@@ -286,7 +293,8 @@ impl TrendingAppState {
             if !self.search.results.is_empty() {
                 // Filter from search results (current displayed list)
                 return self
-                    .search.results
+                    .search
+                    .results
                     .iter()
                     .filter(|event| {
                         event.title.to_lowercase().contains(&query_lower)
@@ -436,21 +444,24 @@ impl TrendingAppState {
     }
 
     pub fn is_watching(&self, event_slug: &str) -> bool {
-        self.trades.event_trades
+        self.trades
+            .event_trades
             .get(event_slug)
             .map(|et| et.is_watching)
             .unwrap_or(false)
     }
 
     pub fn get_trades(&self, event_slug: &str) -> &[Trade] {
-        self.trades.event_trades
+        self.trades
+            .event_trades
             .get(event_slug)
             .map(|et| et.trades.as_slice())
             .unwrap_or(&[])
     }
 
     pub fn start_watching(&mut self, event_slug: String, ws_handle: JoinHandle<()>) {
-        self.trades.event_trades
+        self.trades
+            .event_trades
             .entry(event_slug.clone())
             .or_insert_with(EventTrades::new)
             .is_watching = true;
@@ -488,7 +499,8 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
 
     // Header
     let watched_count = app
-        .trades.event_trades
+        .trades
+        .event_trades
         .values()
         .filter(|et| et.is_watching)
         .count();
@@ -703,13 +715,21 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         );
 
     let mut state = ListState::default();
-    state.select(Some(app.navigation.selected_index.saturating_sub(app.scroll.events_list)));
+    state.select(Some(
+        app.navigation
+            .selected_index
+            .saturating_sub(app.scroll.events_list),
+    ));
     f.render_stateful_widget(list, area, &mut state);
 
     // Render scrollbar for events list if needed
     let total_events = filtered_events.len();
     let visible_height = (area.height as usize).saturating_sub(2);
     if total_events > visible_height {
+        // ScrollbarState automatically calculates thumb size as:
+        // thumb_height = (content_length / total) * track_height
+        // This ensures the thumb is proportional to visible content
+        // Position maps correctly: moving one line moves thumb proportionally
         let mut scrollbar_state = ScrollbarState::new(total_events)
             .position(app.scroll.events_list)
             .content_length(visible_height);
@@ -778,7 +798,8 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             let visible_height = (chunks[2].height as usize).saturating_sub(3); // -3 for header
             let total_rows = trades.len();
             let scroll = app
-                .scroll.trades
+                .scroll
+                .trades
                 .min(total_rows.saturating_sub(visible_height.max(1)));
 
             let rows: Vec<Row> = trades
@@ -868,6 +889,7 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             f.render_widget(table, chunks[2]);
 
             // Render scrollbar for trades if needed
+            // ScrollbarState automatically calculates proportional thumb size
             if total_rows > visible_height {
                 let mut scrollbar_state = ScrollbarState::new(total_rows)
                     .position(scroll)
@@ -1065,7 +1087,8 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
     let visible_height = (area.height as usize).saturating_sub(2);
     let total_markets = event.markets.len();
     let scroll = app
-        .scroll.markets
+        .scroll
+        .markets
         .min(total_markets.saturating_sub(visible_height.max(1)));
 
     // Create list items for markets with scroll
@@ -1171,6 +1194,7 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
     f.render_widget(list, area);
 
     // Render scrollbar if needed
+    // ScrollbarState automatically calculates proportional thumb size
     if total_markets > visible_height {
         let mut scrollbar_state = ScrollbarState::new(total_markets)
             .position(scroll)
@@ -1218,14 +1242,19 @@ fn render_logs(f: &mut Frame, app: &mut TrendingAppState, area: Rect) {
         }
     } else {
         // When focused, ensure scroll position is within valid bounds
-        let max_scroll = app.logs.messages.len().saturating_sub(visible_height.max(1));
+        let max_scroll = app
+            .logs
+            .messages
+            .len()
+            .saturating_sub(visible_height.max(1));
         app.logs.scroll = app.logs.scroll.min(max_scroll);
     }
 
     // First, flatten logs by wrapping long lines
     let max_width = (area.width as usize).saturating_sub(2); // Account for borders
     let wrapped_logs: Vec<String> = app
-        .logs.messages
+        .logs
+        .messages
         .iter()
         .skip(app.logs.scroll)
         .flat_map(|log| {
@@ -1257,8 +1286,6 @@ fn render_logs(f: &mut Frame, app: &mut TrendingAppState, area: Rect) {
             ListItem::new(log.as_str()).style(Style::default().fg(color))
         })
         .collect();
-
-    let total_log_lines = app.logs.messages.len();
     let is_focused = app.navigation.focused_panel == FocusedPanel::Logs;
     let block_style = if is_focused {
         Style::default().fg(Color::Yellow)
@@ -1276,10 +1303,16 @@ fn render_logs(f: &mut Frame, app: &mut TrendingAppState, area: Rect) {
     f.render_widget(logs_list, area);
 
     // Render scrollbar for logs if needed
-    if total_log_lines > visible_height {
-        let mut scrollbar_state = ScrollbarState::new(total_log_lines)
+    // Note: We scroll by message count, but display wrapped lines
+    // The scrollbar represents message positions, and thumb size is proportional to visible messages
+    let total_log_messages = app.logs.messages.len();
+    if total_log_messages > 0 {
+        // Estimate visible messages based on visible height and average wrapping
+        // This is approximate but ensures the scrollbar thumb is reasonably proportional
+        let estimated_visible_messages = visible_height.max(1);
+        let mut scrollbar_state = ScrollbarState::new(total_log_messages)
             .position(app.logs.scroll)
-            .content_length(visible_height);
+            .content_length(estimated_visible_messages);
         f.render_stateful_widget(
             Scrollbar::default()
                 .orientation(ScrollbarOrientation::VerticalRight)
@@ -1495,7 +1528,8 @@ pub async fn run_trending_tui(
                                                             let mut app =
                                                                 app_state_clone.lock().await;
                                                             app.events.append(&mut new_events);
-                                                            app.pagination.current_limit = new_limit;
+                                                            app.pagination.current_limit =
+                                                                new_limit;
                                                         } else {
                                                             tracing::info!("No new events to add (already have all events)");
                                                         }
@@ -1557,8 +1591,11 @@ pub async fn run_trending_tui(
                                         // Calculate max scroll based on visible height (approximate)
                                         // The render function will clamp it to the exact visible height
                                         let visible_height: usize = 10; // Approximate, will be clamped in render
-                                        let max_scroll =
-                                            app.logs.messages.len().saturating_sub(visible_height.max(1));
+                                        let max_scroll = app
+                                            .logs
+                                            .messages
+                                            .len()
+                                            .saturating_sub(visible_height.max(1));
                                         if app.logs.scroll < max_scroll {
                                             app.logs.scroll += 1;
                                         }
@@ -1600,7 +1637,8 @@ pub async fn run_trending_tui(
                                         let event_slug_clone = event_slug.clone();
 
                                         // Ensure the event_trades entry exists before starting websocket
-                                        app.trades.event_trades
+                                        app.trades
+                                            .event_trades
                                             .entry(event_slug_clone.clone())
                                             .or_insert_with(EventTrades::new);
 

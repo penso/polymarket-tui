@@ -405,14 +405,6 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             let markets_count = event.markets.len();
 
             // Format: "line_number<tab>title<tab>markets amount"
-            // Use spaces to simulate tabs (ratatui doesn't have native tab support)
-            let line_text = format!(
-                "{}\t{}\t{}",
-                idx + 1,
-                title,
-                markets_count
-            );
-
             ListItem::new(Line::from(vec![
                 Span::styled(
                     format!("{}", idx + 1),

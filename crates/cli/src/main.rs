@@ -649,7 +649,11 @@ async fn run_market(market: String, use_id: bool) -> Result<()> {
     if use_id {
         if let Some(market_data) = gamma_client.get_market_by_id(&market).await? {
             info!("Question: {}", market_data.question);
-            info!("Market ID: {}", market_data.id);
+            if let Some(id) = &market_data.id {
+                info!("Market ID: {}", id);
+            } else {
+                info!("Market ID: (not available)");
+            }
             if let Some(token_ids) = market_data.clob_token_ids {
                 info!("Asset IDs: {:?}", token_ids);
             }
@@ -663,7 +667,11 @@ async fn run_market(market: String, use_id: bool) -> Result<()> {
         }
         for market_data in markets {
             info!("Question: {}", market_data.question);
-            info!("Market ID: {}", market_data.id);
+            if let Some(id) = &market_data.id {
+                info!("Market ID: {}", id);
+            } else {
+                info!("Market ID: (not available)");
+            }
             if let Some(token_ids) = market_data.clob_token_ids {
                 info!("Asset IDs: {:?}", token_ids);
             }

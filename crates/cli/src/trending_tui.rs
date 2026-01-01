@@ -759,22 +759,16 @@ pub async fn run_trending_tui(
                     }
 
                     // Spawn the search task with tracing context
+                    // The issue is that tokio::spawn doesn't inherit tracing context automatically
+                    // We need to manually ensure the dispatcher context is propagated
                     use tracing::Instrument;
+                    
+                    // Create a span for this search task
                     let query_for_span = query_clone.clone();
+                    let search_span = tracing::info_span!("search", query = %query_for_span);
 
-                    // Create a span for this search task as a child of the current span
-                    // This ensures proper context inheritance
-                    let current_span = tracing::Span::current();
-                    let search_span = if current_span.is_none() {
-                        // No current span, create a root span
-                        tracing::info_span!("search", query = %query_for_span)
-                    } else {
-                        // Create as child of current span
-                        tracing::info_span!(parent: &current_span, "search", query = %query_for_span)
-                    };
-
-                    // Spawn the task with the span attached via .instrument()
-                    // This ensures the tracing context is properly inherited
+                    // Spawn the task with .instrument() to attach the span
+                    // This should make the tracing context available in the spawned task
                     tokio::spawn(
                         async move {
                             // Test log to verify tracing context is inherited

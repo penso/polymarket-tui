@@ -862,27 +862,15 @@ fn render_event_details(
         })
         .unwrap_or_else(|| "N/A".to_string());
 
-    // Build compact lines without blank lines
+    // Build compact lines without blank lines (title is in panel header)
     let mut lines = vec![Line::from(vec![
-        Span::styled("Title: ", Style::default().fg(Color::Yellow).bold()),
-        Span::styled(
-            truncate(&event.title, 60),
-            Style::default().fg(Color::White),
-        ),
-    ])];
-
-    lines.push(Line::from(vec![
         Span::styled("Slug: ", Style::default().fg(Color::Yellow).bold()),
         Span::styled(truncate(&event.slug, 60), Style::default().fg(Color::Blue)),
-    ]));
+    ])];
     let event_url = format!("https://polymarket.com/event/{}", event.slug);
     lines.push(Line::from(vec![
         Span::styled("URL: ", Style::default().fg(Color::Yellow).bold()),
         Span::styled(event_url, Style::default().fg(Color::Cyan)),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled("Event ID: ", Style::default().fg(Color::Yellow).bold()),
-        Span::styled(truncate(&event.id, 50), Style::default().fg(Color::White)),
     ]));
     lines.push(Line::from(vec![
         Span::styled("Status: ", Style::default().fg(Color::Yellow).bold()),
@@ -1052,15 +1040,16 @@ fn render_event_details(
         Style::default()
     };
 
+    // Build title with event name (truncated to fit panel width)
+    // Reserve space for "Event: " prefix and borders
+    let title_max_width = area.width.saturating_sub(12) as usize;
+    let title = format!("Event: {}", truncate(&event.title, title_max_width));
+
     let paragraph = Paragraph::new(visible_lines)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(if is_focused {
-                    "Event Details (Focused)"
-                } else {
-                    "Event Details"
-                })
+                .title(title)
                 .border_style(block_style),
         )
         .wrap(Wrap { trim: true });

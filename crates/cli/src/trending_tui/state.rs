@@ -82,8 +82,8 @@ impl EventFilter {
     pub fn order_by(&self) -> &'static str {
         match self {
             EventFilter::Trending => "volume24hr",
-            EventFilter::Breaking => "startTime",
-            EventFilter::New => "creationTime",
+            EventFilter::Breaking => "startDate",
+            EventFilter::New => "createdAt",
         }
     }
 
@@ -258,9 +258,9 @@ impl TrendingAppState {
     pub fn new(events: Vec<Event>, order_by: String, ascending: bool) -> Self {
         let current_limit = events.len();
         // Determine initial filter based on order_by
-        let event_filter = if order_by == "startTime" {
+        let event_filter = if order_by == "startDate" || order_by == "startTime" {
             EventFilter::Breaking
-        } else if order_by == "creationTime" || order_by == "createdAt" {
+        } else if order_by == "createdAt" || order_by == "creationTime" {
             EventFilter::New
         } else {
             EventFilter::Trending

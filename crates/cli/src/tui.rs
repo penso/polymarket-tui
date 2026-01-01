@@ -14,7 +14,7 @@ use ratatui::{
 use std::io;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
-use tracing::info;
+use tracing::debug;
 
 pub struct Trade {
     pub timestamp: i64,
@@ -337,33 +337,35 @@ pub async fn refresh_market_data(app_state: Arc<TokioMutex<AppState>>) {
         app.event_slug.clone()
     };
 
-    info!("Refreshing market data for event: {}", event_slug);
+    debug!("🔄 Refreshing market data for event: {}", event_slug);
 
     // Fetch fresh event data from Gamma API (includes current outcome_prices)
+    debug!("📡 Fetching event from Gamma API: {}", event_slug);
     let gamma_client = GammaClient::new();
     let event_result = gamma_client.get_event_by_slug(&event_slug).await;
 
     match event_result {
         Ok(Some(event)) => {
             let market_count = event.markets.len();
+            debug!(
+                "✓ Gamma API returned event with {} markets",
+                market_count
+            );
             let mut app = app_state.lock().await;
             app.event = Some(event);
             app.is_loading = false;
             app.last_refresh = Some(Utc::now());
-            info!(
-                "Market data refreshed: {} markets with current prices",
-                market_count
-            );
+            debug!("✓ Market data refreshed successfully");
         }
         Ok(None) => {
+            debug!("⚠ Event not found: {}", event_slug);
             let mut app = app_state.lock().await;
             app.is_loading = false;
-            info!("Event not found: {}", event_slug);
         }
         Err(e) => {
+            debug!("✗ Failed to fetch event from Gamma API: {}", e);
             let mut app = app_state.lock().await;
             app.is_loading = false;
-            info!("Failed to fetch event: {}", e);
         }
     }
 }

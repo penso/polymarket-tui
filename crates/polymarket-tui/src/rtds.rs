@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 #[cfg(feature = "tracing")]
-use tracing::{error, info, warn};
+use tracing::{debug, error, warn};
 
 const RTDS_WS_URL: &str = "wss://ws-live-data.polymarket.com/";
 
@@ -159,14 +159,14 @@ impl RTDSClient {
         F: FnMut(RTDSMessage) + Send,
     {
         #[cfg(feature = "tracing")]
-        info!("Connecting to RTDS WebSocket: {}", RTDS_WS_URL);
+        debug!("Connecting to RTDS WebSocket: {}", RTDS_WS_URL);
 
         let (ws_stream, _) = connect_async(RTDS_WS_URL).await.map_err(|e| {
             PolymarketError::WebSocket(format!("Failed to connect to RTDS WebSocket: {}", e))
         })?;
 
         #[cfg(feature = "tracing")]
-        info!("Connected to RTDS WebSocket");
+        debug!("Connected to RTDS WebSocket");
 
         let (write, mut read) = ws_stream.split();
         let write = Arc::new(Mutex::new(write));
@@ -220,7 +220,7 @@ impl RTDSClient {
             serde_json::to_string(&subscribe_msg).map_err(PolymarketError::Serialization)?;
 
         #[cfg(feature = "tracing")]
-        info!("Sending RTDS subscription: {}", subscribe_json);
+        debug!("Sending RTDS subscription: {}", subscribe_json);
 
         {
             let mut w = write.lock().await;
@@ -235,7 +235,7 @@ impl RTDSClient {
         }
 
         #[cfg(feature = "tracing")]
-        info!("RTDS subscription sent successfully");
+        debug!("RTDS subscription sent successfully");
 
         // Start PING task (send PING every 5 seconds as per RTDS docs)
         let write_ping = Arc::clone(&write);
@@ -266,7 +266,7 @@ impl RTDSClient {
                     // Try to parse as RTDS message
                     if let Ok(rtds_msg) = serde_json::from_str::<RTDSMessage>(&text) {
                         #[cfg(feature = "tracing")]
-                        info!(
+                        debug!(
                             "Received RTDS message: topic={}, type={}",
                             rtds_msg.topic, rtds_msg.message_type
                         );

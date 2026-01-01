@@ -17,6 +17,19 @@ use {
     },
 };
 
+/// Format a price (0.0-1.0) as cents like the Polymarket website
+/// Examples: 0.01 -> "1¢", 0.11 -> "11¢", 0.89 -> "89¢", 0.004 -> "<1¢"
+fn format_price_cents(price: f64) -> String {
+    let cents = price * 100.0;
+    if cents < 1.0 {
+        "<1¢".to_string()
+    } else if cents < 10.0 {
+        format!("{:.1}¢", cents)
+    } else {
+        format!("{:.0}¢", cents)
+    }
+}
+
 pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
     // Header height: 3 lines for normal mode (title, filters, info), 6 for search mode
     let header_height = if app.is_in_filter_mode() {
@@ -837,10 +850,7 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
                 };
 
                 let price_str = price
-                    .map(|p| {
-                        let percent = p * 100.0;
-                        format!("${:.3} ({:.1}%)", p, percent)
-                    })
+                    .map(format_price_cents)
                     .unwrap_or_else(|| "N/A".to_string());
 
                 outcome_strings.push(format!("{}: {}", outcome, price_str));

@@ -446,32 +446,56 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 event.title.clone()
             };
 
-            // Build the line with title, optional watching indicator, and right-aligned markets count
-            let watching_text = if is_watching {
-                format!(" (🔴 {} trades)", trade_count)
+            // Build the right-aligned text: "markets" or "markets / trades" if watching
+            let right_text = if is_watching {
+                format!("{} / {}", markets_count, trade_count)
             } else {
-                String::new()
+                markets_count.to_string()
             };
-
-            let title_with_watching = format!("{}{}", title, watching_text);
-            let title_width = title_with_watching.len();
-
-            // Calculate remaining width for padding (ensure markets count is right-aligned)
+            let right_text_width = right_text.len();
+            
+            // Reserve space for right text + 1 space padding
+            let reserved_width = right_text_width + 1;
+            let available_width = usable_width.saturating_sub(reserved_width);
+            
+            // Truncate title to fit available space (recalculate with new reserved width)
+            let title = if event.title.len() > available_width {
+                truncate(&event.title, available_width.saturating_sub(3))
+            } else {
+                event.title.clone()
+            };
+            
+            let title_width = title.len();
             let remaining_width = usable_width
                 .saturating_sub(title_width)
-                .saturating_sub(markets_width);
+                .saturating_sub(right_text_width);
 
-            let mut line_spans = vec![Span::styled(title_with_watching, style)];
+            let mut line_spans = vec![Span::styled(title, style)];
 
-            // Add spaces to right-align the markets count
+            // Add spaces to right-align the markets/trades count
             if remaining_width > 0 {
                 line_spans.push(Span::styled(" ".repeat(remaining_width), Style::default()));
             }
 
-            line_spans.push(Span::styled(
-                markets_count.to_string(),
-                Style::default().fg(Color::Cyan),
-            ));
+            // Add the right-aligned text with appropriate styling
+            if is_watching {
+                // Show "markets / trades" with markets in cyan and trades in green
+                line_spans.push(Span::styled(
+                    markets_count.to_string(),
+                    Style::default().fg(Color::Cyan),
+                ));
+                line_spans.push(Span::styled(" / ", Style::default().fg(Color::Gray)));
+                line_spans.push(Span::styled(
+                    trade_count.to_string(),
+                    Style::default().fg(Color::Green),
+                ));
+            } else {
+                // Just show markets count
+                line_spans.push(Span::styled(
+                    markets_count.to_string(),
+                    Style::default().fg(Color::Cyan),
+                ));
+            }
 
             ListItem::new(Line::from(line_spans))
         })

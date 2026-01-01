@@ -527,13 +527,13 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
 
             let markets_count = event.markets.len();
 
-            // Format: "title ...spaces... markets / trades" (right-aligned)
+            // Format: "title ...spaces... trades / markets" (right-aligned)
             // Account for List widget borders (2 chars) and some padding
             let usable_width = area.width.saturating_sub(2) as usize; // -2 for borders
 
-            // Build the right-aligned text: "markets" or "markets / trades" if watching
+            // Build the right-aligned text: "markets" or "trades / markets" if watching
             let right_text = if is_watching {
-                format!("{} / {}", markets_count, trade_count)
+                format!("{} / {}", trade_count, markets_count)
             } else {
                 markets_count.to_string()
             };
@@ -564,15 +564,15 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
 
             // Add the right-aligned text with appropriate styling
             if is_watching {
-                // Show "markets / trades" with markets in cyan and trades in green
-                line_spans.push(Span::styled(
-                    markets_count.to_string(),
-                    Style::default().fg(Color::Cyan),
-                ));
-                line_spans.push(Span::styled(" / ", Style::default().fg(Color::Gray)));
+                // Show "trades / markets" with trades in green and markets in cyan
                 line_spans.push(Span::styled(
                     trade_count.to_string(),
                     Style::default().fg(Color::Green),
+                ));
+                line_spans.push(Span::styled(" / ", Style::default().fg(Color::Gray)));
+                line_spans.push(Span::styled(
+                    markets_count.to_string(),
+                    Style::default().fg(Color::Cyan),
                 ));
             } else {
                 // Just show markets count
@@ -1014,7 +1014,7 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
 
             // Calculate widths for right alignment
             let usable_width = (area.width as usize).saturating_sub(2); // -2 for borders
-            
+
             // Calculate space needed for outcomes and volume (right-aligned)
             let outcomes_width = outcomes_str.len();
             let volume_width = volume_str.len();
@@ -1029,16 +1029,16 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
             } else {
                 0
             };
-            
+
             // Calculate available width for question (reserve space for right content + 1 space padding)
             let available_width = usable_width
                 .saturating_sub(right_content_width)
                 .saturating_sub(1); // 1 space padding between question and right content
-            
+
             // Truncate question to fit available width
             let question = truncate(&market.question, available_width);
             let question_width = question.len();
-            
+
             // Calculate remaining width for spacing
             let remaining_width = usable_width
                 .saturating_sub(question_width)

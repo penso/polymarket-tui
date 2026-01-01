@@ -1014,9 +1014,7 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
 
             // Calculate widths for right alignment
             let usable_width = (area.width as usize).saturating_sub(2); // -2 for borders
-            let question = truncate(&market.question, 40); // Reserve more space for right-aligned content
-            let question_width = question.len();
-
+            
             // Calculate space needed for outcomes and volume (right-aligned)
             let outcomes_width = outcomes_str.len();
             let volume_width = volume_str.len();
@@ -1031,7 +1029,17 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
             } else {
                 0
             };
-
+            
+            // Calculate available width for question (reserve space for right content + 1 space padding)
+            let available_width = usable_width
+                .saturating_sub(right_content_width)
+                .saturating_sub(1); // 1 space padding between question and right content
+            
+            // Truncate question to fit available width
+            let question = truncate(&market.question, available_width);
+            let question_width = question.len();
+            
+            // Calculate remaining width for spacing
             let remaining_width = usable_width
                 .saturating_sub(question_width)
                 .saturating_sub(right_content_width);
@@ -1115,7 +1123,7 @@ fn render_logs(f: &mut Frame, app: &mut TrendingAppState, area: Rect) {
     // Auto-scroll to bottom only if Logs panel is NOT focused
     // When focused, user controls scrolling manually
     let is_focused = app.focused_panel == FocusedPanel::Logs;
-    
+
     if !is_focused {
         // Auto-scroll to bottom if we're near the bottom or if logs have grown
         // This ensures new logs are always visible when panel is not focused
@@ -1471,7 +1479,8 @@ pub async fn run_trending_tui(
                                         // Calculate max scroll based on visible height (approximate)
                                         // The render function will clamp it to the exact visible height
                                         let visible_height: usize = 10; // Approximate, will be clamped in render
-                                        let max_scroll = app.logs.len().saturating_sub(visible_height.max(1));
+                                        let max_scroll =
+                                            app.logs.len().saturating_sub(visible_height.max(1));
                                         if app.log_scroll < max_scroll {
                                             app.log_scroll += 1;
                                         }

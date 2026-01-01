@@ -118,7 +118,7 @@ fn calculate_panel_areas(
         .direction(Direction::Vertical)
         .spacing(Spacing::Overlap(1))
         .constraints([
-            Constraint::Length(10),
+            Constraint::Length(8),
             Constraint::Length(7),
             Constraint::Min(0),
         ])

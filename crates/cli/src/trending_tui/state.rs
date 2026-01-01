@@ -2,6 +2,7 @@
 
 use {
     polymarket_api::{gamma::Event, rtds::RTDSMessage},
+    ratatui::widgets::TableState,
     std::collections::HashMap,
     tokio::task::JoinHandle,
 };
@@ -119,6 +120,15 @@ pub enum SearchMode {
     None,        // No search/filter active
     ApiSearch,   // API search mode (triggered by '/')
     LocalFilter, // Local filter mode (triggered by 'f')
+}
+
+/// Popup types for modal dialogs
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
+pub enum PopupType {
+    Help,              // Show help/keyboard shortcuts
+    ConfirmQuit,       // Confirm before quitting
+    EventInfo(String), // Show detailed event info (slug)
 }
 
 /// Search-related state
@@ -252,10 +262,15 @@ pub struct TrendingAppState {
     pub trades: TradesState,
     pub event_filter: EventFilter, // Current filter (Trending, Breaking, New)
     pub market_prices: HashMap<String, f64>, // asset_id -> current price from API
+    pub event_trade_counts: HashMap<String, usize>, // event_slug -> total trade count from API
+    pub has_clob_auth: bool,       // Whether CLOB API authentication is available
+    pub popup: Option<PopupType>,  // Currently active popup/modal
+    pub trades_table_state: TableState, // State for trades table selection
+    pub loading_progress: f64,     // Loading progress (0.0 to 1.0) for LineGauge
 }
 
 impl TrendingAppState {
-    pub fn new(events: Vec<Event>, order_by: String, ascending: bool) -> Self {
+    pub fn new(events: Vec<Event>, order_by: String, ascending: bool, has_clob_auth: bool) -> Self {
         let current_limit = events.len();
         // Determine initial filter based on order_by
         let event_filter = if order_by == "startDate" || order_by == "startTime" {
@@ -276,7 +291,27 @@ impl TrendingAppState {
             trades: TradesState::new(),
             event_filter,
             market_prices: HashMap::new(),
+            event_trade_counts: HashMap::new(),
+            has_clob_auth,
+            popup: None,
+            trades_table_state: TableState::default(),
+            loading_progress: 0.0,
         }
+    }
+
+    /// Show a popup
+    pub fn show_popup(&mut self, popup: PopupType) {
+        self.popup = Some(popup);
+    }
+
+    /// Close the active popup
+    pub fn close_popup(&mut self) {
+        self.popup = None;
+    }
+
+    /// Check if a popup is active
+    pub fn has_popup(&self) -> bool {
+        self.popup.is_some()
     }
 
     /// Check if we need to fetch more events (when user is near the end)

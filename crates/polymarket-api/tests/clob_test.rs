@@ -186,6 +186,7 @@ async fn test_clob_client_with_auth() {
         "test_key".to_string(),
         "test_secret".to_string(),
         "test_passphrase".to_string(),
+        "test_address".to_string(),
     );
     // Just verify it can be created with auth (doesn't panic)
 }

@@ -544,10 +544,18 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
     let backend = CrosstermBackend::new(stdout);
     let terminal = Terminal::new(backend)?;
 
+    // Check if CLOB API authentication is available
+    let clob_client = ClobClient::from_env();
+    let has_clob_auth = clob_client.has_auth();
+    if has_clob_auth {
+        log_info!("CLOB API authentication available - trade counts will be fetched from API");
+    }
+
     let app_state = Arc::new(TokioMutex::new(trending_tui::TrendingAppState::new(
         events,
         order_by.clone(),
         ascending,
+        has_clob_auth,
     )));
 
     // Connect logs to app state (only when tracing is enabled)

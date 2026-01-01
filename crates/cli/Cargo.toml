@@ -9,7 +9,7 @@ path = "src/main.rs"
 
 [features]
 default = []
-tui = ["ratatui", "crossterm"]
+tui = ["ratatui", "crossterm", "unicode-width"]
 tracing = ["dep:tracing", "dep:tracing-subscriber", "polymarket-api/tracing"]
 
 [dependencies]
@@ -22,4 +22,5 @@ tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "ansi"], optional = true }
 ratatui = { version = "0.27", optional = true }
 crossterm = { version = "0.28", optional = true }
+unicode-width = { version = "0.2", optional = true }
 chrono = "0.4"

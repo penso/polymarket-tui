@@ -15,6 +15,7 @@ use {
             ScrollbarOrientation, ScrollbarState, Table, Wrap,
         },
     },
+    unicode_width::UnicodeWidthStr,
 };
 
 /// Format a price (0.0-1.0) as cents like the Polymarket website
@@ -280,20 +281,16 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             } else {
                 markets_count.to_string()
             };
-            let right_text_width = right_text.len();
+            let right_text_width = right_text.width();
 
             // Reserve space for right text + 1 space padding
             let reserved_width = right_text_width + 1;
             let available_width = usable_width.saturating_sub(reserved_width);
 
-            // Truncate title to fit available space
-            let title = if event.title.len() > available_width {
-                truncate(&event.title, available_width.saturating_sub(3))
-            } else {
-                event.title.clone()
-            };
+            // Truncate title to fit available space (using display width)
+            let title = truncate_to_width(&event.title, available_width);
 
-            let title_width = title.len();
+            let title_width = title.width();
             let remaining_width = usable_width
                 .saturating_sub(title_width)
                 .saturating_sub(right_text_width);
@@ -975,6 +972,32 @@ pub fn truncate(s: &str, max_len: usize) -> String {
     } else {
         format!("{}...", &s[..max_len.saturating_sub(3)])
     }
+}
+
+/// Truncate a string to fit within a maximum display width (not byte length).
+/// This properly handles Unicode characters that may have different display widths.
+fn truncate_to_width(s: &str, max_width: usize) -> String {
+    let current_width = s.width();
+    if current_width <= max_width {
+        return s.to_string();
+    }
+
+    // Need to truncate - account for "…" which is 1 column wide
+    let target_width = max_width.saturating_sub(1);
+    let mut result = String::new();
+    let mut width = 0;
+
+    for c in s.chars() {
+        let char_width = unicode_width::UnicodeWidthChar::width(c).unwrap_or(0);
+        if width + char_width > target_width {
+            break;
+        }
+        result.push(c);
+        width += char_width;
+    }
+
+    result.push('…');
+    result
 }
 
 fn render_logs(f: &mut Frame, app: &mut TrendingAppState, area: Rect) {

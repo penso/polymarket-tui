@@ -2,9 +2,12 @@
 
 [![CI](https://github.com/penso/polymarket-tui/actions/workflows/ci.yml/badge.svg)](https://github.com/penso/polymarket-tui/actions/workflows/ci.yml)
 
-Real-time Polymarket monitoring tool built in Rust. Monitor live market updates, trades, orderbook changes, and prices with beautiful colored console output.
+Real-time Polymarket monitoring tool built in Rust. Monitor live market
+updates, trades, orderbook changes, and prices with beautiful colored console
+output.
 
-Badge targets `penso/polymarket-tui` based on the configured origin.
+This was started as a pet project for me to play with AI. This used Cursor,
+Claude and Codex.
 
 ## Features
 

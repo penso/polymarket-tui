@@ -826,51 +826,60 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
                 .map(|v| format!(" ${:.2}", v))
                 .unwrap_or_default();
 
-            // Status emoji: ✅ for active/non-closed, ❌ for closed/resolved
-            let status_emoji = if market.closed {
-                "❌ "
+            // Status indicator: ● for active, ○ for resolved
+            let status_icon = if market.closed { "○ " } else { "● " };
+
+            // Build outcome display string
+            let outcomes_str = if market.closed {
+                // For resolved markets, show only the winning side
+                // Find the outcome with highest price (closest to 1.0)
+                let winner = market
+                    .outcomes
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(idx, outcome)| {
+                        let price = market
+                            .outcome_prices
+                            .get(idx)
+                            .and_then(|p| p.parse::<f64>().ok())?;
+                        Some((outcome, price))
+                    })
+                    .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+                winner
+                    .map(|(outcome, _)| format!("Winner: {}", outcome))
+                    .unwrap_or_else(|| "Resolved".to_string())
             } else {
-                "✅ "
+                // For active markets, show all outcomes with prices
+                let mut outcome_strings = Vec::new();
+                for (idx, outcome) in market.outcomes.iter().enumerate() {
+                    let price = if let Some(ref token_ids) = market.clob_token_ids {
+                        // Active markets: try live prices first, fallback to outcome_prices
+                        token_ids
+                            .get(idx)
+                            .and_then(|asset_id| app.market_prices.get(asset_id).copied())
+                            .or_else(|| {
+                                market
+                                    .outcome_prices
+                                    .get(idx)
+                                    .and_then(|p| p.parse::<f64>().ok())
+                            })
+                    } else {
+                        // No token IDs: use outcome_prices
+                        market
+                            .outcome_prices
+                            .get(idx)
+                            .and_then(|p| p.parse::<f64>().ok())
+                    };
+
+                    let price_str = price
+                        .map(format_price_cents)
+                        .unwrap_or_else(|| "N/A".to_string());
+
+                    outcome_strings.push(format!("{}: {}", outcome, price_str));
+                }
+                outcome_strings.join(" | ")
             };
-
-            // Build outcome strings with prices and percentages from API
-            let mut outcome_strings = Vec::new();
-            for (idx, outcome) in market.outcomes.iter().enumerate() {
-                // For closed markets, only use outcome_prices (no live orderbook data)
-                // For active markets, try to get live prices first
-                let price = if market.closed {
-                    // Closed markets: use stored outcome_prices only
-                    market
-                        .outcome_prices
-                        .get(idx)
-                        .and_then(|p| p.parse::<f64>().ok())
-                } else if let Some(ref token_ids) = market.clob_token_ids {
-                    // Active markets: try live prices first, fallback to outcome_prices
-                    token_ids
-                        .get(idx)
-                        .and_then(|asset_id| app.market_prices.get(asset_id).copied())
-                        .or_else(|| {
-                            market
-                                .outcome_prices
-                                .get(idx)
-                                .and_then(|p| p.parse::<f64>().ok())
-                        })
-                } else {
-                    // No token IDs: use outcome_prices
-                    market
-                        .outcome_prices
-                        .get(idx)
-                        .and_then(|p| p.parse::<f64>().ok())
-                };
-
-                let price_str = price
-                    .map(format_price_cents)
-                    .unwrap_or_else(|| "N/A".to_string());
-
-                outcome_strings.push(format!("{}: {}", outcome, price_str));
-            }
-
-            let outcomes_str = outcome_strings.join(" | ");
 
             // Calculate widths for right alignment
             let usable_width = (area.width as usize).saturating_sub(2); // -2 for borders
@@ -891,11 +900,11 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
                 0
             };
 
-            // Calculate available width for question (reserve space for emoji + right content + 1 space padding)
-            let emoji_width = status_emoji.width();
+            // Calculate available width for question (reserve space for icon + right content + 1 space padding)
+            let icon_width = status_icon.width();
             let available_width = usable_width
                 .saturating_sub(right_content_width)
-                .saturating_sub(emoji_width)
+                .saturating_sub(icon_width)
                 .saturating_sub(1); // 1 space padding between question and right content
 
             // Truncate question to fit available width
@@ -904,18 +913,18 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
 
             // Calculate remaining width for spacing
             let remaining_width = usable_width
-                .saturating_sub(emoji_width)
+                .saturating_sub(icon_width)
                 .saturating_sub(question_width)
                 .saturating_sub(right_content_width);
 
-            // Start with status emoji
-            let emoji_color = if market.closed {
-                Color::Red
+            // Start with status icon
+            let icon_color = if market.closed {
+                Color::DarkGray
             } else {
                 Color::Green
             };
             let mut line_spans = vec![
-                Span::styled(status_emoji, Style::default().fg(emoji_color)),
+                Span::styled(status_icon, Style::default().fg(icon_color)),
                 Span::styled(question, Style::default().fg(Color::White)),
             ];
 

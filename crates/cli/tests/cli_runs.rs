@@ -3,12 +3,12 @@ use std::{process::Command, thread, time::Duration};
 #[test]
 fn cli_starts_and_connects() {
     // Cargo sets this env var for integration tests to reference the built binary.
-    let bin_path = env!("CARGO_BIN_EXE_polymarket-cli");
+    let bin_path = env!("CARGO_BIN_EXE_polymarket-tui");
 
     // Start the CLI process
     let mut child = Command::new(bin_path)
         .spawn()
-        .expect("failed to start polymarket-cli");
+        .expect("failed to start polymarket-tui");
 
     // Give it a few seconds to start and connect
     thread::sleep(Duration::from_secs(5));

@@ -694,7 +694,15 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                         .unwrap_or(&trade.title);
 
                     let title_truncated = truncate(market_name, 30);
-                    let user_truncated = truncate(&trade.user, 15);
+                    // Use user, fall back to pseudonym, or show "-" if both empty
+                    let user_display = if !trade.user.is_empty() {
+                        &trade.user
+                    } else if !trade.pseudonym.is_empty() {
+                        &trade.pseudonym
+                    } else {
+                        "-"
+                    };
+                    let user_truncated = truncate(user_display, 15);
                     let side_text = trade.side.clone();
                     let outcome_text = trade.outcome.clone();
 

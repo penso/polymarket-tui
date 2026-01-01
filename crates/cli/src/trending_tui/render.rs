@@ -843,9 +843,11 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
                 .map(|v| format!(" ${:.2}", v))
                 .unwrap_or_default();
 
-            // Status indicator: ● for active, ○ for resolved
+            // Status indicator: ● for active, ◐ for in-review, ○ for resolved
             let status_icon = if market.closed {
                 "○ "
+            } else if market.is_in_review() {
+                "◐ "
             } else {
                 "● "
             };
@@ -947,6 +949,8 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
             // Start with status icon
             let icon_color = if market.closed {
                 Color::DarkGray
+            } else if market.is_in_review() {
+                Color::Cyan
             } else {
                 Color::Green
             };

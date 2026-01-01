@@ -1,6 +1,6 @@
 use polymarket_api::clob::{
-    ClobClient, MidpointResponse, Orderbook, PriceHistoryResponse, PriceInterval, PriceLevel,
-    PriceResponse, Side, SpreadRequest,
+    BatchTokenRequest, ClobClient, MidpointResponse, Orderbook, PriceHistoryResponse,
+    PriceInterval, PriceLevel, PriceResponse, Side, SpreadRequest, TokenPrices,
 };
 
 // ============================================================================
@@ -119,6 +119,52 @@ fn test_side_serialization() {
     let sell = serde_json::to_string(&Side::Sell).expect("Should serialize");
     assert_eq!(buy, "\"BUY\"");
     assert_eq!(sell, "\"SELL\"");
+}
+
+#[test]
+fn test_batch_token_request_serialization() {
+    let request = BatchTokenRequest {
+        token_id: "123456789".to_string(),
+        side: Side::Buy,
+    };
+    let json = serde_json::to_string(&request).expect("Should serialize");
+    assert!(json.contains("123456789"));
+    assert!(json.contains("BUY"));
+}
+
+#[test]
+fn test_batch_token_request_serialization_sell() {
+    let request = BatchTokenRequest {
+        token_id: "987654321".to_string(),
+        side: Side::Sell,
+    };
+    let json = serde_json::to_string(&request).expect("Should serialize");
+    assert!(json.contains("987654321"));
+    assert!(json.contains("SELL"));
+}
+
+#[test]
+fn test_token_prices_deserialization() {
+    let json = r#"{"BUY": "0.45", "SELL": "0.55"}"#;
+    let prices: TokenPrices = serde_json::from_str(json).expect("Should deserialize");
+    assert_eq!(prices.buy, Some("0.45".to_string()));
+    assert_eq!(prices.sell, Some("0.55".to_string()));
+}
+
+#[test]
+fn test_token_prices_deserialization_partial() {
+    let json = r#"{"BUY": "0.45"}"#;
+    let prices: TokenPrices = serde_json::from_str(json).expect("Should deserialize");
+    assert_eq!(prices.buy, Some("0.45".to_string()));
+    assert!(prices.sell.is_none());
+}
+
+#[test]
+fn test_token_prices_deserialization_empty() {
+    let json = r#"{}"#;
+    let prices: TokenPrices = serde_json::from_str(json).expect("Should deserialize");
+    assert!(prices.buy.is_none());
+    assert!(prices.sell.is_none());
 }
 
 // ============================================================================
@@ -289,4 +335,53 @@ async fn test_get_spreads() {
     // Spreads endpoint may return empty or error for tokens without orders
     // Just verify it doesn't panic
     let _ = result;
+}
+
+#[tokio::test]
+async fn test_get_orderbooks_batch() {
+    let client = ClobClient::new();
+    let requests = vec![
+        BatchTokenRequest {
+            token_id: "50229529616777085027502492682800195748509080624860515924115435116786910229377"
+                .to_string(),
+            side: Side::Buy,
+        },
+    ];
+
+    let result = client.get_orderbooks(requests).await;
+
+    // Batch orderbooks endpoint may return empty for tokens without orders
+    // Just verify it doesn't panic and returns valid structure
+    if let Ok(orderbooks) = result {
+        for ob in &orderbooks {
+            // Verify the structure is valid (bids/asks are Vec<PriceLevel>)
+            let _ = ob.bids.len();
+            let _ = ob.asks.len();
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_get_prices_batch() {
+    let client = ClobClient::new();
+    let requests = vec![
+        BatchTokenRequest {
+            token_id: "50229529616777085027502492682800195748509080624860515924115435116786910229377"
+                .to_string(),
+            side: Side::Buy,
+        },
+    ];
+
+    let result = client.get_prices_batch(requests).await;
+
+    // Batch prices endpoint may return empty for tokens without orders
+    // Just verify it doesn't panic and returns valid structure
+    if let Ok(prices) = result {
+        for (token_id, token_prices) in &prices {
+            assert!(!token_id.is_empty());
+            // Prices are optional
+            let _ = token_prices.buy.as_ref();
+            let _ = token_prices.sell.as_ref();
+        }
+    }
 }

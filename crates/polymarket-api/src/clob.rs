@@ -153,6 +153,22 @@ pub struct SpreadRequest {
     pub side: Option<Side>,
 }
 
+/// Request for batch price/orderbook queries
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchTokenRequest {
+    pub token_id: String,
+    pub side: Side,
+}
+
+/// Price data for a single token (both sides)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenPrices {
+    #[serde(rename = "BUY", default)]
+    pub buy: Option<String>,
+    #[serde(rename = "SELL", default)]
+    pub sell: Option<String>,
+}
+
 /// Trade information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Trade {
@@ -535,11 +551,11 @@ impl ClobClient {
     /// Get multiple orderbooks at once
     ///
     /// # Arguments
-    /// * `token_ids` - Array of token IDs to fetch orderbooks for
-    pub async fn get_orderbooks(&self, token_ids: Vec<String>) -> Result<Vec<Orderbook>> {
+    /// * `requests` - Array of batch token requests (max 500)
+    pub async fn get_orderbooks(&self, requests: Vec<BatchTokenRequest>) -> Result<Vec<Orderbook>> {
         let url = format!("{}/books", CLOB_API_BASE);
 
-        let response = self.client.post(&url).json(&token_ids).send().await?;
+        let response = self.client.post(&url).json(&requests).send().await?;
 
         if !response.status().is_success() {
             let error_text = response
@@ -551,6 +567,33 @@ impl ClobClient {
 
         let orderbooks: Vec<Orderbook> = response.json().await?;
         Ok(orderbooks)
+    }
+
+    /// Get multiple market prices at once (batch)
+    ///
+    /// # Arguments
+    /// * `requests` - Array of batch token requests (max 500)
+    ///
+    /// # Returns
+    /// HashMap mapping token_id to TokenPrices (buy/sell prices)
+    pub async fn get_prices_batch(
+        &self,
+        requests: Vec<BatchTokenRequest>,
+    ) -> Result<std::collections::HashMap<String, TokenPrices>> {
+        let url = format!("{}/prices", CLOB_API_BASE);
+
+        let response = self.client.post(&url).json(&requests).send().await?;
+
+        if !response.status().is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(crate::error::PolymarketError::InvalidData(error_text));
+        }
+
+        let prices: std::collections::HashMap<String, TokenPrices> = response.json().await?;
+        Ok(prices)
     }
 }
 

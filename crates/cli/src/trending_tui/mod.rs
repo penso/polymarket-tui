@@ -199,9 +199,13 @@ pub async fn run_trending_tui(
                                 for asset_id in token_ids {
                                     match clob_client.get_orderbook_by_asset(&asset_id).await {
                                         Ok(orderbook) => {
-                                            if let Some(best_ask) = orderbook.asks.first()
-                                                && let Ok(price) = best_ask.price.parse::<f64>()
-                                            {
+                                            // Find the best (lowest) ask price
+                                            let best_price = orderbook
+                                                .asks
+                                                .iter()
+                                                .filter_map(|ask| ask.price.parse::<f64>().ok())
+                                                .min_by(|a, b| a.partial_cmp(b).unwrap());
+                                            if let Some(price) = best_price {
                                                 prices.insert(asset_id.clone(), price);
                                             }
                                         },
@@ -383,12 +387,17 @@ pub async fn run_trending_tui(
                                                         .await
                                                     {
                                                         Ok(orderbook) => {
-                                                            // Get best ask price (price to buy)
-                                                            if let Some(best_ask) =
-                                                                orderbook.asks.first()
-                                                                && let Ok(price) =
-                                                                    best_ask.price.parse::<f64>()
-                                                            {
+                                                            // Find the best (lowest) ask price
+                                                            let best_price = orderbook
+                                                                .asks
+                                                                .iter()
+                                                                .filter_map(|ask| {
+                                                                    ask.price.parse::<f64>().ok()
+                                                                })
+                                                                .min_by(|a, b| {
+                                                                    a.partial_cmp(b).unwrap()
+                                                                });
+                                                            if let Some(price) = best_price {
                                                                 prices.insert(
                                                                     asset_id.clone(),
                                                                     price,
@@ -471,12 +480,17 @@ pub async fn run_trending_tui(
                                                         .await
                                                     {
                                                         Ok(orderbook) => {
-                                                            // Get best ask price (price to buy)
-                                                            if let Some(best_ask) =
-                                                                orderbook.asks.first()
-                                                                && let Ok(price) =
-                                                                    best_ask.price.parse::<f64>()
-                                                            {
+                                                            // Find the best (lowest) ask price
+                                                            let best_price = orderbook
+                                                                .asks
+                                                                .iter()
+                                                                .filter_map(|ask| {
+                                                                    ask.price.parse::<f64>().ok()
+                                                                })
+                                                                .min_by(|a, b| {
+                                                                    a.partial_cmp(b).unwrap()
+                                                                });
+                                                            if let Some(price) = best_price {
                                                                 prices.insert(
                                                                     asset_id.clone(),
                                                                     price,

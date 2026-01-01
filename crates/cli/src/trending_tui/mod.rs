@@ -11,6 +11,47 @@ use {
 
 pub use state::TrendingAppState;
 
+/// Macros for conditional logging based on tracing feature
+#[cfg(feature = "tracing")]
+macro_rules! log_info {
+    ($($arg:tt)*) => { tracing::info!($($arg)*) };
+}
+
+#[cfg(not(feature = "tracing"))]
+macro_rules! log_info {
+    ($($arg:tt)*) => {};
+}
+
+#[cfg(feature = "tracing")]
+macro_rules! log_debug {
+    ($($arg:tt)*) => { tracing::debug!($($arg)*) };
+}
+
+#[cfg(not(feature = "tracing"))]
+macro_rules! log_debug {
+    ($($arg:tt)*) => {};
+}
+
+#[cfg(feature = "tracing")]
+macro_rules! log_error {
+    ($($arg:tt)*) => { tracing::error!($($arg)*) };
+}
+
+#[cfg(not(feature = "tracing"))]
+macro_rules! log_error {
+    ($($arg:tt)*) => {};
+}
+
+#[cfg(feature = "tracing")]
+macro_rules! log_warn {
+    ($($arg:tt)*) => { tracing::warn!($($arg)*) };
+}
+
+#[cfg(not(feature = "tracing"))]
+macro_rules! log_warn {
+    ($($arg:tt)*) => {};
+}
+
 use {
     polymarket_api::clob::ClobClient,
     ratatui::{Terminal, backend::CrosstermBackend},
@@ -47,7 +88,7 @@ pub async fn run_trending_tui(
 
                 if !query.is_empty() {
                     // Search for any non-empty query
-                    tracing::info!("Searching for: '{}'", query);
+                    log_info!("Searching for: '{}'", query);
                     let app_state_clone = Arc::clone(&app_state);
                     let query_clone = query.clone();
                     // Create a new GammaClient for the async task
@@ -62,7 +103,7 @@ pub async fn run_trending_tui(
                     // The tracing context should be inherited automatically since we're using set_default()
                     tokio::spawn(async move {
                         // Test log to verify tracing works in spawned task
-                        tracing::info!("[TASK] Starting search for: '{}'", query_clone);
+                        log_info!("[TASK] Starting search for: '{}'", query_clone);
 
                         let result = gamma_client_for_task
                             .search_events(&query_clone, Some(50))
@@ -70,12 +111,12 @@ pub async fn run_trending_tui(
 
                         match result {
                             Ok(results) => {
-                                tracing::info!("Search found {} results", results.len());
+                                log_info!("Search found {} results", results.len());
                                 let mut app = app_state_clone.lock().await;
                                 app.set_search_results(results, query_clone);
                             },
-                            Err(e) => {
-                                tracing::error!("Search failed: {}", e);
+                            Err(_e) => {
+                                log_error!("Search failed: {}", _e);
                                 let mut app = app_state_clone.lock().await;
                                 app.set_searching(false);
                                 app.search.results.clear();
@@ -143,7 +184,7 @@ pub async fn run_trending_tui(
                         && app.navigation.focused_panel == FocusedPanel::Markets
                         && let Some(event) = app.selected_event()
                     {
-                        tracing::info!("Refreshing market prices for event: {}", event.slug);
+                        log_info!("Refreshing market prices for event: {}", event.slug);
                         let app_state_clone = Arc::clone(&app_state);
                         let clob_client = ClobClient::new();
                         let markets_clone: Vec<_> = event
@@ -164,11 +205,11 @@ pub async fn run_trending_tui(
                                                 prices.insert(asset_id.clone(), price);
                                             }
                                         },
-                                        Err(e) => {
-                                            tracing::debug!(
+                                        Err(_e) => {
+                                            log_debug!(
                                                 "Failed to fetch orderbook for asset {}: {}",
                                                 asset_id,
-                                                e
+                                                _e
                                             );
                                         },
                                     }
@@ -177,7 +218,7 @@ pub async fn run_trending_tui(
 
                             let mut app = app_state_clone.lock().await;
                             app.market_prices.extend(prices);
-                            tracing::info!("Market prices refreshed");
+                            log_info!("Market prices refreshed");
                         });
                     }
                 },
@@ -217,7 +258,7 @@ pub async fn run_trending_tui(
                             app.pagination.order_by = order_by.clone();
                             app.pagination.is_fetching_more = true;
 
-                            tracing::info!(
+                            log_info!(
                                 "Switching to {} filter, fetching events...",
                                 app.event_filter.label()
                             );
@@ -232,7 +273,7 @@ pub async fn run_trending_tui(
                                     .await
                                 {
                                     Ok(new_events) => {
-                                        tracing::info!(
+                                        log_info!(
                                             "Fetched {} events for {} filter",
                                             new_events.len(),
                                             order_by
@@ -243,8 +284,8 @@ pub async fn run_trending_tui(
                                         app.navigation.selected_index = 0;
                                         app.scroll.events_list = 0;
                                     },
-                                    Err(e) => {
-                                        tracing::error!("Failed to fetch events: {}", e);
+                                    Err(_e) => {
+                                        log_error!("Failed to fetch events: {}", _e);
                                         let mut app = app_state_clone.lock().await;
                                         app.pagination.is_fetching_more = false;
                                     },
@@ -276,7 +317,7 @@ pub async fn run_trending_tui(
                             app.pagination.order_by = order_by.clone();
                             app.pagination.is_fetching_more = true;
 
-                            tracing::info!(
+                            log_info!(
                                 "Switching to {} filter, fetching events...",
                                 app.event_filter.label()
                             );
@@ -291,7 +332,7 @@ pub async fn run_trending_tui(
                                     .await
                                 {
                                     Ok(new_events) => {
-                                        tracing::info!(
+                                        log_info!(
                                             "Fetched {} events for {} filter",
                                             new_events.len(),
                                             order_by
@@ -302,8 +343,8 @@ pub async fn run_trending_tui(
                                         app.navigation.selected_index = 0;
                                         app.scroll.events_list = 0;
                                     },
-                                    Err(e) => {
-                                        tracing::error!("Failed to fetch events: {}", e);
+                                    Err(_e) => {
+                                        log_error!("Failed to fetch events: {}", _e);
                                         let mut app = app_state_clone.lock().await;
                                         app.pagination.is_fetching_more = false;
                                     },
@@ -352,19 +393,19 @@ pub async fn run_trending_tui(
                                                                     asset_id.clone(),
                                                                     price,
                                                                 );
-                                                                tracing::debug!(
+                                                                log_debug!(
                                                                     "Fetched price for asset {}: ${:.3}",
                                                                     asset_id,
                                                                     price
                                                                 );
                                                             }
                                                         },
-                                                        Err(e) => {
+                                                        Err(_e) => {
                                                             // Only log as debug to reduce noise - empty orderbooks are common
-                                                            tracing::debug!(
+                                                            log_debug!(
                                                                 "Failed to fetch orderbook for asset {}: {}",
                                                                 asset_id,
-                                                                e
+                                                                _e
                                                             );
                                                         },
                                                     }
@@ -440,19 +481,19 @@ pub async fn run_trending_tui(
                                                                     asset_id.clone(),
                                                                     price,
                                                                 );
-                                                                tracing::debug!(
+                                                                log_debug!(
                                                                     "Fetched price for asset {}: ${:.3}",
                                                                     asset_id,
                                                                     price
                                                                 );
                                                             }
                                                         },
-                                                        Err(e) => {
+                                                        Err(_e) => {
                                                             // Only log as debug to reduce noise - empty orderbooks are common
-                                                            tracing::debug!(
+                                                            log_debug!(
                                                                 "Failed to fetch orderbook for asset {}: {}",
                                                                 asset_id,
-                                                                e
+                                                                _e
                                                             );
                                                         },
                                                     }
@@ -477,7 +518,7 @@ pub async fn run_trending_tui(
 
                                     // Fetch 50 more events
                                     let new_limit = current_limit + 50;
-                                    tracing::info!(
+                                    log_info!(
                                         "Fetching more trending events (limit: {})",
                                         new_limit
                                     );
@@ -505,7 +546,7 @@ pub async fn run_trending_tui(
                                                     .retain(|e| !existing_slugs.contains(&e.slug));
 
                                                 if !new_events.is_empty() {
-                                                    tracing::info!(
+                                                    log_info!(
                                                         "Fetched {} new trending events",
                                                         new_events.len()
                                                     );
@@ -513,7 +554,7 @@ pub async fn run_trending_tui(
                                                     app.events.append(&mut new_events);
                                                     app.pagination.current_limit = new_limit;
                                                 } else {
-                                                    tracing::info!(
+                                                    log_info!(
                                                         "No new events to add (already have all events)"
                                                     );
                                                 }
@@ -521,11 +562,8 @@ pub async fn run_trending_tui(
                                                 let mut app = app_state_clone.lock().await;
                                                 app.pagination.is_fetching_more = false;
                                             },
-                                            Err(e) => {
-                                                tracing::error!(
-                                                    "Failed to fetch more events: {}",
-                                                    e
-                                                );
+                                            Err(_e) => {
+                                                log_error!("Failed to fetch more events: {}", _e);
                                                 let mut app = app_state_clone.lock().await;
                                                 app.pagination.is_fetching_more = false;
                                             },
@@ -652,9 +690,9 @@ pub async fn run_trending_tui(
 
                                     let rtds_client =
                                         RTDSClient::new().with_event_slug(event_slug_clone.clone());
-                                    let event_slug_for_log = event_slug_clone.clone();
+                                    let _event_slug_for_log = event_slug_clone.clone();
 
-                                    tracing::info!(
+                                    log_info!(
                                         "Starting RTDS WebSocket for event: {}",
                                         event_slug_clone
                                     );
@@ -665,7 +703,7 @@ pub async fn run_trending_tui(
                                                 let app_state = Arc::clone(&app_state_ws);
                                                 let event_slug = event_slug_for_closure.clone();
 
-                                                tracing::info!(
+                                                log_info!(
                                                     "Received RTDS trade for event: {}",
                                                     event_slug
                                                 );
@@ -676,12 +714,12 @@ pub async fn run_trending_tui(
                                                         app.trades.event_trades.get_mut(&event_slug)
                                                     {
                                                         event_trades.add_trade(&msg);
-                                                        tracing::info!(
+                                                        log_info!(
                                                             "Trade added to event_trades for: {}",
                                                             event_slug
                                                         );
                                                     } else {
-                                                        tracing::warn!(
+                                                        log_warn!(
                                                             "No event_trades entry found for: {}",
                                                             event_slug
                                                         );
@@ -691,16 +729,16 @@ pub async fn run_trending_tui(
                                             .await
                                         {
                                             Ok(()) => {
-                                                tracing::info!(
+                                                log_info!(
                                                     "RTDS WebSocket connection closed normally for event: {}",
-                                                    event_slug_for_log
+                                                    _event_slug_for_log
                                                 );
                                             },
-                                            Err(e) => {
-                                                tracing::error!(
+                                            Err(_e) => {
+                                                log_error!(
                                                     "RTDS WebSocket error for event {}: {}",
-                                                    event_slug_for_log,
-                                                    e
+                                                    _event_slug_for_log,
+                                                    _e
                                                 );
                                             },
                                         }

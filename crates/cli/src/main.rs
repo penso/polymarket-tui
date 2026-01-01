@@ -6,13 +6,12 @@ mod tui;
 #[cfg(feature = "tui")]
 mod trending_tui;
 
-#[cfg(feature = "tui")]
+#[cfg(all(feature = "tui", feature = "tracing"))]
 mod tui_log_layer;
 
 use {
     anyhow::{Context, Result},
     clap::{Parser, Subcommand},
-    colored::Colorize,
     display_trait::TradeDisplay,
     polymarket_api::{
         ClobClient, DataClient, GammaClient, MarketUpdateFormatter, PolymarketWebSocket,
@@ -24,8 +23,18 @@ use {
         path::PathBuf,
         sync::{Arc, Mutex},
     },
-    tracing::info,
 };
+
+/// Macro to log info messages only when tracing feature is enabled
+#[cfg(feature = "tracing")]
+macro_rules! log_info {
+    ($($arg:tt)*) => { tracing::info!($($arg)*) };
+}
+
+#[cfg(not(feature = "tracing"))]
+macro_rules! log_info {
+    ($($arg:tt)*) => {};
+}
 
 #[derive(Parser)]
 #[command(name = "polymarket-cli")]
@@ -140,15 +149,15 @@ async fn run_monitor(use_rtds: bool, event_slug: Option<String>) -> Result<()> {
     if use_rtds {
         return run_monitor_rtds(event_slug).await;
     }
-    info!("🚀 Polymarket Real-Time Monitor");
-    info!("Connecting to Polymarket WebSocket...");
+    log_info!("🚀 Polymarket Real-Time Monitor");
+    log_info!("Connecting to Polymarket WebSocket...");
 
     // Setup cache directory (configurable via POLYMARKET_CACHE_DIR env var)
     let cache_dir = env::var("POLYMARKET_CACHE_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|_| default_cache_dir());
 
-    info!("Using cache directory: {}", cache_dir.display());
+    log_info!("Using cache directory: {}", cache_dir.display());
 
     // Create Gamma client with file-based caching
     // Market info is cached for 24 hours (market data rarely changes)
@@ -161,16 +170,16 @@ async fn run_monitor(use_rtds: bool, event_slug: Option<String>) -> Result<()> {
         .context("Failed to set cache TTL")?;
 
     // Fetch active markets and get asset IDs
-    info!("📡 Fetching active markets...");
+    log_info!("📡 Fetching active markets...");
     let asset_ids = gamma_client
         .get_all_active_asset_ids()
         .await
         .context("Failed to fetch active markets")?;
 
-    info!("✓ Found {} active asset IDs", asset_ids.len());
+    log_info!("✓ Found {} active asset IDs", asset_ids.len());
 
     // Build market info cache
-    info!("🔍 Building market info cache...");
+    log_info!("🔍 Building market info cache...");
     let market_info_cache: Arc<Mutex<HashMap<String, polymarket_api::gamma::MarketInfo>>> =
         Arc::new(std::sync::Mutex::new(HashMap::new()));
 
@@ -186,11 +195,11 @@ async fn run_monitor(use_rtds: bool, event_slug: Option<String>) -> Result<()> {
         }
     }
 
-    let cache_len = {
+    let _cache_len = {
         let cache = lock_mutex(&market_info_cache)?;
         cache.len()
     };
-    info!("✓ Cached {} market info entries", cache_len);
+    log_info!("✓ Cached {} market info entries", _cache_len);
 
     // Create WebSocket client
     let mut ws_client = PolymarketWebSocket::new(asset_ids.clone());
@@ -203,10 +212,10 @@ async fn run_monitor(use_rtds: bool, event_slug: Option<String>) -> Result<()> {
         }
     }
 
-    info!("🔌 Connecting to WebSocket...");
-    info!("Monitoring {} assets", asset_ids.len());
-    info!("Press Ctrl+C to exit");
-    info!("{}", "─".repeat(80));
+    log_info!("🔌 Connecting to WebSocket...");
+    log_info!("Monitoring {} assets", asset_ids.len());
+    log_info!("Press Ctrl+C to exit");
+    log_info!("{}", "─".repeat(80));
 
     // Connect and listen
     let cache_clone = Arc::clone(&market_info_cache);
@@ -252,29 +261,29 @@ async fn run_monitor(use_rtds: bool, event_slug: Option<String>) -> Result<()> {
 }
 
 async fn run_monitor_rtds(event_slug: Option<String>) -> Result<()> {
-    info!("🚀 Polymarket Real-Time Monitor (RTDS)");
-    info!("Connecting to RTDS WebSocket...");
+    log_info!("🚀 Polymarket Real-Time Monitor (RTDS)");
+    log_info!("Connecting to RTDS WebSocket...");
 
     // Check for authentication
     let has_auth =
         env::var("api_key").is_ok() && env::var("secret").is_ok() && env::var("passphrase").is_ok();
     if has_auth {
-        info!(
+        log_info!(
             "✓ Authentication tokens found (activity subscriptions are public, auth not required)"
         );
     } else {
-        info!("ℹ️  No authentication found (activity subscriptions are public data)");
+        log_info!("ℹ️  No authentication found (activity subscriptions are public data)");
     }
 
-    if let Some(ref slug) = event_slug {
-        info!("Filtering activity for event: {}", slug);
+    if let Some(ref _slug) = event_slug {
+        log_info!("Filtering activity for event: {}", _slug);
     } else {
-        info!("⚠️  No event filter specified. You may not see activity.");
-        info!("💡 Tip: Use --event <slug> to filter by event");
+        log_info!("⚠️  No event filter specified. You may not see activity.");
+        log_info!("💡 Tip: Use --event <slug> to filter by event");
     }
 
-    info!("Press Ctrl+C to exit");
-    info!("{}", "─".repeat(80));
+    log_info!("Press Ctrl+C to exit");
+    log_info!("{}", "─".repeat(80));
 
     let mut rtds_client = RTDSClient::new();
     if let Some(slug) = event_slug {
@@ -294,18 +303,18 @@ async fn run_monitor_rtds(event_slug: Option<String>) -> Result<()> {
 
 async fn run_watch_event(event: String, use_tui: bool) -> Result<()> {
     let event_slug = extract_event_slug(&event);
-    info!("🎯 Watching trade activity for event: {}", event_slug);
-    info!("Connecting to RTDS WebSocket...");
+    log_info!("🎯 Watching trade activity for event: {}", event_slug);
+    log_info!("Connecting to RTDS WebSocket...");
 
     // Check for authentication
     let has_auth =
         env::var("api_key").is_ok() && env::var("secret").is_ok() && env::var("passphrase").is_ok();
     if has_auth {
-        info!(
+        log_info!(
             "✓ Authentication tokens found (activity subscriptions are public, auth not required)"
         );
     } else {
-        info!("ℹ️  No authentication found (activity subscriptions are public data)");
+        log_info!("ℹ️  No authentication found (activity subscriptions are public data)");
     }
 
     if use_tui {
@@ -318,8 +327,8 @@ async fn run_watch_event(event: String, use_tui: bool) -> Result<()> {
             anyhow::bail!("TUI mode requires building with --features tui flag");
         }
     } else {
-        info!("Press Ctrl+C to exit");
-        info!("{}", "─".repeat(80));
+        log_info!("Press Ctrl+C to exit");
+        log_info!("{}", "─".repeat(80));
 
         let rtds_client = RTDSClient::new().with_event_slug(event_slug.clone());
         let mut display = display_trait::SimpleDisplay {};
@@ -351,7 +360,7 @@ async fn run_watch_event_tui(event_slug: String) -> Result<()> {
     };
 
     // Fetch event data from Gamma API before starting TUI
-    info!("Fetching event data for: {}", event_slug);
+    log_info!("Fetching event data for: {}", event_slug);
     let gamma_client = GammaClient::new();
     let event = gamma_client
         .get_event_by_slug(&event_slug)
@@ -414,16 +423,14 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Check if we're running a TUI command
-    let is_tui_command = matches!(
+    let _is_tui_command = matches!(
         cli.command,
         Commands::Trending { .. } | Commands::WatchEvent { tui: true, .. }
     );
 
     // Initialize tracing subscriber conditionally
-    if is_tui_command {
-        // For TUI commands, we'll set up the subscriber in the TUI function
-        // to capture logs for display
-    } else {
+    #[cfg(feature = "tracing")]
+    if !_is_tui_command {
         // For non-TUI commands, use the default fmt subscriber
         tracing_subscriber::fmt()
             .with_env_filter(
@@ -472,23 +479,27 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
 
     // Setup custom tracing layer to capture logs for TUI
     // IMPORTANT: Set this up BEFORE any tracing calls (including API calls)
+    #[cfg(feature = "tracing")]
     let logs = Arc::new(TokioMutex::new(Vec::<String>::new()));
+    #[cfg(feature = "tracing")]
     let log_layer = tui_log_layer::TuiLogLayer::new(Arc::clone(&logs));
 
     // Setup tracing subscriber with our custom layer
     // Use init() instead of set_default() to set it globally
     // This ensures spawned tasks can also use the dispatcher
-    use tracing_subscriber::prelude::*;
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .with(log_layer)
-        .init();
+    #[cfg(feature = "tracing")]
+    {
+        use tracing_subscriber::prelude::*;
+        tracing_subscriber::registry()
+            .with(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+            )
+            .with(log_layer)
+            .init();
+    }
 
-    // Now that tracing is set up, we can log
-    info!("🔥 Fetching trending events...");
+    log_info!("🔥 Fetching trending events...");
 
     let gamma_client = GammaClient::new();
     // For trending events, we want descending order by default (highest volume first)
@@ -502,7 +513,7 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
         anyhow::bail!("No trending events found");
     }
 
-    info!("Found {} trending events", events.len());
+    log_info!("Found {} trending events", events.len());
 
     // Setup terminal
     enable_raw_mode()?;
@@ -517,54 +528,57 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
         ascending,
     )));
 
-    // Connect logs to app state
-    let logs_for_app = Arc::clone(&logs);
-    let app_state_for_logs = Arc::clone(&app_state);
-    tokio::spawn(async move {
-        let mut last_log_count = 0;
-        loop {
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-            let logs = logs_for_app.lock().await;
-            if logs.len() > last_log_count {
-                let new_logs: Vec<String> = logs[last_log_count..].to_vec();
-                last_log_count = logs.len();
-                drop(logs);
+    // Connect logs to app state (only when tracing is enabled)
+    #[cfg(feature = "tracing")]
+    {
+        let logs_for_app = Arc::clone(&logs);
+        let app_state_for_logs = Arc::clone(&app_state);
+        tokio::spawn(async move {
+            let mut last_log_count = 0;
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                let logs = logs_for_app.lock().await;
+                if logs.len() > last_log_count {
+                    let new_logs: Vec<String> = logs[last_log_count..].to_vec();
+                    last_log_count = logs.len();
+                    drop(logs);
 
-                let mut app = app_state_for_logs.lock().await;
-                for log in new_logs {
-                    // The log already has the [LEVEL] prefix from TuiLogLayer
-                    // So we just pass it directly - add_log will format it
-                    // Extract level for color coding
-                    let level = if log.starts_with("[ERROR]") {
-                        "ERROR"
-                    } else if log.starts_with("[WARN]") {
-                        "WARN"
-                    } else if log.starts_with("[INFO]") {
-                        "INFO"
-                    } else if log.starts_with("[DEBUG]") {
-                        "DEBUG"
-                    } else {
-                        "TRACE"
-                    };
-                    // Pass the log as-is (it already has [LEVEL] prefix)
-                    // add_log will add another prefix, so we need to strip the existing one
-                    let log_without_prefix = log
-                        .trim_start_matches("[ERROR] ")
-                        .trim_start_matches("[WARN] ")
-                        .trim_start_matches("[INFO] ")
-                        .trim_start_matches("[DEBUG] ")
-                        .trim_start_matches("[TRACE] ")
-                        .trim_start_matches("[ERROR]")
-                        .trim_start_matches("[WARN]")
-                        .trim_start_matches("[INFO]")
-                        .trim_start_matches("[DEBUG]")
-                        .trim_start_matches("[TRACE]")
-                        .trim();
-                    app.add_log(level, log_without_prefix.to_string());
+                    let mut app = app_state_for_logs.lock().await;
+                    for log in new_logs {
+                        // The log already has the [LEVEL] prefix from TuiLogLayer
+                        // So we just pass it directly - add_log will format it
+                        // Extract level for color coding
+                        let level = if log.starts_with("[ERROR]") {
+                            "ERROR"
+                        } else if log.starts_with("[WARN]") {
+                            "WARN"
+                        } else if log.starts_with("[INFO]") {
+                            "INFO"
+                        } else if log.starts_with("[DEBUG]") {
+                            "DEBUG"
+                        } else {
+                            "TRACE"
+                        };
+                        // Pass the log as-is (it already has [LEVEL] prefix)
+                        // add_log will add another prefix, so we need to strip the existing one
+                        let log_without_prefix = log
+                            .trim_start_matches("[ERROR] ")
+                            .trim_start_matches("[WARN] ")
+                            .trim_start_matches("[INFO] ")
+                            .trim_start_matches("[DEBUG] ")
+                            .trim_start_matches("[TRACE] ")
+                            .trim_start_matches("[ERROR]")
+                            .trim_start_matches("[WARN]")
+                            .trim_start_matches("[INFO]")
+                            .trim_start_matches("[DEBUG]")
+                            .trim_start_matches("[TRACE]")
+                            .trim();
+                        app.add_log(level, log_without_prefix.to_string());
+                    }
                 }
             }
-        }
-    });
+        });
+    }
 
     // Run TUI
     let result = trending_tui::run_trending_tui(terminal, app_state).await;
@@ -573,11 +587,11 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
     let _ = disable_raw_mode();
     let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
 
-    if let Ok(Some(event_slug)) = result {
-        info!("Selected event: {}", event_slug);
-        info!(
+    if let Ok(Some(_event_slug)) = result {
+        log_info!("Selected event: {}", _event_slug);
+        log_info!(
             "You can watch this event with: polymarket-cli watch-event {}",
-            event_slug
+            _event_slug
         );
     }
 
@@ -590,7 +604,7 @@ async fn run_trending(_order_by: String, _ascending: bool, _limit: usize) -> Res
 }
 
 async fn run_orderbook(market: String, use_asset: bool) -> Result<()> {
-    info!("📊 Fetching orderbook for: {}", market);
+    log_info!("📊 Fetching orderbook for: {}", market);
     let clob_client = ClobClient::new();
 
     let orderbook = if use_asset {
@@ -599,14 +613,14 @@ async fn run_orderbook(market: String, use_asset: bool) -> Result<()> {
         clob_client.get_orderbook(&market).await?
     };
 
-    info!("Bids (buy orders):");
-    for bid in orderbook.bids {
-        info!("  Price: {}, Size: {}", bid.price, bid.size);
+    log_info!("Bids (buy orders):");
+    for _bid in orderbook.bids {
+        log_info!("  Price: {}, Size: {}", _bid.price, _bid.size);
     }
 
-    info!("Asks (sell orders):");
-    for ask in orderbook.asks {
-        info!("  Price: {}, Size: {}", ask.price, ask.size);
+    log_info!("Asks (sell orders):");
+    for _ask in orderbook.asks {
+        log_info!("  Price: {}, Size: {}", _ask.price, _ask.size);
     }
 
     Ok(())
@@ -619,7 +633,7 @@ async fn run_trades(
     use_event_id: bool,
     use_event_slug: bool,
 ) -> Result<()> {
-    info!("📈 Fetching trades for: {}", market);
+    log_info!("📈 Fetching trades for: {}", market);
 
     if use_event_id {
         let event_id: u64 = market.parse().context("Invalid event ID")?;
@@ -650,7 +664,7 @@ async fn run_trades(
 }
 
 async fn run_event(event: String, use_id: bool) -> Result<()> {
-    info!("📅 Fetching event: {}", event);
+    log_info!("📅 Fetching event: {}", event);
     let gamma_client = GammaClient::new();
 
     let event_data = if use_id {
@@ -660,13 +674,13 @@ async fn run_event(event: String, use_id: bool) -> Result<()> {
     };
 
     if let Some(event) = event_data {
-        info!("Title: {}", event.title);
-        info!("Slug: {}", event.slug);
-        info!("Active: {}", event.active);
-        info!("Closed: {}", event.closed);
-        info!("Markets: {}", event.markets.len());
-        for (i, market) in event.markets.iter().enumerate() {
-            info!("  Market {}: {}", i + 1, market.question);
+        log_info!("Title: {}", event.title);
+        log_info!("Slug: {}", event.slug);
+        log_info!("Active: {}", event.active);
+        log_info!("Closed: {}", event.closed);
+        log_info!("Markets: {}", event.markets.len());
+        for _market in event.markets.iter() {
+            log_info!("  Market: {}", _market.question);
         }
     } else {
         anyhow::bail!("Event not found");
@@ -676,19 +690,19 @@ async fn run_event(event: String, use_id: bool) -> Result<()> {
 }
 
 async fn run_market(market: String, use_id: bool) -> Result<()> {
-    info!("📊 Fetching market: {}", market);
+    log_info!("📊 Fetching market: {}", market);
     let gamma_client = GammaClient::new();
 
     if use_id {
         if let Some(market_data) = gamma_client.get_market_by_id(&market).await? {
-            info!("Question: {}", market_data.question);
-            if let Some(id) = &market_data.id {
-                info!("Market ID: {}", id);
+            log_info!("Question: {}", market_data.question);
+            if let Some(_id) = &market_data.id {
+                log_info!("Market ID: {}", _id);
             } else {
-                info!("Market ID: (not available)");
+                log_info!("Market ID: (not available)");
             }
-            if let Some(token_ids) = market_data.clob_token_ids {
-                info!("Asset IDs: {:?}", token_ids);
+            if let Some(_token_ids) = market_data.clob_token_ids {
+                log_info!("Asset IDs: {:?}", _token_ids);
             }
         } else {
             anyhow::bail!("Market not found");
@@ -699,14 +713,14 @@ async fn run_market(market: String, use_id: bool) -> Result<()> {
             anyhow::bail!("Market not found");
         }
         for market_data in markets {
-            info!("Question: {}", market_data.question);
-            if let Some(id) = &market_data.id {
-                info!("Market ID: {}", id);
+            log_info!("Question: {}", market_data.question);
+            if let Some(_id) = &market_data.id {
+                log_info!("Market ID: {}", _id);
             } else {
-                info!("Market ID: (not available)");
+                log_info!("Market ID: (not available)");
             }
-            if let Some(token_ids) = market_data.clob_token_ids {
-                info!("Asset IDs: {:?}", token_ids);
+            if let Some(_token_ids) = market_data.clob_token_ids {
+                log_info!("Asset IDs: {:?}", _token_ids);
             }
         }
     }
@@ -716,43 +730,45 @@ async fn run_market(market: String, use_id: bool) -> Result<()> {
 
 fn display_trades(trades: &[polymarket_api::data::DataTrade]) {
     use chrono::DateTime;
-    for trade in trades {
-        let time = DateTime::from_timestamp(trade.timestamp, 0)
+    for _trade in trades {
+        let _time = DateTime::from_timestamp(_trade.timestamp, 0)
             .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
             .unwrap_or_else(|| "unknown".to_string());
-        info!(
+        let _side = if _trade.side == "BUY" {
+            "🟢 BUY"
+        } else {
+            "🔴 SELL"
+        };
+        log_info!(
             "{} | {} | {} @ ${:.4} ({} shares) | {} | {}",
-            time,
-            if trade.side == "BUY" {
-                "🟢 BUY".green()
-            } else {
-                "🔴 SELL".red()
-            },
-            trade.outcome,
-            trade.price,
-            trade.size,
-            trade.title,
-            trade.name
+            _time,
+            _side,
+            _trade.outcome,
+            _trade.price,
+            _trade.size,
+            _trade.title,
+            _trade.name
         );
     }
 }
 
 fn display_clob_trades(trades: &[polymarket_api::clob::Trade]) {
     use chrono::DateTime;
-    for trade in trades {
-        let time = DateTime::from_timestamp(trade.timestamp, 0)
+    for _trade in trades {
+        let _time = DateTime::from_timestamp(_trade.timestamp, 0)
             .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
             .unwrap_or_else(|| "unknown".to_string());
-        info!(
+        let _side = if _trade.side == "BUY" {
+            "🟢 BUY"
+        } else {
+            "🔴 SELL"
+        };
+        log_info!(
             "{} | {} | @ ${} ({} shares)",
-            time,
-            if trade.side == "BUY" {
-                "🟢 BUY".green()
-            } else {
-                "🔴 SELL".red()
-            },
-            trade.price,
-            trade.size
+            _time,
+            _side,
+            _trade.price,
+            _trade.size
         );
     }
 }

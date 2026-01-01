@@ -122,6 +122,18 @@ enum Commands {
         #[arg(long, default_value = "50")]
         limit: usize,
     },
+    /// Find high-probability markets for yield opportunities
+    Yield {
+        /// Minimum probability threshold (e.g., 0.99 for 99%)
+        #[arg(long, default_value = "0.95")]
+        min_prob: f64,
+        /// Maximum number of markets to fetch
+        #[arg(long, default_value = "500")]
+        limit: usize,
+        /// Minimum volume to filter by (note: many markets report 0 volume)
+        #[arg(long, default_value = "0")]
+        min_volume: f64,
+    },
 }
 
 fn extract_event_slug(event_input: &str) -> String {
@@ -459,6 +471,11 @@ async fn main() -> Result<()> {
             ascending,
             limit,
         } => run_trending(order_by, ascending, limit).await,
+        Commands::Yield {
+            min_prob,
+            limit,
+            min_volume,
+        } => run_yield(min_prob, limit, min_volume).await,
     }
 }
 
@@ -724,6 +741,124 @@ async fn run_market(market: String, use_id: bool) -> Result<()> {
             }
         }
     }
+
+    Ok(())
+}
+
+async fn run_yield(min_prob: f64, limit: usize, min_volume: f64) -> Result<()> {
+    log_info!(
+        "🔍 Searching for markets with outcomes >= {:.1}% probability...",
+        min_prob * 100.0
+    );
+
+    let gamma_client = GammaClient::new();
+
+    // Fetch active markets
+    let markets = gamma_client
+        .get_markets(Some(true), Some(false), Some(limit))
+        .await
+        .context("Failed to fetch markets")?;
+
+    log_info!("Fetched {} markets, filtering...", markets.len());
+
+    // Structure to hold yield opportunities
+    struct YieldOpportunity {
+        question: String,
+        short_name: Option<String>,
+        outcome: String,
+        price: f64,
+        est_return: f64,
+        volume: f64,
+    }
+
+    let mut opportunities: Vec<YieldOpportunity> = Vec::new();
+
+    for market in &markets {
+        // Skip closed markets
+        if market.closed {
+            continue;
+        }
+
+        // Check volume threshold
+        let volume = market.volume_total.unwrap_or(0.0);
+        if volume < min_volume {
+            continue;
+        }
+
+        // Check each outcome price
+        for (i, price_str) in market.outcome_prices.iter().enumerate() {
+            if let Ok(price) = price_str.parse::<f64>()
+                && price >= min_prob
+            {
+                let outcome = market
+                    .outcomes
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_else(|| format!("Outcome {}", i));
+                let est_return = (1.0 - price) * 100.0; // Return as percentage
+
+                opportunities.push(YieldOpportunity {
+                    question: market.question.clone(),
+                    short_name: market
+                        .group_item_title
+                        .as_ref()
+                        .filter(|s| !s.is_empty())
+                        .cloned(),
+                    outcome,
+                    price,
+                    est_return,
+                    volume,
+                });
+            }
+        }
+    }
+
+    // Sort by estimated return (highest first)
+    opportunities.sort_by(|a, b| b.est_return.partial_cmp(&a.est_return).unwrap());
+
+    if opportunities.is_empty() {
+        log_info!(
+            "No markets found with outcomes >= {:.1}% and volume >= ${:.0}",
+            min_prob * 100.0,
+            min_volume
+        );
+        return Ok(());
+    }
+
+    log_info!(
+        "\nFound {} yield opportunities (sorted by return):\n",
+        opportunities.len()
+    );
+
+    // Print header
+    println!(
+        "{:<55} {:>6} {:>8} {:>8} {:>12}",
+        "Market", "Out", "Price", "Return", "Volume"
+    );
+    println!("{}", "─".repeat(95));
+
+    for opp in &opportunities {
+        // Use short name if available, otherwise truncate question
+        let display_name = opp.short_name.as_deref().unwrap_or(&opp.question);
+        let truncated_name: String = if display_name.len() > 53 {
+            format!("{}…", &display_name[..52])
+        } else {
+            display_name.to_string()
+        };
+
+        let return_str = format!("{:.2}%", opp.est_return);
+
+        println!(
+            "{:<55} {:>6} {:>7.1}¢ {:>8} {:>11.0}$",
+            truncated_name,
+            opp.outcome,
+            opp.price * 100.0,
+            return_str,
+            opp.volume,
+        );
+    }
+
+    println!("\n💡 Tip: Higher returns = higher risk. Check liquidity before trading.");
 
     Ok(())
 }

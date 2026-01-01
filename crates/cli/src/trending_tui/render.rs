@@ -838,9 +838,20 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
         .skip(scroll)
         .take(visible_height)
         .map(|market| {
-            let volume_str = market
-                .volume_total
-                .map(|v| format!(" ${:.2}", v))
+            // Use 24hr volume (more reliable) or fall back to total volume
+            let volume = market.volume_24hr.or(market.volume_total);
+            let volume_str = volume
+                .map(|v| {
+                    if v >= 1_000_000.0 {
+                        format!("${:.1}M", v / 1_000_000.0)
+                    } else if v >= 1_000.0 {
+                        format!("${:.0}K", v / 1_000.0)
+                    } else if v > 0.0 {
+                        format!("${:.0}", v)
+                    } else {
+                        String::new()
+                    }
+                })
                 .unwrap_or_default();
 
             // Status indicator: ● for active, ◐ for in-review, ○ for resolved

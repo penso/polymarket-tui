@@ -1,6 +1,6 @@
 //! TUI for browsing trending events with live trade monitoring
 
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
 use polymarket_bot::gamma::Event;
 use polymarket_bot::rtds::RTDSMessage;
 use ratatui::{
@@ -582,7 +582,7 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(12), // Event details
+                Constraint::Length(18), // Event details (increased to fit new fields)
                 Constraint::Min(0),     // Trades table
             ])
             .split(area);
@@ -700,6 +700,41 @@ fn render_event_details(
     trade_count: usize,
     area: Rect,
 ) {
+    // Calculate total volume from all markets
+    let total_volume: f64 = event
+        .markets
+        .iter()
+        .map(|m| m.volume_total.unwrap_or(0.0))
+        .sum();
+
+    // Format end date if available
+    let end_date_str = event
+        .end_date
+        .as_ref()
+        .and_then(|date_str| {
+            // Try RFC3339 parsing (handles timezone offsets and UTC)
+            DateTime::parse_from_rfc3339(date_str)
+                .ok()
+                .map(|dt| dt.with_timezone(&Utc))
+        })
+        .map(|dt| {
+            // Format as relative time or absolute date
+            let now = Utc::now();
+            let duration = dt.signed_duration_since(now);
+            if duration.num_days() > 0 {
+                format!("{} days", duration.num_days())
+            } else if duration.num_hours() > 0 {
+                format!("{} hours", duration.num_hours())
+            } else if duration.num_minutes() > 0 {
+                format!("{} min", duration.num_minutes())
+            } else if duration.num_seconds() < 0 {
+                format!("Expired ({})", dt.format("%Y-%m-%d %H:%M UTC"))
+            } else {
+                format!("{}", dt.format("%Y-%m-%d %H:%M UTC"))
+            }
+        })
+        .unwrap_or_else(|| "N/A".to_string());
+
     let mut lines = vec![
         Line::from(vec![
             Span::styled("Title: ", Style::default().fg(Color::Yellow).bold()),
@@ -709,64 +744,88 @@ fn render_event_details(
             ),
         ]),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("Slug: ", Style::default().fg(Color::Yellow).bold()),
-            Span::styled(truncate(&event.slug, 60), Style::default().fg(Color::Blue)),
-        ]),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("Event ID: ", Style::default().fg(Color::Yellow).bold()),
-            Span::styled(truncate(&event.id, 50), Style::default().fg(Color::White)),
-        ]),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("Status: ", Style::default().fg(Color::Yellow).bold()),
-            Span::styled(
-                if event.active { "Active" } else { "Inactive" },
-                Style::default().fg(if event.active {
-                    Color::Green
-                } else {
-                    Color::Red
-                }),
-            ),
-            Span::styled(" | ", Style::default().fg(Color::Gray)),
-            Span::styled(
-                if event.closed { "Closed" } else { "Open" },
-                Style::default().fg(if event.closed {
-                    Color::Red
-                } else {
-                    Color::Green
-                }),
-            ),
-            Span::styled(" | ", Style::default().fg(Color::Gray)),
-            Span::styled(
-                if is_watching {
-                    "🔴 Watching"
-                } else {
-                    "Not Watching"
-                },
-                Style::default().fg(if is_watching { Color::Red } else { Color::Gray }),
-            ),
-        ]),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("Markets: ", Style::default().fg(Color::Yellow).bold()),
-            Span::styled(
-                event.markets.len().to_string(),
-                Style::default().fg(Color::Cyan),
-            ),
-            Span::styled(" | ", Style::default().fg(Color::Gray)),
-            Span::styled("Trades: ", Style::default().fg(Color::Yellow).bold()),
-            Span::styled(
-                trade_count.to_string(),
-                Style::default().fg(if is_watching {
-                    Color::Green
-                } else {
-                    Color::Gray
-                }),
-            ),
-        ]),
     ];
+
+    // Add image thumbnail if available (show URL for now, terminal image rendering requires additional setup)
+    if let Some(ref image_url) = event.image {
+        lines.push(Line::from(vec![
+            Span::styled("Image: ", Style::default().fg(Color::Yellow).bold()),
+            Span::styled(
+                truncate(image_url, 50),
+                Style::default().fg(Color::Blue),
+            ),
+        ]));
+        lines.push(Line::from(""));
+    }
+
+    lines.push(Line::from(vec![
+        Span::styled("Slug: ", Style::default().fg(Color::Yellow).bold()),
+        Span::styled(truncate(&event.slug, 60), Style::default().fg(Color::Blue)),
+    ]));
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("Event ID: ", Style::default().fg(Color::Yellow).bold()),
+        Span::styled(truncate(&event.id, 50), Style::default().fg(Color::White)),
+    ]));
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("Status: ", Style::default().fg(Color::Yellow).bold()),
+        Span::styled(
+            if event.active { "Active" } else { "Inactive" },
+            Style::default().fg(if event.active {
+                Color::Green
+            } else {
+                Color::Red
+            }),
+        ),
+        Span::styled(" | ", Style::default().fg(Color::Gray)),
+        Span::styled(
+            if event.closed { "Closed" } else { "Open" },
+            Style::default().fg(if event.closed {
+                Color::Red
+            } else {
+                Color::Green
+            }),
+        ),
+        Span::styled(" | ", Style::default().fg(Color::Gray)),
+        Span::styled(
+            if is_watching {
+                "🔴 Watching"
+            } else {
+                "Not Watching"
+            },
+            Style::default().fg(if is_watching { Color::Red } else { Color::Gray }),
+        ),
+    ]));
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("Estimated End: ", Style::default().fg(Color::Yellow).bold()),
+        Span::styled(end_date_str, Style::default().fg(Color::Magenta)),
+    ]));
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("Total Volume: ", Style::default().fg(Color::Yellow).bold()),
+        Span::styled(
+            format!("${:.2}", total_volume),
+            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" | ", Style::default().fg(Color::Gray)),
+        Span::styled("Markets: ", Style::default().fg(Color::Yellow).bold()),
+        Span::styled(
+            event.markets.len().to_string(),
+            Style::default().fg(Color::Cyan),
+        ),
+        Span::styled(" | ", Style::default().fg(Color::Gray)),
+        Span::styled("Trades: ", Style::default().fg(Color::Yellow).bold()),
+        Span::styled(
+            trade_count.to_string(),
+            Style::default().fg(if is_watching {
+                Color::Green
+            } else {
+                Color::Gray
+            }),
+        ),
+    ]));
 
     if !event.tags.is_empty() {
         lines.push(Line::from(""));

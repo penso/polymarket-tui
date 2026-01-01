@@ -89,6 +89,10 @@ pub struct Event {
     #[serde(default)]
     pub tags: Vec<Tag>,
     pub markets: Vec<Market>,
+    #[serde(rename = "endDate", default)]
+    pub end_date: Option<String>, // ISO 8601 date string
+    #[serde(default)]
+    pub image: Option<String>, // URL to event image/thumbnail
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -117,6 +121,10 @@ pub struct Market {
         default
     )]
     pub outcome_prices: Vec<String>,
+    #[serde(rename = "volume24hr", default)]
+    pub volume_24hr: Option<f64>,
+    #[serde(rename = "volumeTotal", default)]
+    pub volume_total: Option<f64>,
 }
 
 pub struct GammaClient {

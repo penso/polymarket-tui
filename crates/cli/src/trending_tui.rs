@@ -672,9 +672,9 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                     Block::default()
                         .borders(Borders::ALL)
                         .title(if is_focused {
-                            "Trades (Focused)"
+                            format!("Trades ({}) (Focused)", trades.len())
                         } else {
-                            "Trades"
+                            format!("Trades ({})", trades.len())
                         })
                         .border_style(block_style),
                 )
@@ -765,23 +765,9 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 Block::default()
                     .borders(Borders::ALL)
                     .title(if is_focused {
-                        format!(
-                            "Trades ({}) (Focused)",
-                            if is_watching {
-                                "🔴 Watching"
-                            } else {
-                                "Stopped"
-                            }
-                        )
+                        format!("Trades ({}) (Focused)", trades.len())
                     } else {
-                        format!(
-                            "Trades ({})",
-                            if is_watching {
-                                "🔴 Watching"
-                            } else {
-                                "Stopped"
-                            }
-                        )
+                        format!("Trades ({})", trades.len())
                     })
                     .border_style(block_style)
             })

@@ -217,7 +217,7 @@ impl NavigationState {
     pub fn new() -> Self {
         Self {
             selected_index: 0,
-            focused_panel: FocusedPanel::Header, /* Start with Header focused so users can see filter options */
+            focused_panel: FocusedPanel::EventsList, // Start with events list focused
         }
     }
 }

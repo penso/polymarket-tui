@@ -138,6 +138,17 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
                 SearchMode::None => "🔍 Search: (type to search)",
             };
             Line::from(prompt_text.fg(Color::DarkGray))
+        } else if app.search.is_searching {
+            Line::from(vec![
+                Span::styled("🔍 Search: ", Style::default().fg(Color::White)),
+                Span::styled(
+                    app.search.query.clone(),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" ⏳", Style::default().fg(Color::Yellow)),
+            ])
         } else {
             Line::from(vec![
                 Span::styled("🔍 Search: ", Style::default().fg(Color::White)),
@@ -149,8 +160,13 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
                 ),
             ])
         };
+        let search_title = if app.search.is_searching {
+            "Search ⏳ Searching..."
+        } else {
+            "Search"
+        };
         let search_input = Paragraph::new(vec![search_line])
-            .block(Block::default().borders(Borders::ALL).title("Search"))
+            .block(Block::default().borders(Borders::ALL).title(search_title))
             .alignment(Alignment::Left)
             .wrap(Wrap { trim: true });
         f.render_widget(search_input, header_chunks[1]);
@@ -379,15 +395,22 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         Style::default()
     };
 
+    // Build title with loading indicator
+    let title = if app.search.is_searching {
+        "Trending Events ⏳ Searching..."
+    } else if app.pagination.is_fetching_more {
+        "Trending Events ⏳ Loading..."
+    } else if is_focused {
+        "Trending Events (Focused)"
+    } else {
+        "Trending Events"
+    };
+
     let list = List::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(if is_focused {
-                    "Trending Events (Focused)"
-                } else {
-                    "Trending Events"
-                })
+                .title(title)
                 .border_style(block_style),
         )
         .highlight_style(

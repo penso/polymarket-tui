@@ -12,6 +12,7 @@ mod tui_log_layer;
 use {
     anyhow::{Context, Result},
     clap::{Parser, Subcommand},
+    colored::Colorize,
     display_trait::TradeDisplay,
     polymarket_api::{
         ClobClient, DataClient, GammaClient, MarketUpdateFormatter, PolymarketWebSocket,
@@ -911,8 +912,19 @@ async fn run_yield(
                 .end_date
                 .map(|d| format!(" ends {}", d.format("%Y-%m-%d")))
                 .unwrap_or_default();
-            println!("\n📊 {} [{}]{}", opp.event_title, opp.event_status, end_str);
-            println!("   {}", url);
+
+            // Color event status
+            let event_status_colored = match opp.event_status {
+                "active" => opp.event_status.green(),
+                "closed" => opp.event_status.red(),
+                _ => opp.event_status.yellow(),
+            };
+
+            println!(
+                "\n📊 {} [{}]{}",
+                opp.event_title, event_status_colored, end_str
+            );
+            println!("   {}", url.dimmed());
             println!(
                 "   {:<35} {:>6} {:>6} {:>8} {:>8} {:>10}",
                 "Market", "Status", "Out", "Price", "Return", "Volume"
@@ -926,12 +938,19 @@ async fn run_yield(
             opp.market_name.clone()
         };
 
+        // Color market status
+        let market_status_colored = match opp.market_status {
+            "open" => opp.market_status.green(),
+            "closed" => opp.market_status.red(),
+            _ => opp.market_status.yellow(),
+        };
+
         let return_str = format!("{:.2}%", opp.est_return);
 
         println!(
             "   {:<35} {:>6} {:>6} {:>7.1}¢ {:>8} {:>9.0}$",
             truncated_name,
-            opp.market_status,
+            market_status_colored,
             opp.outcome,
             opp.price * 100.0,
             return_str,

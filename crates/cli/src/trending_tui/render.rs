@@ -723,14 +723,14 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 .collect();
 
             let table = Table::new(rows, [
-                Constraint::Length(10),     // Time
-                Constraint::Length(8),      // Side
-                Constraint::Length(5),      // Outcome
-                Constraint::Length(10),     // Price
-                Constraint::Length(10),     // Shares
-                Constraint::Length(10),     // Value
-                Constraint::Percentage(30), // Title
-                Constraint::Length(15),     // User
+                Constraint::Length(10), // Time
+                Constraint::Length(8),  // Side
+                Constraint::Length(5),  // Outcome
+                Constraint::Length(10), // Price
+                Constraint::Length(10), // Shares
+                Constraint::Length(10), // Value
+                Constraint::Fill(1),    // Market (takes remaining space)
+                Constraint::Length(15), // User
             ])
             .header(
                 Row::new(vec![

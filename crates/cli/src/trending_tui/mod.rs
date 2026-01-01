@@ -53,11 +53,84 @@ macro_rules! log_warn {
 }
 
 use {
-    polymarket_api::clob::ClobClient,
+    polymarket_api::clob::{BatchTokenRequest, ClobClient, Side},
     ratatui::{Terminal, backend::CrosstermBackend},
     std::{collections::HashMap, io, sync::Arc},
     tokio::sync::Mutex as TokioMutex,
 };
+
+/// Fetch market prices using the batch API
+/// Returns a HashMap mapping asset_id to the best ask price
+async fn fetch_market_prices_batch(
+    clob_client: &ClobClient,
+    active_markets: Vec<Vec<String>>,
+) -> HashMap<String, f64> {
+    // Collect all asset IDs from active markets
+    let all_asset_ids: Vec<String> = active_markets.into_iter().flatten().collect();
+
+    if all_asset_ids.is_empty() {
+        return HashMap::new();
+    }
+
+    // Build batch requests - we want SELL side to get ask prices
+    let requests: Vec<BatchTokenRequest> = all_asset_ids
+        .iter()
+        .map(|asset_id| BatchTokenRequest {
+            token_id: asset_id.clone(),
+            side: Side::Sell,
+        })
+        .collect();
+
+    let request_count = requests.len();
+    log_debug!("Fetching {} market prices via batch API", request_count);
+
+    // Try batch orderbooks first (more reliable for getting best ask)
+    match clob_client.get_orderbooks(requests).await {
+        Ok(orderbooks) => {
+            let mut prices = HashMap::new();
+            for orderbook in orderbooks {
+                if let Some(asset_id) = &orderbook.asset_id {
+                    // Find the best (lowest) ask price
+                    let best_price = orderbook
+                        .asks
+                        .iter()
+                        .filter_map(|ask| ask.price.parse::<f64>().ok())
+                        .min_by(|a, b| a.partial_cmp(b).unwrap());
+                    if let Some(price) = best_price {
+                        prices.insert(asset_id.clone(), price);
+                    }
+                }
+            }
+            log_debug!(
+                "Batch API returned prices for {} of {} assets",
+                prices.len(),
+                request_count
+            );
+            prices
+        },
+        Err(_e) => {
+            log_debug!("Batch orderbooks failed: {}, falling back to individual calls", _e);
+            // Fallback to individual calls if batch fails
+            let mut prices = HashMap::new();
+            for asset_id in all_asset_ids {
+                match clob_client.get_orderbook_by_asset(&asset_id).await {
+                    Ok(orderbook) => {
+                        let best_price = orderbook
+                            .asks
+                            .iter()
+                            .filter_map(|ask| ask.price.parse::<f64>().ok())
+                            .min_by(|a, b| a.partial_cmp(b).unwrap());
+                        if let Some(price) = best_price {
+                            prices.insert(asset_id.clone(), price);
+                        }
+                    },
+                    Err(_) => {},
+                }
+            }
+            prices
+        },
+    }
+}
 
 pub async fn run_trending_tui(
     mut terminal: Terminal<CrosstermBackend<io::Stdout>>,
@@ -208,35 +281,10 @@ pub async fn run_trending_tui(
                             let clob_client = ClobClient::new();
 
                             tokio::spawn(async move {
-                                let mut prices: HashMap<String, f64> = HashMap::new();
-                                for token_ids in active_markets {
-                                    for asset_id in token_ids {
-                                        match clob_client.get_orderbook_by_asset(&asset_id).await {
-                                            Ok(orderbook) => {
-                                                // Find the best (lowest) ask price
-                                                let best_price = orderbook
-                                                    .asks
-                                                    .iter()
-                                                    .filter_map(|ask| ask.price.parse::<f64>().ok())
-                                                    .min_by(|a, b| a.partial_cmp(b).unwrap());
-                                                if let Some(price) = best_price {
-                                                    prices.insert(asset_id.clone(), price);
-                                                }
-                                            },
-                                            Err(_e) => {
-                                                log_debug!(
-                                                    "Failed to fetch orderbook for asset {}: {}",
-                                                    asset_id,
-                                                    _e
-                                                );
-                                            },
-                                        }
-                                    }
-                                }
-
+                                let prices = fetch_market_prices_batch(&clob_client, active_markets).await;
                                 let mut app = app_state_clone.lock().await;
                                 app.market_prices.extend(prices);
-                                log_info!("Market prices refreshed");
+                                log_info!("Market prices refreshed via batch API");
                             });
                         }
                     }
@@ -398,50 +446,7 @@ pub async fn run_trending_tui(
                                             let clob_client = ClobClient::new();
 
                                             tokio::spawn(async move {
-                                                let mut prices = HashMap::new();
-                                                for token_ids in active_markets {
-                                                    for asset_id in token_ids {
-                                                        match clob_client
-                                                            .get_orderbook_by_asset(&asset_id)
-                                                            .await
-                                                        {
-                                                            Ok(orderbook) => {
-                                                                // Find the best (lowest) ask price
-                                                                let best_price = orderbook
-                                                                    .asks
-                                                                    .iter()
-                                                                    .filter_map(|ask| {
-                                                                        ask.price
-                                                                            .parse::<f64>()
-                                                                            .ok()
-                                                                    })
-                                                                    .min_by(|a, b| {
-                                                                        a.partial_cmp(b).unwrap()
-                                                                    });
-                                                                if let Some(price) = best_price {
-                                                                    prices.insert(
-                                                                        asset_id.clone(),
-                                                                        price,
-                                                                    );
-                                                                    log_debug!(
-                                                                        "Fetched price for asset {}: ${:.3}",
-                                                                        asset_id,
-                                                                        price
-                                                                    );
-                                                                }
-                                                            },
-                                                            Err(_e) => {
-                                                                // Only log as debug to reduce noise - empty orderbooks are common
-                                                                log_debug!(
-                                                                    "Failed to fetch orderbook for asset {}: {}",
-                                                                    asset_id,
-                                                                    _e
-                                                                );
-                                                            },
-                                                        }
-                                                    }
-                                                }
-
+                                                let prices = fetch_market_prices_batch(&clob_client, active_markets).await;
                                                 let mut app = app_state_clone.lock().await;
                                                 app.market_prices.extend(prices);
                                             });
@@ -498,50 +503,7 @@ pub async fn run_trending_tui(
                                             let clob_client = ClobClient::new();
 
                                             tokio::spawn(async move {
-                                                let mut prices = HashMap::new();
-                                                for token_ids in active_markets {
-                                                    for asset_id in token_ids {
-                                                        match clob_client
-                                                            .get_orderbook_by_asset(&asset_id)
-                                                            .await
-                                                        {
-                                                            Ok(orderbook) => {
-                                                                // Find the best (lowest) ask price
-                                                                let best_price = orderbook
-                                                                    .asks
-                                                                    .iter()
-                                                                    .filter_map(|ask| {
-                                                                        ask.price
-                                                                            .parse::<f64>()
-                                                                            .ok()
-                                                                    })
-                                                                    .min_by(|a, b| {
-                                                                        a.partial_cmp(b).unwrap()
-                                                                    });
-                                                                if let Some(price) = best_price {
-                                                                    prices.insert(
-                                                                        asset_id.clone(),
-                                                                        price,
-                                                                    );
-                                                                    log_debug!(
-                                                                        "Fetched price for asset {}: ${:.3}",
-                                                                        asset_id,
-                                                                        price
-                                                                    );
-                                                                }
-                                                            },
-                                                            Err(_e) => {
-                                                                // Only log as debug to reduce noise - empty orderbooks are common
-                                                                log_debug!(
-                                                                    "Failed to fetch orderbook for asset {}: {}",
-                                                                    asset_id,
-                                                                    _e
-                                                                );
-                                                            },
-                                                        }
-                                                    }
-                                                }
-
+                                                let prices = fetch_market_prices_batch(&clob_client, active_markets).await;
                                                 let mut app = app_state_clone.lock().await;
                                                 app.market_prices.extend(prices);
                                             });

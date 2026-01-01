@@ -1112,18 +1112,28 @@ fn render_logs(f: &mut Frame, app: &mut TrendingAppState, area: Rect) {
     // Calculate the actual visible height (accounting for borders)
     let visible_height = (area.height as usize).saturating_sub(2);
 
-    // Auto-scroll to bottom if we're near the bottom or if logs have grown
-    // This ensures new logs are always visible
-    if app.logs.len() > visible_height {
-        // Check if we're already showing the bottom (within 1 line)
-        let current_bottom = app.log_scroll + visible_height;
-        if current_bottom >= app.logs.len().saturating_sub(1) {
-            // We're at or near the bottom, keep it there
-            app.log_scroll = app.logs.len() - visible_height;
+    // Auto-scroll to bottom only if Logs panel is NOT focused
+    // When focused, user controls scrolling manually
+    let is_focused = app.focused_panel == FocusedPanel::Logs;
+    
+    if !is_focused {
+        // Auto-scroll to bottom if we're near the bottom or if logs have grown
+        // This ensures new logs are always visible when panel is not focused
+        if app.logs.len() > visible_height {
+            // Check if we're already showing the bottom (within 1 line)
+            let current_bottom = app.log_scroll + visible_height;
+            if current_bottom >= app.logs.len().saturating_sub(1) {
+                // We're at or near the bottom, keep it there
+                app.log_scroll = app.logs.len() - visible_height;
+            }
+        } else {
+            // Not enough logs to scroll, show from the beginning
+            app.log_scroll = 0;
         }
     } else {
-        // Not enough logs to scroll, show from the beginning
-        app.log_scroll = 0;
+        // When focused, ensure scroll position is within valid bounds
+        let max_scroll = app.logs.len().saturating_sub(visible_height.max(1));
+        app.log_scroll = app.log_scroll.min(max_scroll);
     }
 
     // First, flatten logs by wrapping long lines

@@ -904,7 +904,7 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         // Use a fixed minimum height for event details panel
         // Content will scroll if it exceeds this height
         let min_event_details_height = 8; // Minimum height (6 base lines + 2 for borders)
-        
+
         // Split area into event details, markets, and trades
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -1193,10 +1193,10 @@ fn render_event_details(
             .map(|tag| truncate(&tag.label, 20))
             .collect();
         let tags_text = tag_labels.join(", ");
-        
+
         // Calculate available width for tags (accounting for "Tags: " prefix and borders)
         let available_width = (area.width as usize).saturating_sub(8); // "Tags: " (6) + borders (2)
-        
+
         // If tags text fits on one line, add it normally
         if tags_text.len() <= available_width {
             lines.push(Line::from(vec![
@@ -1208,7 +1208,7 @@ fn render_event_details(
             let tags_prefix = "Tags: ";
             let tags_content = &tags_text;
             let content_width = available_width.saturating_sub(tags_prefix.len());
-            
+
             // First line with prefix
             let first_line_content = if tags_content.len() > content_width {
                 truncate(tags_content, content_width)
@@ -1219,20 +1219,24 @@ fn render_event_details(
                 Span::styled(tags_prefix, Style::default().fg(Color::Yellow).bold()),
                 Span::styled(first_line_content, Style::default().fg(Color::Cyan)),
             ]));
-            
+
             // Additional wrapped lines (without prefix, indented)
             let remaining_content = if tags_content.len() > content_width {
                 &tags_content[content_width..]
             } else {
                 ""
             };
-            
+
             // Split remaining content into chunks that fit
             let indent = "      "; // 6 spaces to align with content after "Tags: "
             let indent_width = indent.len();
             let wrapped_width = available_width.saturating_sub(indent_width);
-            
-            for chunk in remaining_content.chars().collect::<Vec<_>>().chunks(wrapped_width) {
+
+            for chunk in remaining_content
+                .chars()
+                .collect::<Vec<_>>()
+                .chunks(wrapped_width)
+            {
                 let chunk_str: String = chunk.iter().collect();
                 if !chunk_str.trim().is_empty() {
                     lines.push(Line::from(vec![
@@ -1329,12 +1333,24 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
                 .map(|v| format!(" ${:.2}", v))
                 .unwrap_or_default();
 
-            let outcomes_str = if market.outcomes.len() >= 2 {
-                format!(
-                    "{} / {}",
-                    market.outcomes.first().map(|s| s.as_str()).unwrap_or(""),
-                    market.outcomes.get(1).map(|s| s.as_str()).unwrap_or("")
-                )
+            // Build outcome strings with prices and percentages
+            let mut outcome_strings = Vec::new();
+            for (idx, outcome) in market.outcomes.iter().enumerate() {
+                let price_str = market
+                    .outcome_prices
+                    .get(idx)
+                    .and_then(|p| p.parse::<f64>().ok())
+                    .map(|price| {
+                        let percent = price * 100.0;
+                        format!("${:.3} ({:.1}%)", price, percent)
+                    })
+                    .unwrap_or_else(|| "N/A".to_string());
+
+                outcome_strings.push(format!("{}: {}", outcome, price_str));
+            }
+
+            let outcomes_str = if !outcome_strings.is_empty() {
+                outcome_strings.join(" | ")
             } else {
                 String::new()
             };
@@ -1915,7 +1931,7 @@ pub async fn run_trending_tui(
                                         if let Some(event) = app.selected_event() {
                                             // Base lines: Title, Slug, Event ID, Status, Estimated End, Total Volume
                                             let mut total_lines = 6;
-                                            
+
                                             // Calculate wrapped tags lines
                                             if !event.tags.is_empty() {
                                                 let tag_labels: Vec<String> = event
@@ -1928,17 +1944,20 @@ pub async fn run_trending_tui(
                                                 // Assume ~60 chars available for tags content
                                                 let tags_content_width = 60;
                                                 if tags_text.len() > tags_content_width {
-                                                // Tags wrap - calculate how many lines
-                                                let wrapped_lines = tags_text.len().div_ceil(tags_content_width);
+                                                    // Tags wrap - calculate how many lines
+                                                    let wrapped_lines = tags_text
+                                                        .len()
+                                                        .div_ceil(tags_content_width);
                                                     total_lines += wrapped_lines;
                                                 } else {
                                                     total_lines += 1; // Single line for tags
                                                 }
                                             }
-                                            
+
                                             // Get visible height from the actual area (approximate)
                                             let visible_height: usize = 6; // Minimum height minus borders
-                                            let max_scroll = total_lines.saturating_sub(visible_height.max(1));
+                                            let max_scroll =
+                                                total_lines.saturating_sub(visible_height.max(1));
                                             if app.scroll.event_details < max_scroll {
                                                 app.scroll.event_details += 1;
                                             }

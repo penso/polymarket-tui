@@ -6,7 +6,7 @@ mod state;
 
 use {
     render::{render, truncate},
-    state::{EventTrades, FocusedPanel, SearchMode},
+    state::{EventFilter, EventTrades, FocusedPanel, SearchMode},
 };
 
 pub use state::TrendingAppState;
@@ -252,11 +252,37 @@ pub async fn run_trending_tui(
                     }
                 },
                 KeyCode::Char('r') => {
-                    // Refresh market prices - only available when Markets panel is focused
-                    if !app.is_in_filter_mode()
-                        && app.navigation.focused_panel == FocusedPanel::Markets
+                    if app.is_in_filter_mode() {
+                        // Do nothing in filter mode
+                    } else if app.navigation.focused_panel == FocusedPanel::EventsList {
+                        // Refresh events list
+                        let order_by = app.event_filter.order_by().to_string();
+                        let ascending = app.event_filter == EventFilter::Breaking;
+                        let limit = app.pagination.current_limit;
+                        let app_state_clone = Arc::clone(&app_state);
+                        let gamma_client = GammaClient::new();
+
+                        log_info!("Refreshing events list...");
+
+                        tokio::spawn(async move {
+                            match gamma_client
+                                .get_trending_events(Some(&order_by), Some(ascending), Some(limit))
+                                .await
+                            {
+                                Ok(new_events) => {
+                                    let mut app = app_state_clone.lock().await;
+                                    app.events = new_events;
+                                    log_info!("Events refreshed ({} events)", app.events.len());
+                                },
+                                Err(e) => {
+                                    log_info!("Failed to refresh events: {}", e);
+                                },
+                            }
+                        });
+                    } else if app.navigation.focused_panel == FocusedPanel::Markets
                         && let Some(event) = app.selected_event()
                     {
+                        // Refresh market prices
                         // Only fetch prices for active (non-closed) markets
                         let active_markets: Vec<_> = event
                             .markets

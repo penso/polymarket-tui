@@ -1848,25 +1848,44 @@ pub async fn run_trending_tui(
                                         // Fetch market prices when event selection changes
                                         if let Some(event) = app.selected_event() {
                                             let current_slug = event.slug.clone();
-                                            if last_selected_event_slug.as_ref() != Some(&current_slug) {
+                                            if last_selected_event_slug.as_ref()
+                                                != Some(&current_slug)
+                                            {
                                                 last_selected_event_slug = Some(current_slug);
                                                 let app_state_clone = Arc::clone(&app_state);
                                                 let clob_client = ClobClient::new();
-                                                let markets_clone: Vec<_> = event.markets.iter().map(|m| {
-                                                    m.clob_token_ids.clone()
-                                                }).collect();
-                                                
+                                                let markets_clone: Vec<_> = event
+                                                    .markets
+                                                    .iter()
+                                                    .map(|m| m.clob_token_ids.clone())
+                                                    .collect();
+
                                                 tokio::spawn(async move {
                                                     let mut prices = HashMap::new();
                                                     for token_ids in markets_clone {
                                                         if let Some(ref token_ids) = token_ids {
                                                             for asset_id in token_ids {
-                                                                match clob_client.get_orderbook_by_asset(asset_id).await {
+                                                                match clob_client
+                                                                    .get_orderbook_by_asset(
+                                                                        asset_id,
+                                                                    )
+                                                                    .await
+                                                                {
                                                                     Ok(orderbook) => {
                                                                         // Get best ask price (price to buy)
-                                                                        if let Some(best_ask) = orderbook.asks.first() {
-                                                                            if let Ok(price) = best_ask.price.parse::<f64>() {
-                                                                                prices.insert(asset_id.clone(), price);
+                                                                        if let Some(best_ask) =
+                                                                            orderbook.asks.first()
+                                                                        {
+                                                                            if let Ok(price) =
+                                                                                best_ask
+                                                                                    .price
+                                                                                    .parse::<f64>()
+                                                                            {
+                                                                                prices.insert(
+                                                                                    asset_id
+                                                                                        .clone(),
+                                                                                    price,
+                                                                                );
                                                                                 tracing::info!("Fetched price for asset {}: ${:.3}", asset_id, price);
                                                                             }
                                                                         }
@@ -1878,7 +1897,7 @@ pub async fn run_trending_tui(
                                                             }
                                                         }
                                                     }
-                                                    
+
                                                     let mut app = app_state_clone.lock().await;
                                                     app.market_prices.extend(prices);
                                                 });
@@ -1919,25 +1938,44 @@ pub async fn run_trending_tui(
                                         // Fetch market prices when event selection changes
                                         if let Some(event) = app.selected_event() {
                                             let current_slug = event.slug.clone();
-                                            if last_selected_event_slug.as_ref() != Some(&current_slug) {
+                                            if last_selected_event_slug.as_ref()
+                                                != Some(&current_slug)
+                                            {
                                                 last_selected_event_slug = Some(current_slug);
                                                 let app_state_clone = Arc::clone(&app_state);
                                                 let clob_client = ClobClient::new();
-                                                let markets_clone: Vec<_> = event.markets.iter().map(|m| {
-                                                    m.clob_token_ids.clone()
-                                                }).collect();
-                                                
+                                                let markets_clone: Vec<_> = event
+                                                    .markets
+                                                    .iter()
+                                                    .map(|m| m.clob_token_ids.clone())
+                                                    .collect();
+
                                                 tokio::spawn(async move {
                                                     let mut prices = HashMap::new();
                                                     for token_ids in markets_clone {
                                                         if let Some(ref token_ids) = token_ids {
                                                             for asset_id in token_ids {
-                                                                match clob_client.get_orderbook_by_asset(asset_id).await {
+                                                                match clob_client
+                                                                    .get_orderbook_by_asset(
+                                                                        asset_id,
+                                                                    )
+                                                                    .await
+                                                                {
                                                                     Ok(orderbook) => {
                                                                         // Get best ask price (price to buy)
-                                                                        if let Some(best_ask) = orderbook.asks.first() {
-                                                                            if let Ok(price) = best_ask.price.parse::<f64>() {
-                                                                                prices.insert(asset_id.clone(), price);
+                                                                        if let Some(best_ask) =
+                                                                            orderbook.asks.first()
+                                                                        {
+                                                                            if let Ok(price) =
+                                                                                best_ask
+                                                                                    .price
+                                                                                    .parse::<f64>()
+                                                                            {
+                                                                                prices.insert(
+                                                                                    asset_id
+                                                                                        .clone(),
+                                                                                    price,
+                                                                                );
                                                                                 tracing::info!("Fetched price for asset {}: ${:.3}", asset_id, price);
                                                                             }
                                                                         }
@@ -1949,7 +1987,7 @@ pub async fn run_trending_tui(
                                                             }
                                                         }
                                                     }
-                                                    
+
                                                     let mut app = app_state_clone.lock().await;
                                                     app.market_prices.extend(prices);
                                                 });

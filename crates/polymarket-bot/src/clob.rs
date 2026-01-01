@@ -6,7 +6,7 @@
 use crate::error::Result;
 use serde::{Deserialize, Serialize};
 
-const CLOB_API_BASE: &str = "https://clob-api.polymarket.com";
+const CLOB_API_BASE: &str = "https://clob.polymarket.com";
 
 /// Order side (buy or sell)
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

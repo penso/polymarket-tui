@@ -16,8 +16,8 @@ impl FocusedPanel {
     pub fn help_text(&self) -> &'static str {
         match self {
             FocusedPanel::Header => "←/→: Filter",
-            FocusedPanel::EventsList => "/: Search | f: Filter | r: Refresh | Enter: Watch",
-            FocusedPanel::EventDetails => "↑/↓: Scroll",
+            FocusedPanel::EventsList => "/: Search | f: Filter | r: Refresh | o: Open | Enter: Watch",
+            FocusedPanel::EventDetails => "o: Open URL | ↑/↓: Scroll",
             FocusedPanel::Markets => "r: Refresh | ↑/↓: Scroll",
             FocusedPanel::Trades => "↑/↓: Scroll",
             FocusedPanel::Logs => "↑/↓: Scroll",

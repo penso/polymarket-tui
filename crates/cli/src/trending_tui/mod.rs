@@ -6,6 +6,7 @@ mod state;
 
 use {
     render::{render, truncate},
+    ratatui::layout::{Constraint, Direction, Layout, Rect},
     state::{EventFilter, EventTrades, FocusedPanel, SearchMode},
 };
 
@@ -58,6 +59,73 @@ use {
     std::{collections::HashMap, io, sync::Arc},
     tokio::sync::Mutex as TokioMutex,
 };
+
+/// Helper to calculate panel areas for mouse click detection
+/// Returns (header_area, events_list_area, event_details_area, markets_area, trades_area, logs_area)
+fn calculate_panel_areas(size: Rect, is_in_filter_mode: bool) -> (Rect, Rect, Rect, Rect, Rect, Rect) {
+    let header_height = if is_in_filter_mode { 6 } else { 4 };
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(header_height),
+            Constraint::Min(0),
+            Constraint::Length(8),
+            Constraint::Length(3),
+        ])
+        .split(size);
+
+    let header_area = chunks[0];
+    let logs_area = chunks[2];
+
+    // Main content split
+    let main_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(40),
+            Constraint::Percentage(60),
+        ])
+        .split(chunks[1]);
+
+    let events_list_area = main_chunks[0];
+
+    // Right side split (event details, markets, trades)
+    let right_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(8),
+            Constraint::Length(7),
+            Constraint::Min(0),
+        ])
+        .split(main_chunks[1]);
+
+    let event_details_area = right_chunks[0];
+    let markets_area = right_chunks[1];
+    let trades_area = right_chunks[2];
+
+    (header_area, events_list_area, event_details_area, markets_area, trades_area, logs_area)
+}
+
+/// Determine which panel was clicked based on coordinates
+fn get_panel_at_position(x: u16, y: u16, size: Rect, is_in_filter_mode: bool) -> Option<FocusedPanel> {
+    let (header, events_list, event_details, markets, trades, logs) =
+        calculate_panel_areas(size, is_in_filter_mode);
+
+    if y >= header.y && y < header.y + header.height && x >= header.x && x < header.x + header.width {
+        Some(FocusedPanel::Header)
+    } else if y >= events_list.y && y < events_list.y + events_list.height && x >= events_list.x && x < events_list.x + events_list.width {
+        Some(FocusedPanel::EventsList)
+    } else if y >= event_details.y && y < event_details.y + event_details.height && x >= event_details.x && x < event_details.x + event_details.width {
+        Some(FocusedPanel::EventDetails)
+    } else if y >= markets.y && y < markets.y + markets.height && x >= markets.x && x < markets.x + markets.width {
+        Some(FocusedPanel::Markets)
+    } else if y >= trades.y && y < trades.y + trades.height && x >= trades.x && x < trades.x + trades.width {
+        Some(FocusedPanel::Trades)
+    } else if y >= logs.y && y < logs.y + logs.height && x >= logs.x && x < logs.x + logs.width {
+        Some(FocusedPanel::Logs)
+    } else {
+        None
+    }
+}
 
 /// Fetch market prices using the batch API
 /// Returns a HashMap mapping asset_id to the best ask price
@@ -137,7 +205,7 @@ pub async fn run_trending_tui(
     app_state: Arc<TokioMutex<TrendingAppState>>,
 ) -> anyhow::Result<Option<String>> {
     use {
-        crossterm::event::{self, Event, KeyCode, KeyEventKind},
+        crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseEventKind, MouseButton},
         polymarket_api::{GammaClient, RTDSClient},
     };
 
@@ -213,10 +281,179 @@ pub async fn run_trending_tui(
             })?;
         }
 
-        if crossterm::event::poll(std::time::Duration::from_millis(100))?
-            && let Event::Key(key) = event::read()?
-            && key.kind == KeyEventKind::Press
-        {
+        if crossterm::event::poll(std::time::Duration::from_millis(100))? {
+            let event = event::read()?;
+
+            // Handle mouse events
+            if let Event::Mouse(mouse) = &event {
+                if let MouseEventKind::Down(MouseButton::Left) = mouse.kind {
+                    let mut app = app_state.lock().await;
+                    let size = terminal.size()?;
+                    let (_, events_list_area, _, _, _, _) = calculate_panel_areas(size, app.is_in_filter_mode());
+
+                    if let Some(panel) = get_panel_at_position(mouse.column, mouse.row, size, app.is_in_filter_mode()) {
+                        app.navigation.focused_panel = panel;
+
+                        // If clicking in events list, select the clicked event
+                        if panel == FocusedPanel::EventsList {
+                            // Calculate which event was clicked
+                            // Account for border (1 line at top)
+                            let relative_y = mouse.row.saturating_sub(events_list_area.y + 1);
+                            let clicked_index = app.scroll.events_list + relative_y as usize;
+                            let filtered_len = app.filtered_events().len();
+
+                            if clicked_index < filtered_len {
+                                app.navigation.selected_index = clicked_index;
+                                // Reset markets scroll when changing events
+                                app.scroll.markets = 0;
+                            }
+                        }
+                    }
+                }
+                // Handle scroll wheel
+                if let MouseEventKind::ScrollUp = mouse.kind {
+                    let mut app = app_state.lock().await;
+                    let size = terminal.size()?;
+                    if let Some(panel) = get_panel_at_position(mouse.column, mouse.row, size, app.is_in_filter_mode()) {
+                        match panel {
+                            FocusedPanel::EventsList => app.move_up(),
+                            FocusedPanel::EventDetails => {
+                                if app.scroll.event_details > 0 {
+                                    app.scroll.event_details -= 1;
+                                }
+                            },
+                            FocusedPanel::Markets => {
+                                if app.scroll.markets > 0 {
+                                    app.scroll.markets -= 1;
+                                }
+                            },
+                            FocusedPanel::Trades => {
+                                if app.scroll.trades > 0 {
+                                    app.scroll.trades -= 1;
+                                }
+                            },
+                            FocusedPanel::Logs => {
+                                if app.logs.scroll > 0 {
+                                    app.logs.scroll -= 1;
+                                }
+                            },
+                            _ => {},
+                        }
+                    }
+                }
+                if let MouseEventKind::ScrollDown = mouse.kind {
+                    let mut app = app_state.lock().await;
+                    let size = terminal.size()?;
+                    if let Some(panel) = get_panel_at_position(mouse.column, mouse.row, size, app.is_in_filter_mode()) {
+                        match panel {
+                            FocusedPanel::EventsList => {
+                                app.move_down();
+                                // Check if we need to fetch more events (infinite scroll)
+                                if app.should_fetch_more() {
+                                    let app_state_clone = Arc::clone(&app_state);
+                                    let gamma_client_clone = GammaClient::new();
+                                    let order_by = app.pagination.order_by.clone();
+                                    let ascending = app.pagination.ascending;
+                                    let current_limit = app.pagination.current_limit;
+
+                                    // Set fetching flag to prevent duplicate requests
+                                    app.pagination.is_fetching_more = true;
+
+                                    // Fetch 50 more events
+                                    let new_limit = current_limit + 50;
+                                    log_info!(
+                                        "Fetching more trending events (limit: {})",
+                                        new_limit
+                                    );
+
+                                    tokio::spawn(async move {
+                                        match gamma_client_clone
+                                            .get_trending_events(
+                                                Some(&order_by),
+                                                Some(ascending),
+                                                Some(new_limit),
+                                            )
+                                            .await
+                                        {
+                                            Ok(mut new_events) => {
+                                                // Remove duplicates by comparing slugs
+                                                let existing_slugs: std::collections::HashSet<_> = {
+                                                    let app = app_state_clone.lock().await;
+                                                    app.events
+                                                        .iter()
+                                                        .map(|e| e.slug.clone())
+                                                        .collect()
+                                                };
+
+                                                new_events
+                                                    .retain(|e| !existing_slugs.contains(&e.slug));
+
+                                                if !new_events.is_empty() {
+                                                    log_info!(
+                                                        "Fetched {} new trending events",
+                                                        new_events.len()
+                                                    );
+                                                    let mut app = app_state_clone.lock().await;
+                                                    app.events.append(&mut new_events);
+                                                    app.pagination.current_limit = new_limit;
+                                                } else {
+                                                    log_info!(
+                                                        "No new events to add (already have all events)"
+                                                    );
+                                                }
+
+                                                let mut app = app_state_clone.lock().await;
+                                                app.pagination.is_fetching_more = false;
+                                            },
+                                            Err(_e) => {
+                                                log_error!("Failed to fetch more events: {}", _e);
+                                                let mut app = app_state_clone.lock().await;
+                                                app.pagination.is_fetching_more = false;
+                                            },
+                                        }
+                                    });
+                                }
+                            },
+                            FocusedPanel::EventDetails => {
+                                app.scroll.event_details += 1;
+                            },
+                            FocusedPanel::Markets => {
+                                if let Some(event) = app.selected_event() {
+                                    let visible_height: usize = 5;
+                                    if app.scroll.markets < event.markets.len().saturating_sub(visible_height) {
+                                        app.scroll.markets += 1;
+                                    }
+                                }
+                            },
+                            FocusedPanel::Trades => {
+                                let trades_len = if let Some(event) = app.selected_event() {
+                                    app.get_trades(&event.slug).len()
+                                } else {
+                                    0
+                                };
+                                let visible_height: usize = 10;
+                                if app.scroll.trades < trades_len.saturating_sub(visible_height) {
+                                    app.scroll.trades += 1;
+                                }
+                            },
+                            FocusedPanel::Logs => {
+                                let visible_height: usize = 10;
+                                let max_scroll = app.logs.messages.len().saturating_sub(visible_height.max(1));
+                                if app.logs.scroll < max_scroll {
+                                    app.logs.scroll += 1;
+                                }
+                            },
+                            _ => {},
+                        }
+                    }
+                }
+            }
+
+            // Handle key events
+            if let Event::Key(key) = event {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
             let mut app = app_state.lock().await;
             match key.code {
                 KeyCode::Char('q') => {
@@ -249,6 +486,20 @@ pub async fn run_trending_tui(
                         && app.navigation.focused_panel == FocusedPanel::EventsList
                     {
                         app.enter_local_filter_mode();
+                    }
+                },
+                KeyCode::Char('o') => {
+                    // Open event URL in browser
+                    if !app.is_in_filter_mode() {
+                        if let Some(event) = app.selected_event() {
+                            let url = format!("https://polymarket.com/event/{}", event.slug);
+                            #[cfg(target_os = "macos")]
+                            let _ = std::process::Command::new("open").arg(&url).spawn();
+                            #[cfg(target_os = "linux")]
+                            let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+                            #[cfg(target_os = "windows")]
+                            let _ = std::process::Command::new("cmd").args(["/C", "start", &url]).spawn();
+                        }
                     }
                 },
                 KeyCode::Char('r') => {
@@ -791,6 +1042,7 @@ pub async fn run_trending_tui(
                     }
                 },
                 _ => {},
+            }
             }
         }
 

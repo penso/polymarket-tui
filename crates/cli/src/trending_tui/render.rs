@@ -251,7 +251,6 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
 
 fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
     let filtered_events = app.filtered_events();
-    let now = Utc::now();
     let items: Vec<ListItem> = filtered_events
         .iter()
         .enumerate()
@@ -262,19 +261,14 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             let is_watching = app.is_watching(&event.slug);
             let trade_count = app.get_trades(&event.slug).len();
 
-            // Check if event is expired
-            let is_expired = event
-                .end_date
-                .as_ref()
-                .and_then(|d| DateTime::parse_from_rfc3339(d).ok())
-                .map(|dt| dt.with_timezone(&Utc) < now)
-                .unwrap_or(false);
+            // Check if event is closed/inactive (not accepting trades)
+            let is_closed = event.closed || !event.active;
 
             let style = if is_selected {
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD | Modifier::REVERSED)
-            } else if is_expired {
+            } else if is_closed {
                 Style::default().fg(Color::DarkGray)
             } else {
                 Style::default().fg(Color::White)
@@ -282,26 +276,48 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
 
             let markets_count = event.markets.len();
 
-            // Format: "title ...spaces... trades / markets" (right-aligned)
+            // Calculate total volume from all markets
+            let total_volume: f64 = event
+                .markets
+                .iter()
+                .map(|m| m.volume_24hr.or(m.volume_total).unwrap_or(0.0))
+                .sum();
+            let volume_str = if total_volume >= 1_000_000.0 {
+                format!("${:.1}M", total_volume / 1_000_000.0)
+            } else if total_volume >= 1_000.0 {
+                format!("${:.0}K", total_volume / 1_000.0)
+            } else if total_volume > 0.0 {
+                format!("${:.0}", total_volume)
+            } else {
+                String::new()
+            };
+
+            // Format: "title ...spaces... volume markets" (right-aligned)
             // Account for List widget borders (2 chars) and some padding
             let usable_width = area.width.saturating_sub(2) as usize; // -2 for borders
 
-            // Build the right-aligned text: "markets" or "trades / markets" if watching
+            // Build the right-aligned text: "volume trades/markets" or "volume markets"
             let right_text = if is_watching {
-                format!("{} / {}", trade_count, markets_count)
-            } else {
+                if volume_str.is_empty() {
+                    format!("{}/{}", trade_count, markets_count)
+                } else {
+                    format!("{} {}/{}", volume_str, trade_count, markets_count)
+                }
+            } else if volume_str.is_empty() {
                 markets_count.to_string()
+            } else {
+                format!("{} {}", volume_str, markets_count)
             };
             let right_text_width = right_text.width();
 
-            // Reserve space for right text + 1 space padding + expired icon if needed
-            let expired_icon = if is_expired {
-                "⏱ "
+            // Reserve space for right text + 1 space padding + closed icon if needed
+            let closed_icon = if is_closed {
+                "✕ "
             } else {
                 ""
             };
-            let expired_icon_width = expired_icon.width();
-            let reserved_width = right_text_width + 1 + expired_icon_width;
+            let closed_icon_width = closed_icon.width();
+            let reserved_width = right_text_width + 1 + closed_icon_width;
             let available_width = usable_width.saturating_sub(reserved_width);
 
             // Truncate title to fit available space (using display width)
@@ -309,13 +325,13 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
 
             let title_width = title.width();
             let remaining_width = usable_width
-                .saturating_sub(expired_icon_width)
+                .saturating_sub(closed_icon_width)
                 .saturating_sub(title_width)
                 .saturating_sub(right_text_width);
 
             let mut line_spans = Vec::new();
-            if is_expired {
-                line_spans.push(Span::styled(expired_icon, Style::default().fg(Color::Red)));
+            if is_closed {
+                line_spans.push(Span::styled(closed_icon, Style::default().fg(Color::Red)));
             }
             line_spans.push(Span::styled(title, style));
 
@@ -325,13 +341,21 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             }
 
             // Add the right-aligned text with appropriate styling
+            // Volume in green, trades in green, markets in cyan
+            if !volume_str.is_empty() {
+                line_spans.push(Span::styled(
+                    volume_str.clone(),
+                    Style::default().fg(Color::Green),
+                ));
+                line_spans.push(Span::styled(" ", Style::default()));
+            }
             if is_watching {
-                // Show "trades / markets" with trades in green and markets in cyan
+                // Show "trades/markets" with trades in green and markets in cyan
                 line_spans.push(Span::styled(
                     trade_count.to_string(),
                     Style::default().fg(Color::Green),
                 ));
-                line_spans.push(Span::styled(" / ", Style::default().fg(Color::Gray)));
+                line_spans.push(Span::styled("/", Style::default().fg(Color::Gray)));
                 line_spans.push(Span::styled(
                     markets_count.to_string(),
                     Style::default().fg(Color::Cyan),
@@ -644,6 +668,11 @@ fn render_event_details(
     lines.push(Line::from(vec![
         Span::styled("Slug: ", Style::default().fg(Color::Yellow).bold()),
         Span::styled(truncate(&event.slug, 60), Style::default().fg(Color::Blue)),
+    ]));
+    let event_url = format!("https://polymarket.com/event/{}", event.slug);
+    lines.push(Line::from(vec![
+        Span::styled("URL: ", Style::default().fg(Color::Yellow).bold()),
+        Span::styled(event_url, Style::default().fg(Color::Cyan)),
     ]));
     lines.push(Line::from(vec![
         Span::styled("Event ID: ", Style::default().fg(Color::Yellow).bold()),

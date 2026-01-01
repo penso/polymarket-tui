@@ -133,6 +133,9 @@ enum Commands {
         /// Minimum 24h volume to filter by
         #[arg(long, default_value = "0")]
         min_volume: f64,
+        /// Only show events expiring within this duration (e.g., "24h", "7d", "30d")
+        #[arg(long)]
+        expires_in: Option<String>,
     },
 }
 
@@ -475,7 +478,8 @@ async fn main() -> Result<()> {
             min_prob,
             limit,
             min_volume,
-        } => run_yield(min_prob, limit, min_volume).await,
+            expires_in,
+        } => run_yield(min_prob, limit, min_volume, expires_in).await,
     }
 }
 
@@ -745,10 +749,42 @@ async fn run_market(market: String, use_id: bool) -> Result<()> {
     Ok(())
 }
 
-async fn run_yield(min_prob: f64, limit: usize, min_volume: f64) -> Result<()> {
+/// Parse duration string like "24h", "7d", "30d" into seconds
+fn parse_duration(s: &str) -> Option<i64> {
+    let s = s.trim().to_lowercase();
+    if let Some(hours) = s.strip_suffix('h') {
+        hours.parse::<i64>().ok().map(|h| h * 3600)
+    } else if let Some(days) = s.strip_suffix('d') {
+        days.parse::<i64>().ok().map(|d| d * 86400)
+    } else {
+        None
+    }
+}
+
+async fn run_yield(
+    min_prob: f64,
+    limit: usize,
+    min_volume: f64,
+    expires_in: Option<String>,
+) -> Result<()> {
+    use chrono::{DateTime, Utc};
+
+    // Parse expires_in duration if provided
+    let max_end_time = expires_in
+        .as_ref()
+        .and_then(|s| parse_duration(s).map(|secs| Utc::now() + chrono::Duration::seconds(secs)));
+
+    if expires_in.is_some() && max_end_time.is_none() {
+        anyhow::bail!("Invalid --expires-in format. Use formats like '24h', '7d', '30d'");
+    }
+
     log_info!(
-        "🔍 Searching for markets with outcomes >= {:.1}% probability...",
-        min_prob * 100.0
+        "🔍 Searching for markets with outcomes >= {:.1}% probability{}...",
+        min_prob * 100.0,
+        expires_in
+            .as_ref()
+            .map(|s| format!(" expiring within {}", s))
+            .unwrap_or_default()
     );
 
     let gamma_client = GammaClient::new();
@@ -770,6 +806,7 @@ async fn run_yield(min_prob: f64, limit: usize, min_volume: f64) -> Result<()> {
         volume: f64,
         event_slug: String,
         event_title: String,
+        end_date: Option<DateTime<Utc>>,
     }
 
     let mut opportunities: Vec<YieldOpportunity> = Vec::new();
@@ -781,10 +818,25 @@ async fn run_yield(min_prob: f64, limit: usize, min_volume: f64) -> Result<()> {
         }
 
         // Skip markets without event info
-        let event = match market.events.first() {
+        let event = match market.event() {
             Some(e) => e,
             None => continue,
         };
+
+        // Parse end date
+        let end_date = event
+            .end_date
+            .as_ref()
+            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&Utc));
+
+        // Filter by expiration if --expires-in is set
+        if let Some(max_time) = max_end_time {
+            match end_date {
+                Some(end) if end <= max_time => {}, // Keep it
+                _ => continue,                      // Skip if no end date or too far out
+            }
+        }
 
         // Check volume threshold (use 24hr volume as it's more reliably populated)
         let volume = market.volume_24hr.unwrap_or(0.0);
@@ -820,6 +872,7 @@ async fn run_yield(min_prob: f64, limit: usize, min_volume: f64) -> Result<()> {
                     volume,
                     event_slug: event.slug.clone(),
                     event_title: event.title.clone(),
+                    end_date,
                 });
             }
         }
@@ -850,7 +903,11 @@ async fn run_yield(min_prob: f64, limit: usize, min_volume: f64) -> Result<()> {
         if opp.event_slug != current_event_slug {
             current_event_slug = opp.event_slug.clone();
             let url = format!("https://polymarket.com/event/{}", opp.event_slug);
-            println!("\n📊 {} ", opp.event_title);
+            let end_str = opp
+                .end_date
+                .map(|d| format!(" (ends {})", d.format("%Y-%m-%d")))
+                .unwrap_or_default();
+            println!("\n📊 {}{}", opp.event_title, end_str);
             println!("   {}", url);
             println!(
                 "   {:<40} {:>6} {:>8} {:>8} {:>10}",

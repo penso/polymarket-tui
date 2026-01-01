@@ -182,9 +182,16 @@ pub struct Market {
     /// Market slug for URL construction
     #[serde(default)]
     pub slug: Option<String>,
-    /// Events this market belongs to (for getting event slug)
+    /// Events this market belongs to (always 0 or 1 element)
     #[serde(default)]
     pub events: Vec<MarketEventRef>,
+}
+
+impl Market {
+    /// Get the event this market belongs to (markets have at most one event)
+    pub fn event(&self) -> Option<&MarketEventRef> {
+        self.events.first()
+    }
 }
 
 /// Lightweight event reference embedded in market responses
@@ -193,6 +200,8 @@ pub struct MarketEventRef {
     pub id: String,
     pub slug: String,
     pub title: String,
+    #[serde(rename = "endDate")]
+    pub end_date: Option<String>,
 }
 
 pub struct GammaClient {

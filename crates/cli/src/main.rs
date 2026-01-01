@@ -464,8 +464,10 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
     info!("🔥 Fetching trending events...");
 
     let gamma_client = GammaClient::new();
+    // For trending events, we want descending order by default (highest volume first)
+    // The API's ascending=false means descending (highest first), which is what we want for trending
     let events = gamma_client
-        .get_trending_events(Some(&order_by), Some(!ascending), Some(limit))
+        .get_trending_events(Some(&order_by), Some(ascending), Some(limit))
         .await
         .context("Failed to fetch trending events")?;
 

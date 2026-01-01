@@ -908,7 +908,12 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
                 .saturating_sub(1); // 1 space padding between question and right content
 
             // Truncate question to fit available width
-            let question = truncate_to_width(&market.question, available_width);
+            // Use short name (group_item_title) if available, otherwise fall back to question
+            let display_name = market
+                .group_item_title
+                .as_deref()
+                .unwrap_or(&market.question);
+            let question = truncate_to_width(display_name, available_width);
             let question_width = question.width();
 
             // Calculate remaining width for spacing

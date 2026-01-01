@@ -152,6 +152,9 @@ pub struct Market {
     #[serde(default)]
     pub id: Option<String>,
     pub question: String,
+    /// Short display name for grouped markets (e.g., "400-419" for tweet count ranges)
+    #[serde(rename = "groupItemTitle", default)]
+    pub group_item_title: Option<String>,
     #[serde(
         rename = "clobTokenIds",
         deserialize_with = "deserialize_clob_token_ids",

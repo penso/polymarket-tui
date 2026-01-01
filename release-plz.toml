@@ -1,0 +1,24 @@
+# release-plz configuration
+# https://release-plz.dev/docs/config
+
+[workspace]
+# Create git releases when publishing
+git_release_enable = true
+
+# Update changelogs automatically
+changelog_update = true
+
+# Run cargo-semver-checks to detect API breaking changes
+semver_check = true
+
+# PR branch prefix
+pr_branch_prefix = "release-plz-"
+
+# Packages to release (in order - api first since tui depends on it)
+[[package]]
+name = "polymarket-api"
+
+[[package]]
+name = "polymarket-tui"
+# The TUI binary - changelog will be in the crate directory
+changelog_path = "crates/cli/CHANGELOG.md"

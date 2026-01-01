@@ -2,7 +2,8 @@ name: Release
 
 on:
   push:
-    branches: [main]
+    tags:
+      - 'polymarket-tui-v*'
 
 permissions:
   contents: write
@@ -111,38 +112,13 @@ jobs:
           sha256sum * > checksums.txt
           cat checksums.txt
 
-      - name: Get short SHA
-        id: sha
-        run: echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      - name: Get tag name
+        id: tag
+        run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-      - name: Delete existing release
+      - name: Upload binaries to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete latest --yes || true
-
-      - name: Create Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create latest \
-            --title "Latest Build (${{ steps.sha.outputs.short_sha }})" \
-            --notes "Automated build from commit ${{ github.sha }}
-
-          ## Downloads
-          - **Linux AMD64**: \`polymarket-tui-linux-amd64\`
-          - **Linux ARM64**: \`polymarket-tui-linux-arm64\`
-          - **macOS AMD64**: \`polymarket-tui-darwin-amd64\`
-          - **macOS ARM64 (Apple Silicon)**: \`polymarket-tui-darwin-arm64\`
-
-          ## Installation
-          \`\`\`bash
-          # Download the appropriate binary for your system
-          chmod +x polymarket-tui-*
-          ./polymarket-tui-* --help
-          \`\`\`
-
-          ## Checksums
-          See \`checksums.txt\` for SHA256 checksums." \
-            --prerelease \
-            release/*
+          # Upload binaries to the release created by release-plz
+          gh release upload ${{ steps.tag.outputs.tag }} release/* --clobber

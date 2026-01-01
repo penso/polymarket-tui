@@ -193,6 +193,18 @@ impl ClobClient {
         let status = response.status();
         log_info!("GET {} -> status: {}", _url, status);
 
+        // 404 means no orderbook exists for this token (market might be new or have no orders)
+        if status == reqwest::StatusCode::NOT_FOUND {
+            log_info!(
+                "GET {} -> no orderbook (market may have no orders yet)",
+                _url
+            );
+            return Ok(Orderbook {
+                bids: Vec::new(),
+                asks: Vec::new(),
+            });
+        }
+
         if !status.is_success() {
             let error_text = response
                 .text()

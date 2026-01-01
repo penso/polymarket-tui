@@ -761,10 +761,12 @@ pub async fn run_trending_tui(
                     // Spawn the search task with tracing context
                     use tracing::Instrument;
                     let query_for_span = query_clone.clone();
-
-                    // Create a new span for this search task in the current context
+                    
+                    // Create a span for this search task and enter it briefly
                     // This ensures the span is registered with the subscriber
                     let search_span = tracing::info_span!("search", query = %query_for_span);
+                    let _enter = search_span.enter(); // Enter to register with subscriber
+                    drop(_enter); // Drop immediately - .instrument() will re-enter it
 
                     // Spawn the task with the span attached via .instrument()
                     // This ensures the tracing context is properly inherited
@@ -772,7 +774,7 @@ pub async fn run_trending_tui(
                         async move {
                             // Test log to verify tracing context is inherited
                             tracing::info!("[TASK] Starting search for: '{}'", query_clone);
-                            
+
                             let result = gamma_client_for_task
                                 .search_events(&query_clone, Some(50))
                                 .await;

@@ -97,16 +97,16 @@ pub struct TrendingAppState {
     // Panel focus and scrolling
     pub focused_panel: FocusedPanel, // Which panel is currently focused
     pub markets_scroll: usize,       // Scroll position for markets panel
-    pub trades_scroll: usize,       // Scroll position for trades table
+    pub trades_scroll: usize,        // Scroll position for trades table
     pub event_details_scroll: usize, // Scroll position for event details
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FocusedPanel {
-    EventsList,    // Left panel with events
-    EventDetails,  // Right panel - event details
-    Markets,       // Right panel - markets
-    Trades,        // Right panel - trades
+    EventsList,   // Left panel with events
+    EventDetails, // Right panel - event details
+    Markets,      // Right panel - markets
+    Trades,       // Right panel - trades
 }
 
 impl TrendingAppState {
@@ -575,11 +575,23 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         })
         .collect();
 
+    let is_focused = app.focused_panel == FocusedPanel::EventsList;
+    let block_style = if is_focused {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default()
+    };
+
     let list = List::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Trending Events"),
+                .title(if is_focused {
+                    "Trending Events (Focused)"
+                } else {
+                    "Trending Events"
+                })
+                .border_style(block_style),
         )
         .highlight_style(
             Style::default()
@@ -590,6 +602,23 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
     let mut state = ListState::default();
     state.select(Some(app.selected_index.saturating_sub(app.scroll_offset)));
     f.render_stateful_widget(list, area, &mut state);
+
+    // Render scrollbar for events list if needed
+    let total_events = filtered_events.len();
+    let visible_height = (area.height as usize).saturating_sub(2);
+    if total_events > visible_height {
+        let mut scrollbar_state = ScrollbarState::new(total_events)
+            .position(app.scroll_offset)
+            .content_length(visible_height);
+        f.render_stateful_widget(
+            Scrollbar::default()
+                .orientation(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(Some("↑"))
+                .end_symbol(Some("↓")),
+            area,
+            &mut scrollbar_state,
+        );
+    }
 }
 
 fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
@@ -630,8 +659,10 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             // Calculate visible rows and apply scroll
             let visible_height = (chunks[2].height as usize).saturating_sub(3); // -3 for header
             let total_rows = trades.len();
-            let scroll = app.trades_scroll.min(total_rows.saturating_sub(visible_height.max(1)));
-            
+            let scroll = app
+                .trades_scroll
+                .min(total_rows.saturating_sub(visible_height.max(1)));
+
             let rows: Vec<Row> = trades
                 .iter()
                 .skip(scroll)
@@ -709,7 +740,7 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             .column_spacing(1);
 
             f.render_widget(table, chunks[2]);
-            
+
             // Render scrollbar for trades if needed
             if total_rows > visible_height {
                 let mut scrollbar_state = ScrollbarState::new(total_rows)
@@ -895,8 +926,10 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
     // Calculate visible height and apply scroll
     let visible_height = (area.height as usize).saturating_sub(2);
     let total_markets = event.markets.len();
-    let scroll = app.markets_scroll.min(total_markets.saturating_sub(visible_height.max(1)));
-    
+    let scroll = app
+        .markets_scroll
+        .min(total_markets.saturating_sub(visible_height.max(1)));
+
     // Create list items for markets with scroll
     let items: Vec<ListItem> = event
         .markets
@@ -911,7 +944,7 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
 
             let outcomes_str = if market.outcomes.len() >= 2 {
                 format!(
-                    " {} / {}",
+                    "{} / {}",
                     market.outcomes.get(0).unwrap_or(&String::new()),
                     market.outcomes.get(1).unwrap_or(&String::new())
                 )
@@ -919,15 +952,49 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
                 String::new()
             };
 
-            let line = Line::from(vec![
-                Span::styled(
-                    truncate(&market.question, 50),
-                    Style::default().fg(Color::White),
-                ),
-                Span::styled(outcomes_str, Style::default().fg(Color::Cyan)),
-                Span::styled(volume_str, Style::default().fg(Color::Green)),
-            ]);
-            ListItem::new(line)
+            // Calculate widths for right alignment
+            let usable_width = (area.width as usize).saturating_sub(2); // -2 for borders
+            let question = truncate(&market.question, 40); // Reserve more space for right-aligned content
+            let question_width = question.len();
+            
+            // Calculate space needed for outcomes and volume (right-aligned)
+            let outcomes_width = outcomes_str.len();
+            let volume_width = volume_str.len();
+            let has_outcomes = !outcomes_str.is_empty();
+            let has_volume = !volume_str.is_empty();
+            let right_content_width = if has_outcomes && has_volume {
+                outcomes_width + 1 + volume_width // outcomes + space + volume
+            } else if has_outcomes {
+                outcomes_width
+            } else if has_volume {
+                volume_width
+            } else {
+                0
+            };
+            
+            let remaining_width = usable_width
+                .saturating_sub(question_width)
+                .saturating_sub(right_content_width);
+            
+            let mut line_spans = vec![Span::styled(question, Style::default().fg(Color::White))];
+            
+            // Add spaces to push outcomes and volume to the right
+            if remaining_width > 0 {
+                line_spans.push(Span::styled(" ".repeat(remaining_width), Style::default()));
+            }
+            
+            // Add right-aligned outcomes and volume
+            if has_outcomes {
+                line_spans.push(Span::styled(outcomes_str.clone(), Style::default().fg(Color::Cyan)));
+            }
+            if has_volume {
+                if has_outcomes {
+                    line_spans.push(Span::styled(" ", Style::default()));
+                }
+                line_spans.push(Span::styled(volume_str.clone(), Style::default().fg(Color::Green)));
+            }
+            
+            ListItem::new(Line::from(line_spans))
         })
         .collect();
 
@@ -937,7 +1004,7 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
     } else {
         Style::default()
     };
-    
+
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
@@ -950,7 +1017,7 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
     );
 
     f.render_widget(list, area);
-    
+
     // Render scrollbar if needed
     if total_markets > visible_height {
         let mut scrollbar_state = ScrollbarState::new(total_markets)
@@ -1186,34 +1253,34 @@ pub async fn run_trending_tui(
                                         app.move_down();
                                         // Check if we need to fetch more events (infinite scroll)
                                         if app.should_fetch_more() {
-                                    let app_state_clone = Arc::clone(&app_state);
-                                    let gamma_client_clone = GammaClient::new();
-                                    let order_by = app.order_by.clone();
-                                    let ascending = app.ascending;
-                                    let current_limit = app.current_limit;
+                                            let app_state_clone = Arc::clone(&app_state);
+                                            let gamma_client_clone = GammaClient::new();
+                                            let order_by = app.order_by.clone();
+                                            let ascending = app.ascending;
+                                            let current_limit = app.current_limit;
 
-                                    // Set fetching flag to prevent duplicate requests
-                                    app.is_fetching_more = true;
+                                            // Set fetching flag to prevent duplicate requests
+                                            app.is_fetching_more = true;
 
-                                    // Fetch 50 more events
-                                    let new_limit = current_limit + 50;
-                                    tracing::info!(
-                                        "Fetching more trending events (limit: {})",
-                                        new_limit
-                                    );
+                                            // Fetch 50 more events
+                                            let new_limit = current_limit + 50;
+                                            tracing::info!(
+                                                "Fetching more trending events (limit: {})",
+                                                new_limit
+                                            );
 
-                                    tokio::spawn(async move {
-                                        match gamma_client_clone
-                                            .get_trending_events(
-                                                Some(&order_by),
-                                                Some(ascending),
-                                                Some(new_limit),
-                                            )
-                                            .await
-                                        {
-                                            Ok(mut new_events) => {
-                                                // Remove duplicates by comparing slugs
-                                                let existing_slugs: std::collections::HashSet<_> = {
+                                            tokio::spawn(async move {
+                                                match gamma_client_clone
+                                                    .get_trending_events(
+                                                        Some(&order_by),
+                                                        Some(ascending),
+                                                        Some(new_limit),
+                                                    )
+                                                    .await
+                                                {
+                                                    Ok(mut new_events) => {
+                                                        // Remove duplicates by comparing slugs
+                                                        let existing_slugs: std::collections::HashSet<_> = {
                                                     let app = app_state_clone.lock().await;
                                                     app.events
                                                         .iter()
@@ -1221,43 +1288,49 @@ pub async fn run_trending_tui(
                                                         .collect()
                                                 };
 
-                                                new_events
-                                                    .retain(|e| !existing_slugs.contains(&e.slug));
+                                                        new_events.retain(|e| {
+                                                            !existing_slugs.contains(&e.slug)
+                                                        });
 
-                                                if !new_events.is_empty() {
-                                                    tracing::info!(
-                                                        "Fetched {} new trending events",
-                                                        new_events.len()
-                                                    );
-                                                    let mut app = app_state_clone.lock().await;
-                                                    app.events.append(&mut new_events);
-                                                    app.current_limit = new_limit;
-                                                } else {
-                                                    tracing::info!("No new events to add (already have all events)");
+                                                        if !new_events.is_empty() {
+                                                            tracing::info!(
+                                                                "Fetched {} new trending events",
+                                                                new_events.len()
+                                                            );
+                                                            let mut app =
+                                                                app_state_clone.lock().await;
+                                                            app.events.append(&mut new_events);
+                                                            app.current_limit = new_limit;
+                                                        } else {
+                                                            tracing::info!("No new events to add (already have all events)");
+                                                        }
+
+                                                        let mut app = app_state_clone.lock().await;
+                                                        app.is_fetching_more = false;
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::error!(
+                                                            "Failed to fetch more events: {}",
+                                                            e
+                                                        );
+                                                        let mut app = app_state_clone.lock().await;
+                                                        app.is_fetching_more = false;
+                                                    }
                                                 }
-
-                                                let mut app = app_state_clone.lock().await;
-                                                app.is_fetching_more = false;
-                                            }
-                                            Err(e) => {
-                                                tracing::error!(
-                                                    "Failed to fetch more events: {}",
-                                                    e
-                                                );
-                                                let mut app = app_state_clone.lock().await;
-                                                app.is_fetching_more = false;
-                                            }
-                                        }
-                                    });
+                                            });
                                         }
                                     }
                                     FocusedPanel::EventDetails => {
                                         // Get total lines to know max scroll
                                         if let Some(event) = app.selected_event() {
                                             // Estimate total lines (rough calculation)
-                                            let estimated_lines: usize = 8 + if event.image.is_some() { 1 } else { 0 } + if !event.tags.is_empty() { 1 } else { 0 };
+                                            let estimated_lines: usize = 8
+                                                + if event.image.is_some() { 1 } else { 0 }
+                                                + if !event.tags.is_empty() { 1 } else { 0 };
                                             let visible_height: usize = 10; // Approximate
-                                            if app.event_details_scroll < estimated_lines.saturating_sub(visible_height) {
+                                            if app.event_details_scroll
+                                                < estimated_lines.saturating_sub(visible_height)
+                                            {
                                                 app.event_details_scroll += 1;
                                             }
                                         }
@@ -1265,7 +1338,9 @@ pub async fn run_trending_tui(
                                     FocusedPanel::Markets => {
                                         if let Some(event) = app.selected_event() {
                                             let visible_height: usize = 5; // Markets panel height
-                                            if app.markets_scroll < event.markets.len().saturating_sub(visible_height) {
+                                            if app.markets_scroll
+                                                < event.markets.len().saturating_sub(visible_height)
+                                            {
                                                 app.markets_scroll += 1;
                                             }
                                         }
@@ -1277,7 +1352,9 @@ pub async fn run_trending_tui(
                                             0
                                         };
                                         let visible_height: usize = 10; // Approximate
-                                        if app.trades_scroll < trades_len.saturating_sub(visible_height) {
+                                        if app.trades_scroll
+                                            < trades_len.saturating_sub(visible_height)
+                                        {
                                             app.trades_scroll += 1;
                                         }
                                     }

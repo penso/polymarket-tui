@@ -727,12 +727,12 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
     let visible_height = (area.height as usize).saturating_sub(2);
     if total_events > visible_height {
         // ScrollbarState automatically calculates thumb size as:
-        // thumb_height = (content_length / total) * track_height
+        // thumb_height = (viewport_content_length / content_length) * track_height
         // This ensures the thumb is proportional to visible content
         // Position maps correctly: moving one line moves thumb proportionally
         let mut scrollbar_state = ScrollbarState::new(total_events)
             .position(app.scroll.events_list)
-            .content_length(visible_height);
+            .viewport_content_length(visible_height);
         f.render_stateful_widget(
             Scrollbar::default()
                 .orientation(ScrollbarOrientation::VerticalRight)
@@ -893,7 +893,7 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             if total_rows > visible_height {
                 let mut scrollbar_state = ScrollbarState::new(total_rows)
                     .position(scroll)
-                    .content_length(visible_height);
+                    .viewport_content_length(visible_height);
                 f.render_stateful_widget(
                     Scrollbar::default()
                         .orientation(ScrollbarOrientation::VerticalRight)
@@ -1087,7 +1087,7 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
     // The List widget with borders takes 2 lines (top border + title, bottom border)
     let visible_height = (area.height as usize).saturating_sub(2);
     let total_markets = event.markets.len();
-    
+
     // Calculate maximum scroll position (can't scroll past the end)
     let max_scroll = total_markets.saturating_sub(visible_height.max(1));
     // Clamp scroll position to valid range
@@ -1203,14 +1203,14 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
         let max_scroll = total_markets.saturating_sub(visible_height);
         // Ensure scroll position is within valid bounds
         let clamped_scroll = scroll.min(max_scroll);
-        
-        // ScrollbarState calculates thumb size as: (content_length / total) * track_height
-        // content_length = visible_height (how many items fit in viewport)
-        // total = total_markets (total number of items)
+
+        // ScrollbarState calculates thumb size as: (viewport_content_length / content_length) * track_height
+        // content_length = total_markets (total number of items, set in new())
+        // viewport_content_length = visible_height (how many items fit in viewport)
         // position = clamped_scroll (current scroll offset)
         let mut scrollbar_state = ScrollbarState::new(total_markets)
             .position(clamped_scroll)
-            .content_length(visible_height);
+            .viewport_content_length(visible_height);
         f.render_stateful_widget(
             Scrollbar::default()
                 .orientation(ScrollbarOrientation::VerticalRight)
@@ -1324,7 +1324,7 @@ fn render_logs(f: &mut Frame, app: &mut TrendingAppState, area: Rect) {
         let estimated_visible_messages = visible_height.max(1);
         let mut scrollbar_state = ScrollbarState::new(total_log_messages)
             .position(app.logs.scroll)
-            .content_length(estimated_visible_messages);
+            .viewport_content_length(estimated_visible_messages);
         f.render_stateful_widget(
             Scrollbar::default()
                 .orientation(ScrollbarOrientation::VerticalRight)

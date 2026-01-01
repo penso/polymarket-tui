@@ -15,12 +15,13 @@ use ratatui::{
     },
     Frame, Terminal,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::task::JoinHandle;
 
+#[derive(Debug)]
 pub struct Trade {
     pub timestamp: i64,
     pub side: String,
@@ -33,6 +34,7 @@ pub struct Trade {
     pub pseudonym: String,
 }
 
+#[derive(Debug)]
 pub struct EventTrades {
     pub trades: Vec<Trade>,
     pub is_watching: bool,
@@ -70,37 +72,6 @@ impl EventTrades {
     }
 }
 
-pub struct TrendingAppState {
-    pub events: Vec<Event>,
-    pub selected_index: usize,
-    pub scroll_offset: usize,
-    pub should_quit: bool,
-    // Map from event slug to trades
-    pub event_trades: HashMap<String, EventTrades>,
-    // Map from event slug to websocket task handle
-    pub ws_handles: HashMap<String, JoinHandle<()>>,
-    // Search functionality
-    pub search_mode: bool,       // API search mode (triggered by '/')
-    pub local_filter_mode: bool, // Local filter mode (triggered by 'f')
-    pub search_query: String,
-    pub search_results: Vec<Event>, // Results from API search
-    pub is_searching: bool,         // Whether a search API call is in progress
-    pub last_search_query: String,  // Last query that was searched
-    // Log messages captured from tracing
-    pub logs: Vec<String>,
-    pub log_scroll: usize,
-    // Infinite scrolling state
-    pub current_limit: usize,   // Current number of events fetched
-    pub is_fetching_more: bool, // Whether we're currently fetching more events
-    pub order_by: String,       // Order by parameter for API calls
-    pub ascending: bool,        // Ascending parameter for API calls
-    // Panel focus and scrolling
-    pub focused_panel: FocusedPanel, // Which panel is currently focused
-    pub markets_scroll: usize,       // Scroll position for markets panel
-    pub trades_scroll: usize,        // Scroll position for trades table
-    pub event_details_scroll: usize, // Scroll position for event details
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FocusedPanel {
     EventsList,   // Left panel with events
@@ -110,63 +81,187 @@ pub enum FocusedPanel {
     Logs,         // Bottom panel - logs
 }
 
+/// Search mode enum to replace boolean flags
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchMode {
+    None,         // No search/filter active
+    ApiSearch,    // API search mode (triggered by '/')
+    LocalFilter,  // Local filter mode (triggered by 'f')
+}
+
+/// Search-related state
+#[derive(Debug)]
+pub struct SearchState {
+    pub mode: SearchMode,
+    pub query: String,
+    pub results: Vec<Event>,        // Results from API search
+    pub is_searching: bool,        // Whether a search API call is in progress
+    pub last_searched_query: String, // Last query that was searched
+}
+
+impl SearchState {
+    pub fn new() -> Self {
+        Self {
+            mode: SearchMode::None,
+            query: String::new(),
+            results: Vec::new(),
+            is_searching: false,
+            last_searched_query: String::new(),
+        }
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.mode != SearchMode::None
+    }
+}
+
+/// Scroll positions for all panels
+#[derive(Debug)]
+pub struct ScrollState {
+    pub events_list: usize,      // Scroll position for events list
+    pub markets: usize,           // Scroll position for markets panel
+    pub trades: usize,            // Scroll position for trades table
+    pub event_details: usize,     // Scroll position for event details
+    pub logs: usize,              // Scroll position for logs panel
+}
+
+impl ScrollState {
+    pub fn new() -> Self {
+        Self {
+            events_list: 0,
+            markets: 0,
+            trades: 0,
+            event_details: 0,
+            logs: 0,
+        }
+    }
+}
+
+/// Pagination and infinite scrolling state
+#[derive(Debug)]
+pub struct PaginationState {
+    pub current_limit: usize,    // Current number of events fetched
+    pub is_fetching_more: bool,  // Whether we're currently fetching more events
+    pub order_by: String,        // Order by parameter for API calls
+    pub ascending: bool,         // Ascending parameter for API calls
+}
+
+impl PaginationState {
+    pub fn new(order_by: String, ascending: bool, initial_limit: usize) -> Self {
+        Self {
+            current_limit: initial_limit,
+            is_fetching_more: false,
+            order_by,
+            ascending,
+        }
+    }
+}
+
+/// Logs state
+#[derive(Debug)]
+pub struct LogsState {
+    pub messages: Vec<String>,
+    pub scroll: usize,
+}
+
+impl LogsState {
+    pub fn new() -> Self {
+        Self {
+            messages: Vec::new(),
+            scroll: 0,
+        }
+    }
+}
+
+/// Navigation state (selection and focus)
+#[derive(Debug)]
+pub struct NavigationState {
+    pub selected_index: usize,
+    pub focused_panel: FocusedPanel,
+}
+
+impl NavigationState {
+    pub fn new() -> Self {
+        Self {
+            selected_index: 0,
+            focused_panel: FocusedPanel::EventsList,
+        }
+    }
+}
+
+/// Trades and WebSocket management state
+#[derive(Debug)]
+pub struct TradesState {
+    // Map from event slug to trades
+    pub event_trades: HashMap<String, EventTrades>,
+    // Map from event slug to websocket task handle
+    pub ws_handles: HashMap<String, JoinHandle<()>>,
+}
+
+impl TradesState {
+    pub fn new() -> Self {
+        Self {
+            event_trades: HashMap::new(),
+            ws_handles: HashMap::new(),
+        }
+    }
+}
+
+/// Main application state
+pub struct TrendingAppState {
+    pub events: Vec<Event>,
+    pub should_quit: bool,
+    pub search: SearchState,
+    pub scroll: ScrollState,
+    pub pagination: PaginationState,
+    pub logs: LogsState,
+    pub navigation: NavigationState,
+    pub trades: TradesState,
+}
+
 impl TrendingAppState {
     pub fn new(events: Vec<Event>, order_by: String, ascending: bool) -> Self {
         let current_limit = events.len();
         Self {
             events,
-            selected_index: 0,
-            scroll_offset: 0,
             should_quit: false,
-            event_trades: HashMap::new(),
-            ws_handles: HashMap::new(),
-            search_mode: false,
-            local_filter_mode: false,
-            search_query: String::new(),
-            search_results: Vec::new(),
-            is_searching: false,
-            last_search_query: String::new(),
-            logs: Vec::new(),
-            log_scroll: 0,
-            current_limit,
-            is_fetching_more: false,
-            order_by,
-            ascending,
-            focused_panel: FocusedPanel::EventsList,
-            markets_scroll: 0,
-            trades_scroll: 0,
-            event_details_scroll: 0,
+            search: SearchState::new(),
+            scroll: ScrollState::new(),
+            pagination: PaginationState::new(order_by, ascending, current_limit),
+            logs: LogsState::new(),
+            navigation: NavigationState::new(),
+            trades: TradesState::new(),
         }
     }
 
     /// Check if we need to fetch more events (when user is near the end)
     pub fn should_fetch_more(&self) -> bool {
         // Only fetch more if not in search/filter mode and not already fetching
-        if self.is_in_filter_mode() || !self.search_query.is_empty() || self.is_fetching_more {
+        if self.search.is_active() || !self.search.query.is_empty() || self.pagination.is_fetching_more {
             return false;
         }
 
         let filtered_len = self.filtered_events().len();
         // Fetch more when user is within 5 items of the end
-        self.selected_index >= filtered_len.saturating_sub(5) && filtered_len >= self.current_limit
+        self.navigation.selected_index >= filtered_len.saturating_sub(5) && filtered_len >= self.pagination.current_limit
     }
 
     pub fn add_log(&mut self, level: &str, message: String) {
         // Format: [LEVEL] message
         let formatted = format!("[{}] {}", level, message);
-        self.logs.push(formatted);
+        self.logs.messages.push(formatted);
         // Keep only last 1000 logs
-        if self.logs.len() > 1000 {
-            self.logs.remove(0);
+        if self.logs.messages.len() > 1000 {
+            self.logs.messages.remove(0);
         }
         // Auto-scroll to bottom - always show the latest logs
         // The logs area is Constraint::Length(8), so visible height is ~6 lines (minus borders)
         // We'll set scroll to show from the bottom, and render_logs will adjust if needed
         let estimated_visible_height = 6; // Approximate visible lines (8 - 2 for borders)
-        if self.logs.len() > estimated_visible_height {
-            self.log_scroll = self.logs.len() - estimated_visible_height;
+        if self.logs.messages.len() > estimated_visible_height {
+            self.logs.scroll = self.logs.messages.len() - estimated_visible_height;
         } else {
-            self.log_scroll = 0;
+            self.logs.scroll = 0;
         }
     }
 
@@ -175,23 +270,23 @@ impl TrendingAppState {
     /// If in API search mode and results are available, use those
     /// Otherwise filter locally
     pub fn filtered_events(&self) -> Vec<&Event> {
-        if self.search_query.is_empty() {
+        if self.search.query.is_empty() {
             // No query, return all events from the current source
             // If we have search results and not in local filter mode, return those; otherwise return all events
-            if !self.search_results.is_empty() && !self.local_filter_mode && self.search_mode {
-                return self.search_results.iter().collect();
+            if !self.search.results.is_empty() && self.search.mode != SearchMode::LocalFilter && self.search.mode == SearchMode::ApiSearch {
+                return self.search.results.iter().collect();
             }
             return self.events.iter().collect();
         }
 
         // If in local filter mode, always filter from the source list
-        if self.local_filter_mode {
+        if self.search.mode == SearchMode::LocalFilter {
             // Determine source list: if we have search results, filter from those; otherwise filter from events
-            let query_lower = self.search_query.to_lowercase();
-            if !self.search_results.is_empty() {
+            let query_lower = self.search.query.to_lowercase();
+            if !self.search.results.is_empty() {
                 // Filter from search results (current displayed list)
                 return self
-                    .search_results
+                    .search.results
                     .iter()
                     .filter(|event| {
                         event.title.to_lowercase().contains(&query_lower)
@@ -228,12 +323,12 @@ impl TrendingAppState {
         }
 
         // API search mode: use API results if available
-        if !self.search_results.is_empty() && self.search_query == self.last_search_query {
-            return self.search_results.iter().collect();
+        if !self.search.results.is_empty() && self.search.query == self.search.last_searched_query {
+            return self.search.results.iter().collect();
         }
 
         // Fall back to local filtering
-        let query_lower = self.search_query.to_lowercase();
+        let query_lower = self.search.query.to_lowercase();
         self.events
             .iter()
             .filter(|event| {
@@ -254,59 +349,56 @@ impl TrendingAppState {
     /// Get the currently selected event from filtered list
     pub fn selected_event_filtered(&self) -> Option<&Event> {
         let filtered = self.filtered_events();
-        filtered.get(self.selected_index).copied()
+        filtered.get(self.navigation.selected_index).copied()
     }
 
     pub fn enter_search_mode(&mut self) {
-        self.search_mode = true;
-        self.local_filter_mode = false;
-        self.search_query.clear();
+        self.search.mode = SearchMode::ApiSearch;
+        self.search.query.clear();
     }
 
     pub fn enter_local_filter_mode(&mut self) {
-        self.local_filter_mode = true;
-        self.search_mode = false; // Exit API search mode if active
-        self.search_query.clear();
+        self.search.mode = SearchMode::LocalFilter;
+        self.search.query.clear();
     }
 
     pub fn exit_search_mode(&mut self) {
-        self.search_mode = false;
-        self.local_filter_mode = false;
-        self.search_query.clear();
-        self.selected_index = 0;
-        self.scroll_offset = 0;
+        self.search.mode = SearchMode::None;
+        self.search.query.clear();
+        self.navigation.selected_index = 0;
+        self.scroll.events_list = 0;
     }
 
     pub fn is_in_filter_mode(&self) -> bool {
-        self.search_mode || self.local_filter_mode
+        self.search.is_active()
     }
 
     pub fn add_search_char(&mut self, c: char) {
-        self.search_query.push(c);
-        self.selected_index = 0;
-        self.scroll_offset = 0;
+        self.search.query.push(c);
+        self.navigation.selected_index = 0;
+        self.scroll.events_list = 0;
     }
 
     pub fn delete_search_char(&mut self) {
-        self.search_query.pop();
-        self.selected_index = 0;
-        self.scroll_offset = 0;
+        self.search.query.pop();
+        self.navigation.selected_index = 0;
+        self.scroll.events_list = 0;
         // Clear search results when query changes
-        if self.search_query != self.last_search_query {
-            self.search_results.clear();
+        if self.search.query != self.search.last_searched_query {
+            self.search.results.clear();
         }
     }
 
     pub fn set_search_results(&mut self, results: Vec<Event>, query: String) {
-        self.search_results = results;
-        self.last_search_query = query;
-        self.is_searching = false;
-        self.selected_index = 0;
-        self.scroll_offset = 0;
+        self.search.results = results;
+        self.search.last_searched_query = query;
+        self.search.is_searching = false;
+        self.navigation.selected_index = 0;
+        self.scroll.events_list = 0;
     }
 
     pub fn set_searching(&mut self, searching: bool) {
-        self.is_searching = searching;
+        self.search.is_searching = searching;
     }
 
     pub fn selected_event(&self) -> Option<&Event> {
@@ -324,61 +416,61 @@ impl TrendingAppState {
     }
 
     pub fn move_up(&mut self) {
-        if self.selected_index > 0 {
-            self.selected_index -= 1;
-            if self.selected_index < self.scroll_offset {
-                self.scroll_offset = self.selected_index;
+        if self.navigation.selected_index > 0 {
+            self.navigation.selected_index -= 1;
+            if self.navigation.selected_index < self.scroll.events_list {
+                self.scroll.events_list = self.navigation.selected_index;
             }
         }
     }
 
     pub fn move_down(&mut self) {
         let filtered_len = self.filtered_events().len();
-        if self.selected_index < filtered_len.saturating_sub(1) {
-            self.selected_index += 1;
+        if self.navigation.selected_index < filtered_len.saturating_sub(1) {
+            self.navigation.selected_index += 1;
             let visible_height = 20;
-            if self.selected_index >= self.scroll_offset + visible_height {
-                self.scroll_offset = self.selected_index - visible_height + 1;
+            if self.navigation.selected_index >= self.scroll.events_list + visible_height {
+                self.scroll.events_list = self.navigation.selected_index - visible_height + 1;
             }
         }
     }
 
     pub fn is_watching(&self, event_slug: &str) -> bool {
-        self.event_trades
+        self.trades.event_trades
             .get(event_slug)
             .map(|et| et.is_watching)
             .unwrap_or(false)
     }
 
     pub fn get_trades(&self, event_slug: &str) -> &[Trade] {
-        self.event_trades
+        self.trades.event_trades
             .get(event_slug)
             .map(|et| et.trades.as_slice())
             .unwrap_or(&[])
     }
 
     pub fn start_watching(&mut self, event_slug: String, ws_handle: JoinHandle<()>) {
-        self.event_trades
+        self.trades.event_trades
             .entry(event_slug.clone())
             .or_insert_with(EventTrades::new)
             .is_watching = true;
-        self.ws_handles.insert(event_slug, ws_handle);
+        self.trades.ws_handles.insert(event_slug, ws_handle);
     }
 
     pub fn stop_watching(&mut self, event_slug: &str) {
-        if let Some(handle) = self.ws_handles.remove(event_slug) {
+        if let Some(handle) = self.trades.ws_handles.remove(event_slug) {
             handle.abort();
         }
-        if let Some(event_trades) = self.event_trades.get_mut(event_slug) {
+        if let Some(event_trades) = self.trades.event_trades.get_mut(event_slug) {
             event_trades.is_watching = false;
         }
     }
 
     pub fn cleanup(&mut self) {
-        for handle in self.ws_handles.values() {
+        for handle in self.trades.ws_handles.values() {
             handle.abort();
         }
-        self.ws_handles.clear();
+        self.trades.ws_handles.clear();
     }
 }
 
@@ -396,7 +488,7 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
 
     // Header
     let watched_count = app
-        .event_trades
+        .trades.event_trades
         .values()
         .filter(|et| et.is_watching)
         .count();
@@ -428,18 +520,18 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
         f.render_widget(header, header_chunks[0]);
 
         // Search input field - show full query with proper spacing
-        let search_line = if app.search_query.is_empty() {
-            let prompt_text = if app.search_mode {
-                "🔍 API Search: (type to search via API)"
-            } else {
-                "🔍 Filter: (type to filter current list)"
+        let search_line = if app.search.query.is_empty() {
+            let prompt_text = match app.search.mode {
+                SearchMode::ApiSearch => "🔍 API Search: (type to search via API)",
+                SearchMode::LocalFilter => "🔍 Filter: (type to filter current list)",
+                SearchMode::None => "🔍 Search: (type to search)",
             };
             Line::from(prompt_text.fg(Color::DarkGray))
         } else {
             Line::from(vec![
                 Span::styled("🔍 Search: ", Style::default().fg(Color::White)),
                 Span::styled(
-                    app.search_query.clone(),
+                    app.search.query.clone(),
                     Style::default()
                         .fg(Color::Cyan)
                         .add_modifier(Modifier::BOLD),
@@ -483,14 +575,14 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
     render_logs(f, app, chunks[2]);
 
     // Footer - show focused panel info
-    let focused_panel_text = match app.focused_panel {
+    let focused_panel_text = match app.navigation.focused_panel {
         FocusedPanel::EventsList => "Events List",
         FocusedPanel::EventDetails => "Event Details",
         FocusedPanel::Markets => "Markets",
         FocusedPanel::Trades => "Trades",
         FocusedPanel::Logs => "Logs",
     };
-    let footer_text = if app.search_mode {
+    let footer_text = if app.search.mode == SearchMode::ApiSearch {
         format!(
             "Type to search | Esc to exit | Focused: {} | 'q' to quit",
             focused_panel_text
@@ -510,10 +602,10 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
     let items: Vec<ListItem> = filtered_events
         .iter()
         .enumerate()
-        .skip(app.scroll_offset)
+        .skip(app.scroll.events_list)
         .take(area.height as usize - 2)
         .map(|(idx, event)| {
-            let is_selected = idx == app.selected_index;
+            let is_selected = idx == app.navigation.selected_index;
             let is_watching = app.is_watching(&event.slug);
             let trade_count = app.get_trades(&event.slug).len();
 
@@ -586,7 +678,7 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         })
         .collect();
 
-    let is_focused = app.focused_panel == FocusedPanel::EventsList;
+    let is_focused = app.navigation.focused_panel == FocusedPanel::EventsList;
     let block_style = if is_focused {
         Style::default().fg(Color::Yellow)
     } else {
@@ -611,7 +703,7 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         );
 
     let mut state = ListState::default();
-    state.select(Some(app.selected_index.saturating_sub(app.scroll_offset)));
+    state.select(Some(app.navigation.selected_index.saturating_sub(app.scroll.events_list)));
     f.render_stateful_widget(list, area, &mut state);
 
     // Render scrollbar for events list if needed
@@ -619,7 +711,7 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
     let visible_height = (area.height as usize).saturating_sub(2);
     if total_events > visible_height {
         let mut scrollbar_state = ScrollbarState::new(total_events)
-            .position(app.scroll_offset)
+            .position(app.scroll.events_list)
             .content_length(visible_height);
         f.render_stateful_widget(
             Scrollbar::default()
@@ -661,7 +753,7 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             } else {
                 "Not watching. Press Enter to start watching this event."
             };
-            let is_focused = app.focused_panel == FocusedPanel::Trades;
+            let is_focused = app.navigation.focused_panel == FocusedPanel::Trades;
             let block_style = if is_focused {
                 Style::default().fg(Color::Yellow)
             } else {
@@ -686,7 +778,7 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             let visible_height = (chunks[2].height as usize).saturating_sub(3); // -3 for header
             let total_rows = trades.len();
             let scroll = app
-                .trades_scroll
+                .scroll.trades
                 .min(total_rows.saturating_sub(visible_height.max(1)));
 
             let rows: Vec<Row> = trades
@@ -756,7 +848,7 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 ),
             )
             .block({
-                let is_focused = app.focused_panel == FocusedPanel::Trades;
+                let is_focused = app.navigation.focused_panel == FocusedPanel::Trades;
                 let block_style = if is_focused {
                     Style::default().fg(Color::Yellow)
                 } else {
@@ -937,7 +1029,7 @@ fn render_event_details(
         ]));
     }
 
-    let is_focused = app.focused_panel == FocusedPanel::EventDetails;
+    let is_focused = app.navigation.focused_panel == FocusedPanel::EventDetails;
     let block_style = if is_focused {
         Style::default().fg(Color::Yellow)
     } else {
@@ -973,7 +1065,7 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
     let visible_height = (area.height as usize).saturating_sub(2);
     let total_markets = event.markets.len();
     let scroll = app
-        .markets_scroll
+        .scroll.markets
         .min(total_markets.saturating_sub(visible_height.max(1)));
 
     // Create list items for markets with scroll
@@ -1058,7 +1150,7 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
         })
         .collect();
 
-    let is_focused = app.focused_panel == FocusedPanel::Markets;
+    let is_focused = app.navigation.focused_panel == FocusedPanel::Markets;
     let block_style = if is_focused {
         Style::default().fg(Color::Yellow)
     } else {
@@ -1108,34 +1200,34 @@ fn render_logs(f: &mut Frame, app: &mut TrendingAppState, area: Rect) {
 
     // Auto-scroll to bottom only if Logs panel is NOT focused
     // When focused, user controls scrolling manually
-    let is_focused = app.focused_panel == FocusedPanel::Logs;
+    let is_focused = app.navigation.focused_panel == FocusedPanel::Logs;
 
     if !is_focused {
         // Auto-scroll to bottom if we're near the bottom or if logs have grown
         // This ensures new logs are always visible when panel is not focused
-        if app.logs.len() > visible_height {
+        if app.logs.messages.len() > visible_height {
             // Check if we're already showing the bottom (within 1 line)
-            let current_bottom = app.log_scroll + visible_height;
-            if current_bottom >= app.logs.len().saturating_sub(1) {
+            let current_bottom = app.logs.scroll + visible_height;
+            if current_bottom >= app.logs.messages.len().saturating_sub(1) {
                 // We're at or near the bottom, keep it there
-                app.log_scroll = app.logs.len() - visible_height;
+                app.logs.scroll = app.logs.messages.len() - visible_height;
             }
         } else {
             // Not enough logs to scroll, show from the beginning
-            app.log_scroll = 0;
+            app.logs.scroll = 0;
         }
     } else {
         // When focused, ensure scroll position is within valid bounds
-        let max_scroll = app.logs.len().saturating_sub(visible_height.max(1));
-        app.log_scroll = app.log_scroll.min(max_scroll);
+        let max_scroll = app.logs.messages.len().saturating_sub(visible_height.max(1));
+        app.logs.scroll = app.logs.scroll.min(max_scroll);
     }
 
     // First, flatten logs by wrapping long lines
     let max_width = (area.width as usize).saturating_sub(2); // Account for borders
     let wrapped_logs: Vec<String> = app
-        .logs
+        .logs.messages
         .iter()
-        .skip(app.log_scroll)
+        .skip(app.logs.scroll)
         .flat_map(|log| {
             // Split long lines by wrapping them to fit the available width
             if log.len() > max_width {
@@ -1166,8 +1258,8 @@ fn render_logs(f: &mut Frame, app: &mut TrendingAppState, area: Rect) {
         })
         .collect();
 
-    let total_log_lines = app.logs.len();
-    let is_focused = app.focused_panel == FocusedPanel::Logs;
+    let total_log_lines = app.logs.messages.len();
+    let is_focused = app.navigation.focused_panel == FocusedPanel::Logs;
     let block_style = if is_focused {
         Style::default().fg(Color::Yellow)
     } else {
@@ -1186,7 +1278,7 @@ fn render_logs(f: &mut Frame, app: &mut TrendingAppState, area: Rect) {
     // Render scrollbar for logs if needed
     if total_log_lines > visible_height {
         let mut scrollbar_state = ScrollbarState::new(total_log_lines)
-            .position(app.log_scroll)
+            .position(app.logs.scroll)
             .content_length(visible_height);
         f.render_stateful_widget(
             Scrollbar::default()
@@ -1217,7 +1309,7 @@ pub async fn run_trending_tui(
                 // Debounce period passed, perform search
                 let query = {
                     let app = app_state.lock().await;
-                    app.search_query.clone()
+                    app.search.query.clone()
                 };
 
                 // Clear debounce before processing to prevent race conditions
@@ -1256,15 +1348,15 @@ pub async fn run_trending_tui(
                                 tracing::error!("Search failed: {}", e);
                                 let mut app = app_state_clone.lock().await;
                                 app.set_searching(false);
-                                app.search_results.clear();
+                                app.search.results.clear();
                             }
                         }
                     });
                 } else {
                     // Query is empty, clear search results
                     let mut app = app_state.lock().await;
-                    app.search_results.clear();
-                    app.last_search_query.clear();
+                    app.search.results.clear();
+                    app.search.last_searched_query.clear();
                     app.set_searching(false);
                 }
             }
@@ -1311,7 +1403,7 @@ pub async fn run_trending_tui(
                         KeyCode::Tab => {
                             if !app.is_in_filter_mode() {
                                 // Cycle through panels: EventsList -> EventDetails -> Markets -> Trades -> Logs -> EventsList
-                                app.focused_panel = match app.focused_panel {
+                                app.navigation.focused_panel = match app.navigation.focused_panel {
                                     FocusedPanel::EventsList => FocusedPanel::EventDetails,
                                     FocusedPanel::EventDetails => FocusedPanel::Markets,
                                     FocusedPanel::Markets => FocusedPanel::Trades,
@@ -1322,28 +1414,28 @@ pub async fn run_trending_tui(
                         }
                         KeyCode::Up => {
                             if !app.is_in_filter_mode() {
-                                match app.focused_panel {
+                                match app.navigation.focused_panel {
                                     FocusedPanel::EventsList => {
                                         app.move_up();
                                     }
                                     FocusedPanel::EventDetails => {
-                                        if app.event_details_scroll > 0 {
-                                            app.event_details_scroll -= 1;
+                                        if app.scroll.event_details > 0 {
+                                            app.scroll.event_details -= 1;
                                         }
                                     }
                                     FocusedPanel::Markets => {
-                                        if app.markets_scroll > 0 {
-                                            app.markets_scroll -= 1;
+                                        if app.scroll.markets > 0 {
+                                            app.scroll.markets -= 1;
                                         }
                                     }
                                     FocusedPanel::Trades => {
-                                        if app.trades_scroll > 0 {
-                                            app.trades_scroll -= 1;
+                                        if app.scroll.trades > 0 {
+                                            app.scroll.trades -= 1;
                                         }
                                     }
                                     FocusedPanel::Logs => {
-                                        if app.log_scroll > 0 {
-                                            app.log_scroll -= 1;
+                                        if app.logs.scroll > 0 {
+                                            app.logs.scroll -= 1;
                                         }
                                     }
                                 }
@@ -1351,19 +1443,19 @@ pub async fn run_trending_tui(
                         }
                         KeyCode::Down => {
                             if !app.is_in_filter_mode() {
-                                match app.focused_panel {
+                                match app.navigation.focused_panel {
                                     FocusedPanel::EventsList => {
                                         app.move_down();
                                         // Check if we need to fetch more events (infinite scroll)
                                         if app.should_fetch_more() {
                                             let app_state_clone = Arc::clone(&app_state);
                                             let gamma_client_clone = GammaClient::new();
-                                            let order_by = app.order_by.clone();
-                                            let ascending = app.ascending;
-                                            let current_limit = app.current_limit;
+                                            let order_by = app.pagination.order_by.clone();
+                                            let ascending = app.pagination.ascending;
+                                            let current_limit = app.pagination.current_limit;
 
                                             // Set fetching flag to prevent duplicate requests
-                                            app.is_fetching_more = true;
+                                            app.pagination.is_fetching_more = true;
 
                                             // Fetch 50 more events
                                             let new_limit = current_limit + 50;
@@ -1403,13 +1495,13 @@ pub async fn run_trending_tui(
                                                             let mut app =
                                                                 app_state_clone.lock().await;
                                                             app.events.append(&mut new_events);
-                                                            app.current_limit = new_limit;
+                                                            app.pagination.current_limit = new_limit;
                                                         } else {
                                                             tracing::info!("No new events to add (already have all events)");
                                                         }
 
                                                         let mut app = app_state_clone.lock().await;
-                                                        app.is_fetching_more = false;
+                                                        app.pagination.is_fetching_more = false;
                                                     }
                                                     Err(e) => {
                                                         tracing::error!(
@@ -1417,7 +1509,7 @@ pub async fn run_trending_tui(
                                                             e
                                                         );
                                                         let mut app = app_state_clone.lock().await;
-                                                        app.is_fetching_more = false;
+                                                        app.pagination.is_fetching_more = false;
                                                     }
                                                 }
                                             });
@@ -1431,20 +1523,20 @@ pub async fn run_trending_tui(
                                                 + if event.image.is_some() { 1 } else { 0 }
                                                 + if !event.tags.is_empty() { 1 } else { 0 };
                                             let visible_height: usize = 10; // Approximate
-                                            if app.event_details_scroll
+                                            if app.scroll.event_details
                                                 < estimated_lines.saturating_sub(visible_height)
                                             {
-                                                app.event_details_scroll += 1;
+                                                app.scroll.event_details += 1;
                                             }
                                         }
                                     }
                                     FocusedPanel::Markets => {
                                         if let Some(event) = app.selected_event() {
                                             let visible_height: usize = 5; // Markets panel height
-                                            if app.markets_scroll
+                                            if app.scroll.markets
                                                 < event.markets.len().saturating_sub(visible_height)
                                             {
-                                                app.markets_scroll += 1;
+                                                app.scroll.markets += 1;
                                             }
                                         }
                                     }
@@ -1455,10 +1547,10 @@ pub async fn run_trending_tui(
                                             0
                                         };
                                         let visible_height: usize = 10; // Approximate
-                                        if app.trades_scroll
+                                        if app.scroll.trades
                                             < trades_len.saturating_sub(visible_height)
                                         {
-                                            app.trades_scroll += 1;
+                                            app.scroll.trades += 1;
                                         }
                                     }
                                     FocusedPanel::Logs => {
@@ -1466,9 +1558,9 @@ pub async fn run_trending_tui(
                                         // The render function will clamp it to the exact visible height
                                         let visible_height: usize = 10; // Approximate, will be clamped in render
                                         let max_scroll =
-                                            app.logs.len().saturating_sub(visible_height.max(1));
-                                        if app.log_scroll < max_scroll {
-                                            app.log_scroll += 1;
+                                            app.logs.messages.len().saturating_sub(visible_height.max(1));
+                                        if app.logs.scroll < max_scroll {
+                                            app.logs.scroll += 1;
                                         }
                                     }
                                 }
@@ -1478,7 +1570,7 @@ pub async fn run_trending_tui(
                             if app.is_in_filter_mode() {
                                 app.delete_search_char();
                                 // Trigger API search after backspace only if in API search mode (with debounce)
-                                if app.search_mode {
+                                if app.search.mode == SearchMode::ApiSearch {
                                     search_debounce = Some(tokio::time::Instant::now());
                                 }
                             }
@@ -1487,7 +1579,7 @@ pub async fn run_trending_tui(
                             if app.is_in_filter_mode() {
                                 app.add_search_char(c);
                                 // Trigger API search after character input only if in API search mode (with debounce)
-                                if app.search_mode {
+                                if app.search.mode == SearchMode::ApiSearch {
                                     search_debounce = Some(tokio::time::Instant::now());
                                 }
                                 // Local filter mode filters immediately (no API call needed)
@@ -1496,8 +1588,7 @@ pub async fn run_trending_tui(
                         KeyCode::Enter => {
                             if app.is_in_filter_mode() {
                                 // Exit search/filter mode and keep selection
-                                app.search_mode = false;
-                                app.local_filter_mode = false;
+                                app.search.mode = SearchMode::None;
                             } else {
                                 // Toggle watching the selected event
                                 if let Some(event_slug) = app.selected_event_slug() {
@@ -1509,7 +1600,7 @@ pub async fn run_trending_tui(
                                         let event_slug_clone = event_slug.clone();
 
                                         // Ensure the event_trades entry exists before starting websocket
-                                        app.event_trades
+                                        app.trades.event_trades
                                             .entry(event_slug_clone.clone())
                                             .or_insert_with(EventTrades::new);
 
@@ -1536,7 +1627,7 @@ pub async fn run_trending_tui(
                                                     tokio::spawn(async move {
                                                         let mut app = app_state.lock().await;
                                                         if let Some(event_trades) =
-                                                            app.event_trades.get_mut(&event_slug)
+                                                            app.trades.event_trades.get_mut(&event_slug)
                                                         {
                                                             event_trades.add_trade(&msg);
                                                             tracing::info!("Trade added to event_trades for: {}", event_slug);

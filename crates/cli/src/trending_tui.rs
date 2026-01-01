@@ -659,8 +659,23 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             } else {
                 "Not watching. Press Enter to start watching this event."
             };
+            let is_focused = app.focused_panel == FocusedPanel::Trades;
+            let block_style = if is_focused {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default()
+            };
             let paragraph = Paragraph::new(status_text)
-                .block(Block::default().borders(Borders::ALL).title("Trades"))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(if is_focused {
+                            "Trades (Focused)"
+                        } else {
+                            "Trades"
+                        })
+                        .border_style(block_style),
+                )
                 .alignment(Alignment::Center)
                 .style(Style::default().fg(Color::Gray));
             f.render_widget(paragraph, chunks[2]);
@@ -940,7 +955,7 @@ fn render_event_details(
     } else {
         Style::default()
     };
-    
+
     let paragraph = Paragraph::new(lines)
         .block(
             Block::default()

@@ -92,7 +92,7 @@ fn calculate_panel_areas(size: Rect, is_in_filter_mode: bool) -> (Rect, Rect, Re
     let right_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(8),
+            Constraint::Length(10),
             Constraint::Length(7),
             Constraint::Min(0),
         ])
@@ -286,14 +286,21 @@ pub async fn run_trending_tui(
 
             // Handle mouse events
             if let Event::Mouse(mouse) = &event {
+                // Focus panel on hover (mouse move)
+                if let MouseEventKind::Moved = mouse.kind {
+                    let mut app = app_state.lock().await;
+                    let size = terminal.size()?;
+                    if let Some(panel) = get_panel_at_position(mouse.column, mouse.row, size, app.is_in_filter_mode()) {
+                        app.navigation.focused_panel = panel;
+                    }
+                }
+                // Click to select event in events list
                 if let MouseEventKind::Down(MouseButton::Left) = mouse.kind {
                     let mut app = app_state.lock().await;
                     let size = terminal.size()?;
                     let (_, events_list_area, _, _, _, _) = calculate_panel_areas(size, app.is_in_filter_mode());
 
                     if let Some(panel) = get_panel_at_position(mouse.column, mouse.row, size, app.is_in_filter_mode()) {
-                        app.navigation.focused_panel = panel;
-
                         // If clicking in events list, select the clicked event
                         if panel == FocusedPanel::EventsList {
                             // Calculate which event was clicked

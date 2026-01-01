@@ -457,7 +457,7 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
 
         // Use a fixed minimum height for event details panel
         // Content will scroll if it exceeds this height
-        let min_event_details_height = 8; // Minimum height (6 base lines + 2 for borders)
+        let min_event_details_height = 10; // Minimum height (8 base lines + 2 for borders)
 
         // Split area into event details, markets, and trades
         let chunks = Layout::default()

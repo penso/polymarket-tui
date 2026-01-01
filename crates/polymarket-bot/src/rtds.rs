@@ -303,7 +303,7 @@ impl RTDSClient {
                                 }
                             }
                         }
-                        
+
                         // If we get here, it's a truly unknown message format
                         #[cfg(feature = "tracing")]
                         {

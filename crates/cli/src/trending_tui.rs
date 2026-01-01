@@ -203,7 +203,11 @@ impl TrendingAppState {
     }
 
     pub fn selected_event(&self) -> Option<&Event> {
-        if self.search_mode {
+        // Always use filtered events if we have active search results
+        // This ensures we get the correct event even after exiting search mode
+        if !self.search_results.is_empty() && self.search_query == self.last_search_query {
+            self.selected_event_filtered()
+        } else if self.search_mode {
             self.selected_event_filtered()
         } else {
             self.events.get(self.selected_index)

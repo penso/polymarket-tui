@@ -5,7 +5,7 @@
 //!
 //! ## Panel-specific keys:
 //! - **Header**: ←/→ to switch filters
-//! - **EventsList**: / for API search, f for local filter, Enter to watch/unwatch
+//! - **EventsList**: / for API search, f for local filter, r to refresh, Enter to watch/unwatch
 //! - **Markets**: r to refresh prices
 //! - **All panels**: ↑/↓ to scroll, Tab to switch panels, q to quit
 
@@ -16,7 +16,7 @@ impl FocusedPanel {
     pub fn help_text(&self) -> &'static str {
         match self {
             FocusedPanel::Header => "←/→: Filter",
-            FocusedPanel::EventsList => "/: Search | f: Filter | Enter: Watch",
+            FocusedPanel::EventsList => "/: Search | f: Filter | r: Refresh | Enter: Watch",
             FocusedPanel::EventDetails => "↑/↓: Scroll",
             FocusedPanel::Markets => "r: Refresh | ↑/↓: Scroll",
             FocusedPanel::Trades => "↑/↓: Scroll",

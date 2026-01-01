@@ -590,7 +590,7 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
 
         // Render event details
         render_event_details(f, event, is_watching, trades.len(), chunks[0]);
-        
+
         // Render markets panel
         render_markets(f, event, chunks[1]);
 
@@ -740,15 +740,13 @@ fn render_event_details(
         .unwrap_or_else(|| "N/A".to_string());
 
     // Build compact lines without blank lines
-    let mut lines = vec![
-        Line::from(vec![
-            Span::styled("Title: ", Style::default().fg(Color::Yellow).bold()),
-            Span::styled(
-                truncate(&event.title, 60),
-                Style::default().fg(Color::White),
-            ),
-        ]),
-    ];
+    let mut lines = vec![Line::from(vec![
+        Span::styled("Title: ", Style::default().fg(Color::Yellow).bold()),
+        Span::styled(
+            truncate(&event.title, 60),
+            Style::default().fg(Color::White),
+        ),
+    ])];
 
     // Add image thumbnail if available
     if let Some(ref image_url) = event.image {
@@ -828,10 +826,7 @@ fn render_event_details(
             .collect();
         lines.push(Line::from(vec![
             Span::styled("Tags: ", Style::default().fg(Color::Yellow).bold()),
-            Span::styled(
-                tag_labels.join(", "),
-                Style::default().fg(Color::Cyan),
-            ),
+            Span::styled(tag_labels.join(", "), Style::default().fg(Color::Cyan)),
         ]));
     }
 
@@ -848,20 +843,13 @@ fn render_event_details(
 fn render_markets(f: &mut Frame, event: &Event, area: Rect) {
     if event.markets.is_empty() {
         let paragraph = Paragraph::new("No markets available")
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Markets"),
-            )
+            .block(Block::default().borders(Borders::ALL).title("Markets"))
             .alignment(Alignment::Center)
             .style(Style::default().fg(Color::Gray));
         f.render_widget(paragraph, area);
         return;
     }
 
-    // Calculate visible height (accounting for borders)
-    let visible_height = (area.height as usize).saturating_sub(2);
-    
     // Create list items for markets (show all, List widget handles scrolling)
     let items: Vec<ListItem> = event
         .markets
@@ -871,7 +859,7 @@ fn render_markets(f: &mut Frame, event: &Event, area: Rect) {
                 .volume_total
                 .map(|v| format!(" ${:.2}", v))
                 .unwrap_or_else(|| String::new());
-            
+
             let outcomes_str = if market.outcomes.len() >= 2 {
                 format!(
                     " {} / {}",
@@ -894,12 +882,11 @@ fn render_markets(f: &mut Frame, event: &Event, area: Rect) {
         })
         .collect();
 
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!("Markets ({})", event.markets.len())),
-        );
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(format!("Markets ({})", event.markets.len())),
+    );
 
     f.render_widget(list, area);
 }

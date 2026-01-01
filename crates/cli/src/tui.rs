@@ -1,5 +1,7 @@
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
+use polymarket_tui::gamma::Event;
 use polymarket_tui::rtds::RTDSMessage;
+use polymarket_tui::{ClobClient, GammaClient};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout},
@@ -9,9 +11,11 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap},
     Frame, Terminal,
 };
+use std::collections::HashMap;
 use std::io;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
+use tracing::info;
 
 pub struct Trade {
     pub timestamp: i64,
@@ -29,14 +33,22 @@ pub struct AppState {
     pub trades: Vec<Trade>,
     pub event_slug: String,
     pub should_quit: bool,
+    pub event: Option<Event>,
+    pub market_prices: HashMap<String, f64>,
+    pub is_loading: bool,
+    pub last_refresh: Option<DateTime<Utc>>,
 }
 
 impl AppState {
-    pub fn new(event_slug: String) -> Self {
+    pub fn new_with_event(event_slug: String, event: Option<Event>) -> Self {
         Self {
             trades: Vec::new(),
             event_slug,
             should_quit: false,
+            event,
+            market_prices: HashMap::new(),
+            is_loading: false,
+            last_refresh: None,
         }
     }
 
@@ -69,18 +81,22 @@ pub fn render(f: &mut Frame, app: &AppState) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // Header
-            Constraint::Min(0),    // Table
+            Constraint::Length(5), // Event Details
+            Constraint::Length(8), // Markets
+            Constraint::Min(0),    // Trades Table
             Constraint::Length(3), // Footer
         ])
         .split(f.size());
 
     // Header
+    let loading_indicator = if app.is_loading { " [Loading...]" } else { "" };
     let header = Paragraph::new(vec![
         Line::from("💸 Polymarket Trade Monitor".fg(Color::Yellow).bold()),
         Line::from(format!(
-            "Event: {} | Trades: {}",
+            "Event: {} | Trades: {}{}",
             app.event_slug,
-            app.trades.len()
+            app.trades.len(),
+            loading_indicator
         )),
     ])
     .block(Block::default().borders(Borders::ALL).title("Status"))
@@ -88,12 +104,18 @@ pub fn render(f: &mut Frame, app: &AppState) {
     .wrap(Wrap { trim: true });
     f.render_widget(header, chunks[0]);
 
-    // Table
+    // Event Details
+    render_event_details(f, app, chunks[1]);
+
+    // Markets
+    render_markets(f, app, chunks[2]);
+
+    // Trades Table
     if app.trades.is_empty() {
         let empty = Paragraph::new("Waiting for trades...")
             .block(Block::default().borders(Borders::ALL).title("Trades"))
             .alignment(Alignment::Center);
-        f.render_widget(empty, chunks[1]);
+        f.render_widget(empty, chunks[3]);
     } else {
         let rows: Vec<Row> = app
             .trades
@@ -179,15 +201,15 @@ pub fn render(f: &mut Frame, app: &AppState) {
         )
         .column_spacing(1);
 
-        f.render_widget(table, chunks[1]);
+        f.render_widget(table, chunks[3]);
     }
 
     // Footer
-    let footer = Paragraph::new("Press 'q' or Ctrl+C to quit")
+    let footer = Paragraph::new("Press 'r' to refresh market data | 'q' to quit")
         .block(Block::default().borders(Borders::ALL))
         .alignment(Alignment::Center)
         .style(Style::default().fg(Color::Gray));
-    f.render_widget(footer, chunks[2]);
+    f.render_widget(footer, chunks[4]);
 }
 
 fn truncate(s: &str, max_len: usize) -> String {
@@ -195,6 +217,195 @@ fn truncate(s: &str, max_len: usize) -> String {
         s.to_string()
     } else {
         format!("{}...", &s[..max_len.saturating_sub(3)])
+    }
+}
+
+fn render_event_details(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
+    let content = if let Some(event) = &app.event {
+        let status = if event.closed {
+            "Closed".fg(Color::Red)
+        } else if event.active {
+            "Active".fg(Color::Green)
+        } else {
+            "Inactive".fg(Color::Yellow)
+        };
+
+        let end_date = event.end_date.as_deref().unwrap_or("N/A");
+
+        let refresh_info = app
+            .last_refresh
+            .map(|dt| format!(" | Last refresh: {}", dt.format("%H:%M:%S")))
+            .unwrap_or_default();
+
+        vec![
+            Line::from(vec![
+                "Title: ".fg(Color::Gray),
+                event.title.clone().fg(Color::White).bold(),
+            ]),
+            Line::from(vec![
+                "Status: ".fg(Color::Gray),
+                status,
+                " | End: ".fg(Color::Gray),
+                end_date.fg(Color::Cyan),
+                refresh_info.fg(Color::DarkGray),
+            ]),
+            Line::from(vec![
+                "Markets: ".fg(Color::Gray),
+                format!("{}", event.markets.len()).fg(Color::Cyan),
+            ]),
+        ]
+    } else if app.is_loading {
+        vec![Line::from("Loading event data...".fg(Color::Yellow))]
+    } else {
+        vec![Line::from(
+            "No event data. Press 'r' to refresh.".fg(Color::Gray),
+        )]
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("Event Details");
+    let paragraph = Paragraph::new(content).block(block);
+    f.render_widget(paragraph, area);
+}
+
+fn render_markets(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
+    let content = if let Some(event) = &app.event {
+        if event.markets.is_empty() {
+            vec![Line::from("No markets available".fg(Color::Gray))]
+        } else {
+            event
+                .markets
+                .iter()
+                .take(area.height.saturating_sub(2) as usize) // Account for borders
+                .map(|market| {
+                    // Build outcome prices string
+                    let outcomes_str: String = market
+                        .outcomes
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, outcome)| {
+                            // Try to get live price from market_prices, else use static outcome_prices
+                            let price = if let Some(ref token_ids) = market.clob_token_ids {
+                                token_ids
+                                    .get(idx)
+                                    .and_then(|asset_id| app.market_prices.get(asset_id).copied())
+                                    .or_else(|| {
+                                        market
+                                            .outcome_prices
+                                            .get(idx)
+                                            .and_then(|p| p.parse::<f64>().ok())
+                                    })
+                            } else {
+                                market
+                                    .outcome_prices
+                                    .get(idx)
+                                    .and_then(|p| p.parse::<f64>().ok())
+                            };
+
+                            match price {
+                                Some(p) => format!("{}: ${:.2} ({:.0}%)", outcome, p, p * 100.0),
+                                None => format!("{}: N/A", outcome),
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" | ");
+
+                    // Volume info
+                    let volume_24h = market
+                        .volume_24hr
+                        .map(|v| format!("24h: ${:.0}", v))
+                        .unwrap_or_default();
+
+                    let question = truncate(&market.question, 50);
+                    Line::from(vec![
+                        question.fg(Color::White),
+                        " ".into(),
+                        outcomes_str.fg(Color::Cyan),
+                        " ".into(),
+                        volume_24h.fg(Color::Green),
+                    ])
+                })
+                .collect()
+        }
+    } else if app.is_loading {
+        vec![Line::from("Loading markets...".fg(Color::Yellow))]
+    } else {
+        vec![Line::from(
+            "No market data. Press 'r' to refresh.".fg(Color::Gray),
+        )]
+    };
+
+    let market_count = app.event.as_ref().map(|e| e.markets.len()).unwrap_or(0);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!("Markets ({})", market_count));
+    let paragraph = Paragraph::new(content).block(block);
+    f.render_widget(paragraph, area);
+}
+
+pub async fn refresh_market_data(app_state: Arc<TokioMutex<AppState>>) {
+    let event_slug = {
+        let mut app = app_state.lock().await;
+        app.is_loading = true;
+        app.event_slug.clone()
+    };
+
+    info!("Refreshing market data for event: {}", event_slug);
+
+    // Fetch event data from Gamma API
+    let gamma_client = GammaClient::new();
+    let event_result = gamma_client.get_event_by_slug(&event_slug).await;
+
+    match event_result {
+        Ok(Some(event)) => {
+            // Collect all asset IDs to fetch prices for
+            let asset_ids: Vec<String> = event
+                .markets
+                .iter()
+                .filter_map(|m| m.clob_token_ids.as_ref())
+                .flatten()
+                .cloned()
+                .collect();
+
+            // Fetch prices from CLOB API
+            let clob_client = ClobClient::new();
+            let mut prices: HashMap<String, f64> = HashMap::new();
+
+            for asset_id in &asset_ids {
+                match clob_client.get_orderbook_by_asset(asset_id).await {
+                    Ok(orderbook) => {
+                        // Use best ask price (price to buy)
+                        if let Some(best_ask) = orderbook.asks.first() {
+                            if let Ok(price) = best_ask.price.parse::<f64>() {
+                                prices.insert(asset_id.clone(), price);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::debug!("Failed to fetch orderbook for {}: {}", asset_id, e);
+                    }
+                }
+            }
+
+            // Update app state
+            let mut app = app_state.lock().await;
+            app.event = Some(event);
+            app.market_prices = prices;
+            app.is_loading = false;
+            app.last_refresh = Some(Utc::now());
+            info!("Market data refreshed successfully");
+        }
+        Ok(None) => {
+            let mut app = app_state.lock().await;
+            app.is_loading = false;
+            info!("Event not found: {}", event_slug);
+        }
+        Err(e) => {
+            let mut app = app_state.lock().await;
+            app.is_loading = false;
+            info!("Failed to fetch event: {}", e);
+        }
     }
 }
 
@@ -225,6 +436,19 @@ pub async fn run_tui(
                             let mut app = app_state.lock().await;
                             app.should_quit = true;
                             break;
+                        }
+                        KeyCode::Char('r') => {
+                            // Check if not already loading
+                            let is_loading = {
+                                let app = app_state.lock().await;
+                                app.is_loading
+                            };
+                            if !is_loading {
+                                let app_state_clone = Arc::clone(&app_state);
+                                tokio::spawn(async move {
+                                    refresh_market_data(app_state_clone).await;
+                                });
+                            }
                         }
                         _ => {}
                     }

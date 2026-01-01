@@ -343,6 +343,14 @@ async fn run_watch_event_tui(event_slug: String) -> Result<()> {
     use std::io;
     use tokio::sync::Mutex as TokioMutex;
 
+    // Fetch event data from Gamma API before starting TUI
+    info!("Fetching event data for: {}", event_slug);
+    let gamma_client = GammaClient::new();
+    let event = gamma_client
+        .get_event_by_slug(&event_slug)
+        .await
+        .context("Failed to fetch event")?;
+
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -350,8 +358,17 @@ async fn run_watch_event_tui(event_slug: String) -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let terminal = Terminal::new(backend)?;
 
-    // Create app state
-    let app_state = Arc::new(TokioMutex::new(tui::AppState::new(event_slug.clone())));
+    // Create app state with event data
+    let app_state = Arc::new(TokioMutex::new(tui::AppState::new_with_event(
+        event_slug.clone(),
+        event,
+    )));
+
+    // Trigger initial market price refresh
+    let app_state_refresh = Arc::clone(&app_state);
+    tokio::spawn(async move {
+        tui::refresh_market_data(app_state_refresh).await;
+    });
 
     // Clone for WebSocket task
     let app_state_ws = Arc::clone(&app_state);

@@ -758,20 +758,11 @@ pub async fn run_trending_tui(
                         app.set_searching(true);
                     }
 
-                    // Spawn the search task with tracing context
-                    // The issue is that tokio::spawn doesn't inherit tracing context automatically
-                    // We need to manually ensure the dispatcher context is propagated
-                    use tracing::Instrument;
-                    
-                    // Create a span for this search task
-                    let query_for_span = query_clone.clone();
-                    let search_span = tracing::info_span!("search", query = %query_for_span);
-
-                    // Spawn the task with .instrument() to attach the span
-                    // This should make the tracing context available in the spawned task
-                    tokio::spawn(
-                        async move {
-                            // Test log to verify tracing context is inherited
+                    // Spawn the search task
+                    // The tracing subscriber is set as default, so logs should be captured
+                    // even from spawned tasks (no need for .instrument() if dispatcher is default)
+                    tokio::spawn(async move {
+                            // Test log to verify tracing works in spawned task
                             tracing::info!("[TASK] Starting search for: '{}'", query_clone);
 
                             let result = gamma_client_for_task
@@ -791,9 +782,7 @@ pub async fn run_trending_tui(
                                     app.search_results.clear();
                                 }
                             }
-                        }
-                        .instrument(search_span),
-                    );
+                        });
                 } else {
                     // Query is empty, clear search results
                     let mut app = app_state.lock().await;

@@ -251,6 +251,7 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
 
 fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
     let filtered_events = app.filtered_events();
+    let now = Utc::now();
     let items: Vec<ListItem> = filtered_events
         .iter()
         .enumerate()
@@ -261,10 +262,20 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             let is_watching = app.is_watching(&event.slug);
             let trade_count = app.get_trades(&event.slug).len();
 
+            // Check if event is expired
+            let is_expired = event
+                .end_date
+                .as_ref()
+                .and_then(|d| DateTime::parse_from_rfc3339(d).ok())
+                .map(|dt| dt.with_timezone(&Utc) < now)
+                .unwrap_or(false);
+
             let style = if is_selected {
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+            } else if is_expired {
+                Style::default().fg(Color::DarkGray)
             } else {
                 Style::default().fg(Color::White)
             };
@@ -283,8 +294,14 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             };
             let right_text_width = right_text.width();
 
-            // Reserve space for right text + 1 space padding
-            let reserved_width = right_text_width + 1;
+            // Reserve space for right text + 1 space padding + expired icon if needed
+            let expired_icon = if is_expired {
+                "⏱ "
+            } else {
+                ""
+            };
+            let expired_icon_width = expired_icon.width();
+            let reserved_width = right_text_width + 1 + expired_icon_width;
             let available_width = usable_width.saturating_sub(reserved_width);
 
             // Truncate title to fit available space (using display width)
@@ -292,10 +309,15 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
 
             let title_width = title.width();
             let remaining_width = usable_width
+                .saturating_sub(expired_icon_width)
                 .saturating_sub(title_width)
                 .saturating_sub(right_text_width);
 
-            let mut line_spans = vec![Span::styled(title, style)];
+            let mut line_spans = Vec::new();
+            if is_expired {
+                line_spans.push(Span::styled(expired_icon, Style::default().fg(Color::Red)));
+            }
+            line_spans.push(Span::styled(title, style));
 
             // Add spaces to right-align the markets/trades count
             if remaining_width > 0 {

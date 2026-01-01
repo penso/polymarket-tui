@@ -449,14 +449,19 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
     let log_layer = tui_log_layer::TuiLogLayer::new(Arc::clone(&logs));
 
     // Replace the default subscriber with one that includes our custom layer
+    // IMPORTANT: Keep the guard alive - it must not be dropped!
     use tracing_subscriber::prelude::*;
-    let _guard = tracing_subscriber::registry()
+    let _subscriber_guard = tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .with(log_layer)
         .set_default();
+    
+    // Store the guard in a way that keeps it alive for the duration of the function
+    // The guard ensures the dispatcher remains active
+    let _ = _subscriber_guard;
 
     // Now that tracing is set up, we can log
     info!("🔥 Fetching trending events...");

@@ -942,6 +942,7 @@ async fn run_yield(
         let market_status_colored = match opp.market_status {
             "open" => opp.market_status.green(),
             "closed" => opp.market_status.red(),
+            "in-review" => opp.market_status.cyan(),
             _ => opp.market_status.yellow(),
         };
 

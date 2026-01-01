@@ -490,6 +490,95 @@ impl GammaClient {
 
         Ok(None)
     }
+
+    /// Check API health status
+    pub async fn get_status(&self) -> Result<StatusResponse> {
+        let url = format!("{}/status", GAMMA_API_BASE);
+        let status: StatusResponse = self.client.get(&url).send().await?.json().await?;
+        Ok(status)
+    }
+
+    /// Get tag by ID
+    pub async fn get_tag_by_id(&self, tag_id: &str) -> Result<Option<Tag>> {
+        let url = format!("{}/tags/{}", GAMMA_API_BASE, tag_id);
+        let response = self.client.get(&url).send().await?;
+
+        if response.status() == 404 {
+            return Ok(None);
+        }
+
+        let tag: Tag = response.json().await?;
+        Ok(Some(tag))
+    }
+
+    /// Get tag by slug
+    pub async fn get_tag_by_slug(&self, slug: &str) -> Result<Option<Tag>> {
+        let url = format!("{}/tags/slug/{}", GAMMA_API_BASE, slug);
+        let response = self.client.get(&url).send().await?;
+
+        if response.status() == 404 {
+            return Ok(None);
+        }
+
+        let tag: Tag = response.json().await?;
+        Ok(Some(tag))
+    }
+
+    /// Get related tags for a tag ID
+    pub async fn get_related_tags(&self, tag_id: &str) -> Result<Vec<Tag>> {
+        let url = format!("{}/tags/{}/related-tags", GAMMA_API_BASE, tag_id);
+        let tags: Vec<Tag> = self.client.get(&url).send().await?.json().await?;
+        Ok(tags)
+    }
+
+    /// Get all series
+    pub async fn get_series(&self, limit: Option<usize>) -> Result<Vec<Series>> {
+        let limit = limit.unwrap_or(100);
+        let url = format!("{}/series?limit={}", GAMMA_API_BASE, limit);
+        let series: Vec<Series> = self.client.get(&url).send().await?.json().await?;
+        Ok(series)
+    }
+
+    /// Get series by ID
+    pub async fn get_series_by_id(&self, series_id: &str) -> Result<Option<Series>> {
+        let url = format!("{}/series/{}", GAMMA_API_BASE, series_id);
+        let response = self.client.get(&url).send().await?;
+
+        if response.status() == 404 {
+            return Ok(None);
+        }
+
+        let series: Series = response.json().await?;
+        Ok(Some(series))
+    }
+
+    /// Get public profile by wallet address
+    pub async fn get_public_profile(&self, address: &str) -> Result<Option<PublicProfile>> {
+        let url = format!("{}/public-profile", GAMMA_API_BASE);
+        let params = [("address", address)];
+        let response = self.client.get(&url).query(&params).send().await?;
+
+        if response.status() == 404 {
+            return Ok(None);
+        }
+
+        let profile: PublicProfile = response.json().await?;
+        Ok(Some(profile))
+    }
+
+    /// Get tags for a specific event
+    pub async fn get_event_tags(&self, event_id: &str) -> Result<Vec<Tag>> {
+        let url = format!("{}/events/{}/tags", GAMMA_API_BASE, event_id);
+        let tags: Vec<Tag> = self.client.get(&url).send().await?.json().await?;
+        Ok(tags)
+    }
+
+    /// Get tags for a specific market
+    pub async fn get_market_tags(&self, market_id: &str) -> Result<Vec<Tag>> {
+        let url = format!("{}/markets/{}/tags", GAMMA_API_BASE, market_id);
+        let tags: Vec<Tag> = self.client.get(&url).send().await?.json().await?;
+        Ok(tags)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -501,6 +590,41 @@ pub struct MarketInfo {
     pub asset_id: String,
     pub outcomes: Vec<String>,
     pub prices: Vec<String>,
+}
+
+/// API status response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatusResponse {
+    pub status: String,
+}
+
+/// Series information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Series {
+    pub id: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub slug: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+/// Public profile information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PublicProfile {
+    #[serde(default)]
+    pub address: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub pseudonym: Option<String>,
+    #[serde(default)]
+    pub bio: Option<String>,
+    #[serde(rename = "profileImage", default)]
+    pub profile_image: Option<String>,
+    #[serde(rename = "profileImageOptimized", default)]
+    pub profile_image_optimized: Option<String>,
 }
 
 impl Default for GammaClient {

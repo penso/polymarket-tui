@@ -70,6 +70,87 @@ pub struct PriceLevel {
 pub struct Orderbook {
     pub bids: Vec<PriceLevel>,
     pub asks: Vec<PriceLevel>,
+    /// Market identifier (condition ID)
+    #[serde(default)]
+    pub market: Option<String>,
+    /// Asset identifier (token ID)
+    #[serde(default)]
+    pub asset_id: Option<String>,
+    /// Snapshot timestamp (ISO 8601)
+    #[serde(default)]
+    pub timestamp: Option<String>,
+    /// Order book state hash
+    #[serde(default)]
+    pub hash: Option<String>,
+    /// Minimum tradeable size
+    #[serde(default)]
+    pub min_order_size: Option<String>,
+    /// Minimum price increment
+    #[serde(default)]
+    pub tick_size: Option<String>,
+    /// Whether negative risk mechanics are enabled
+    #[serde(default)]
+    pub neg_risk: Option<bool>,
+}
+
+/// Price response from GET /price endpoint
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PriceResponse {
+    pub price: String,
+}
+
+/// Midpoint response from GET /midpoint endpoint
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MidpointResponse {
+    pub mid: String,
+}
+
+/// Historical price point
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PriceHistoryPoint {
+    /// Unix timestamp
+    pub t: i64,
+    /// Price value
+    pub p: f64,
+}
+
+/// Price history response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PriceHistoryResponse {
+    pub history: Vec<PriceHistoryPoint>,
+}
+
+/// Time interval for price history queries
+#[derive(Debug, Clone, Copy)]
+pub enum PriceInterval {
+    OneMinute,
+    OneHour,
+    SixHours,
+    OneDay,
+    OneWeek,
+    Max,
+}
+
+impl PriceInterval {
+    /// Get the string representation of the interval
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PriceInterval::OneMinute => "1m",
+            PriceInterval::OneHour => "1h",
+            PriceInterval::SixHours => "6h",
+            PriceInterval::OneDay => "1d",
+            PriceInterval::OneWeek => "1w",
+            PriceInterval::Max => "max",
+        }
+    }
+}
+
+/// Request for spread calculation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpreadRequest {
+    pub token_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub side: Option<Side>,
 }
 
 /// Trade information
@@ -202,6 +283,13 @@ impl ClobClient {
             return Ok(Orderbook {
                 bids: Vec::new(),
                 asks: Vec::new(),
+                market: None,
+                asset_id: Some(token_id.to_string()),
+                timestamp: None,
+                hash: None,
+                min_order_size: None,
+                tick_size: None,
+                neg_risk: None,
             });
         }
 
@@ -250,6 +338,13 @@ impl ClobClient {
                 Ok(Orderbook {
                     bids: Vec::new(),
                     asks: Vec::new(),
+                    market: None,
+                    asset_id: Some(token_id.to_string()),
+                    timestamp: None,
+                    hash: None,
+                    min_order_size: None,
+                    tick_size: None,
+                    neg_risk: None,
                 })
             },
         }
@@ -314,6 +409,148 @@ impl ClobClient {
         // TODO: Add authentication headers
         self.client.delete(&url).send().await?;
         Ok(())
+    }
+
+    /// Get market price for a specific token and side
+    ///
+    /// # Arguments
+    /// * `token_id` - The unique identifier for the token
+    /// * `side` - The side of the market (BUY or SELL)
+    pub async fn get_price(&self, token_id: &str, side: Side) -> Result<PriceResponse> {
+        let url = format!("{}/price", CLOB_API_BASE);
+        let side_str = match side {
+            Side::Buy => "BUY",
+            Side::Sell => "SELL",
+        };
+        let params = [("token_id", token_id), ("side", side_str)];
+
+        let response = self.client.get(&url).query(&params).send().await?;
+
+        if !response.status().is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(crate::error::PolymarketError::InvalidData(error_text));
+        }
+
+        let price: PriceResponse = response.json().await?;
+        Ok(price)
+    }
+
+    /// Get midpoint price for a specific token
+    ///
+    /// The midpoint is the middle point between the current best bid and ask prices.
+    ///
+    /// # Arguments
+    /// * `token_id` - The unique identifier for the token
+    pub async fn get_midpoint(&self, token_id: &str) -> Result<MidpointResponse> {
+        let url = format!("{}/midpoint", CLOB_API_BASE);
+        let params = [("token_id", token_id)];
+
+        let response = self.client.get(&url).query(&params).send().await?;
+
+        if !response.status().is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(crate::error::PolymarketError::InvalidData(error_text));
+        }
+
+        let midpoint: MidpointResponse = response.json().await?;
+        Ok(midpoint)
+    }
+
+    /// Get historical price data for a token
+    ///
+    /// # Arguments
+    /// * `token_id` - The CLOB token ID for which to fetch price history
+    /// * `start_ts` - Optional start time as Unix timestamp in UTC
+    /// * `end_ts` - Optional end time as Unix timestamp in UTC
+    /// * `interval` - Optional interval string (mutually exclusive with start_ts/end_ts)
+    /// * `fidelity` - Optional resolution of the data in minutes
+    pub async fn get_prices_history(
+        &self,
+        token_id: &str,
+        start_ts: Option<i64>,
+        end_ts: Option<i64>,
+        interval: Option<PriceInterval>,
+        fidelity: Option<u32>,
+    ) -> Result<PriceHistoryResponse> {
+        let url = format!("{}/prices-history", CLOB_API_BASE);
+        let mut params = vec![("market", token_id.to_string())];
+
+        if let Some(start) = start_ts {
+            params.push(("startTs", start.to_string()));
+        }
+        if let Some(end) = end_ts {
+            params.push(("endTs", end.to_string()));
+        }
+        if let Some(interval) = interval {
+            params.push(("interval", interval.as_str().to_string()));
+        }
+        if let Some(fidelity) = fidelity {
+            params.push(("fidelity", fidelity.to_string()));
+        }
+
+        let response = self.client.get(&url).query(&params).send().await?;
+
+        if !response.status().is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(crate::error::PolymarketError::InvalidData(error_text));
+        }
+
+        let history: PriceHistoryResponse = response.json().await?;
+        Ok(history)
+    }
+
+    /// Get bid-ask spreads for multiple tokens
+    ///
+    /// # Arguments
+    /// * `requests` - Array of spread requests (max 500)
+    pub async fn get_spreads(
+        &self,
+        requests: Vec<SpreadRequest>,
+    ) -> Result<std::collections::HashMap<String, String>> {
+        let url = format!("{}/spreads", CLOB_API_BASE);
+
+        let response = self.client.post(&url).json(&requests).send().await?;
+
+        if !response.status().is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(crate::error::PolymarketError::InvalidData(error_text));
+        }
+
+        let spreads: std::collections::HashMap<String, String> = response.json().await?;
+        Ok(spreads)
+    }
+
+    /// Get multiple orderbooks at once
+    ///
+    /// # Arguments
+    /// * `token_ids` - Array of token IDs to fetch orderbooks for
+    pub async fn get_orderbooks(&self, token_ids: Vec<String>) -> Result<Vec<Orderbook>> {
+        let url = format!("{}/books", CLOB_API_BASE);
+
+        let response = self.client.post(&url).json(&token_ids).send().await?;
+
+        if !response.status().is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(crate::error::PolymarketError::InvalidData(error_text));
+        }
+
+        let orderbooks: Vec<Orderbook> = response.json().await?;
+        Ok(orderbooks)
     }
 }
 

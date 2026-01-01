@@ -827,7 +827,11 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
                 .unwrap_or_default();
 
             // Status indicator: ● for active, ○ for resolved
-            let status_icon = if market.closed { "○ " } else { "● " };
+            let status_icon = if market.closed {
+                "○ "
+            } else {
+                "● "
+            };
 
             // Build outcome display string
             let outcomes_str = if market.closed {

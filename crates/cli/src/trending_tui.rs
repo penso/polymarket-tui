@@ -2155,73 +2155,76 @@ pub async fn run_trending_tui(
                             }
                         }
                         KeyCode::Enter => {
-                            if app.is_in_filter_mode() {
-                                // Exit search/filter mode and keep selection
-                                app.search.mode = SearchMode::None;
-                            } else {
-                                // Toggle watching the selected event
-                                if let Some(event_slug) = app.selected_event_slug() {
-                                    if app.is_watching(&event_slug) {
-                                        // Stop watching
-                                        app.stop_watching(&event_slug);
-                                    } else {
-                                        // Start watching
-                                        let event_slug_clone = event_slug.clone();
+                            // Only handle Enter when EventsList panel is focused
+                            if app.navigation.focused_panel == FocusedPanel::EventsList {
+                                if app.is_in_filter_mode() {
+                                    // Exit search/filter mode and keep selection
+                                    app.search.mode = SearchMode::None;
+                                } else {
+                                    // Toggle watching the selected event
+                                    if let Some(event_slug) = app.selected_event_slug() {
+                                        if app.is_watching(&event_slug) {
+                                            // Stop watching
+                                            app.stop_watching(&event_slug);
+                                        } else {
+                                            // Start watching
+                                            let event_slug_clone = event_slug.clone();
 
-                                        // Ensure the event_trades entry exists before starting websocket
-                                        app.trades
-                                            .event_trades
-                                            .entry(event_slug_clone.clone())
-                                            .or_insert_with(EventTrades::new);
+                                            // Ensure the event_trades entry exists before starting websocket
+                                            app.trades
+                                                .event_trades
+                                                .entry(event_slug_clone.clone())
+                                                .or_insert_with(EventTrades::new);
 
-                                        let app_state_ws = Arc::clone(&app_state);
-                                        let event_slug_for_closure = event_slug_clone.clone();
+                                            let app_state_ws = Arc::clone(&app_state);
+                                            let event_slug_for_closure = event_slug_clone.clone();
 
-                                        let rtds_client = RTDSClient::new()
-                                            .with_event_slug(event_slug_clone.clone());
-                                        let event_slug_for_log = event_slug_clone.clone();
+                                            let rtds_client = RTDSClient::new()
+                                                .with_event_slug(event_slug_clone.clone());
+                                            let event_slug_for_log = event_slug_clone.clone();
 
-                                        tracing::info!(
-                                            "Starting RTDS WebSocket for event: {}",
-                                            event_slug_clone
-                                        );
+                                            tracing::info!(
+                                                "Starting RTDS WebSocket for event: {}",
+                                                event_slug_clone
+                                            );
 
-                                        let ws_handle = tokio::spawn(async move {
-                                            match rtds_client
-                                                .connect_and_listen(move |msg| {
-                                                    let app_state = Arc::clone(&app_state_ws);
-                                                    let event_slug = event_slug_for_closure.clone();
+                                            let ws_handle = tokio::spawn(async move {
+                                                match rtds_client
+                                                    .connect_and_listen(move |msg| {
+                                                        let app_state = Arc::clone(&app_state_ws);
+                                                        let event_slug = event_slug_for_closure.clone();
 
-                                                    tracing::info!("Received RTDS trade for event: {}", event_slug);
+                                                        tracing::info!("Received RTDS trade for event: {}", event_slug);
 
-                                                    tokio::spawn(async move {
-                                                        let mut app = app_state.lock().await;
-                                                        if let Some(event_trades) =
-                                                            app.trades.event_trades.get_mut(&event_slug)
-                                                        {
-                                                            event_trades.add_trade(&msg);
-                                                            tracing::info!("Trade added to event_trades for: {}", event_slug);
-                                                        } else {
-                                                            tracing::warn!("No event_trades entry found for: {}", event_slug);
-                                                        }
-                                                    });
-                                                })
-                                                .await
-                                            {
-                                                Ok(()) => {
-                                                    tracing::info!("RTDS WebSocket connection closed normally for event: {}", event_slug_for_log);
+                                                        tokio::spawn(async move {
+                                                            let mut app = app_state.lock().await;
+                                                            if let Some(event_trades) =
+                                                                app.trades.event_trades.get_mut(&event_slug)
+                                                            {
+                                                                event_trades.add_trade(&msg);
+                                                                tracing::info!("Trade added to event_trades for: {}", event_slug);
+                                                            } else {
+                                                                tracing::warn!("No event_trades entry found for: {}", event_slug);
+                                                            }
+                                                        });
+                                                    })
+                                                    .await
+                                                {
+                                                    Ok(()) => {
+                                                        tracing::info!("RTDS WebSocket connection closed normally for event: {}", event_slug_for_log);
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::error!(
+                                                            "RTDS WebSocket error for event {}: {}",
+                                                            event_slug_for_log,
+                                                            e
+                                                        );
+                                                    }
                                                 }
-                                                Err(e) => {
-                                                    tracing::error!(
-                                                        "RTDS WebSocket error for event {}: {}",
-                                                        event_slug_for_log,
-                                                        e
-                                                    );
-                                                }
-                                            }
-                                        });
+                                            });
 
-                                        app.start_watching(event_slug_clone, ws_handle);
+                                            app.start_watching(event_slug_clone, ws_handle);
+                                        }
                                     }
                                 }
                             }

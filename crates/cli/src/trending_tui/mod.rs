@@ -403,7 +403,7 @@ pub async fn run_trending_tui(
                                                         let event_slug =
                                                             event_slug_for_closure.clone();
 
-                                                        Box::pin(async move {
+                                                        tokio::spawn(async move {
                                                             let mut app = app_state.lock().await;
                                                             if let Some(event_trades) = app
                                                                 .trades
@@ -412,7 +412,7 @@ pub async fn run_trending_tui(
                                                             {
                                                                 event_trades.add_trade(&msg);
                                                             }
-                                                        })
+                                                        });
                                                     })
                                                     .await
                                                 {

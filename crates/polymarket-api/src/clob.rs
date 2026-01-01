@@ -8,6 +8,17 @@ use {
     serde::{Deserialize, Serialize},
 };
 
+/// Macro for conditional info logging based on tracing feature
+#[cfg(feature = "tracing")]
+macro_rules! log_info {
+    ($($arg:tt)*) => { tracing::info!($($arg)*) };
+}
+
+#[cfg(not(feature = "tracing"))]
+macro_rules! log_info {
+    ($($arg:tt)*) => {};
+}
+
 /// Macro for conditional debug logging based on tracing feature
 #[cfg(feature = "tracing")]
 macro_rules! log_debug {
@@ -168,11 +179,20 @@ impl ClobClient {
 
     /// Get orderbook for a specific asset ID
     pub async fn get_orderbook_by_asset(&self, asset_id: &str) -> Result<Orderbook> {
-        let url = format!("{}/book", CLOB_API_BASE);
+        let _url = format!("{}/book?asset_id={}", CLOB_API_BASE, asset_id);
+        log_info!("GET {}", _url);
+
         let params = [("asset_id", asset_id)];
-        let response = self.client.get(&url).query(&params).send().await?;
+        let response = self
+            .client
+            .get(format!("{}/book", CLOB_API_BASE))
+            .query(&params)
+            .send()
+            .await?;
 
         let status = response.status();
+        log_info!("GET {} -> status: {}", _url, status);
+
         if !status.is_success() {
             let error_text = response
                 .text()
@@ -185,10 +205,27 @@ impl ClobClient {
         }
 
         let response_text = response.text().await?;
+        log_info!(
+            "GET {} -> bids/asks preview: {}",
+            _url,
+            if response_text.len() > 200 {
+                &response_text[..200]
+            } else {
+                &response_text
+            }
+        );
 
         // Try to deserialize as Orderbook
         match serde_json::from_str::<Orderbook>(&response_text) {
-            Ok(orderbook) => Ok(orderbook),
+            Ok(orderbook) => {
+                log_info!(
+                    "GET {} -> parsed: {} bids, {} asks",
+                    _url,
+                    orderbook.bids.len(),
+                    orderbook.asks.len()
+                );
+                Ok(orderbook)
+            },
             Err(_e) => {
                 // Log the actual response for debugging
                 log_debug!(

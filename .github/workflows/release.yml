@@ -64,12 +64,12 @@ jobs:
       # Build with cross for ARM64 Linux
       - name: Build (cross)
         if: matrix.cross
-        run: cross build --release --target ${{ matrix.target }} --features tui -p polymarket-tui
+        run: cross build --release --target ${{ matrix.target }} -p polymarket-tui
 
       # Build natively for other targets
       - name: Build (native)
         if: ${{ !matrix.cross }}
-        run: cargo build --release --target ${{ matrix.target }} --features tui -p polymarket-tui
+        run: cargo build --release --target ${{ matrix.target }} -p polymarket-tui
 
       - name: Prepare artifact
         run: |

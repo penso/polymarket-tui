@@ -177,12 +177,12 @@ impl ClobClient {
         Ok(trades)
     }
 
-    /// Get orderbook for a specific asset ID
-    pub async fn get_orderbook_by_asset(&self, asset_id: &str) -> Result<Orderbook> {
-        let _url = format!("{}/book?asset_id={}", CLOB_API_BASE, asset_id);
+    /// Get orderbook for a specific token ID (clob_token_id from Gamma API)
+    pub async fn get_orderbook_by_asset(&self, token_id: &str) -> Result<Orderbook> {
+        let _url = format!("{}/book?token_id={}", CLOB_API_BASE, token_id);
         log_info!("GET {}", _url);
 
-        let params = [("asset_id", asset_id)];
+        let params = [("token_id", token_id)];
         let response = self
             .client
             .get(format!("{}/book", CLOB_API_BASE))
@@ -229,12 +229,12 @@ impl ClobClient {
             Err(_e) => {
                 // Log the actual response for debugging
                 log_debug!(
-                    "Failed to parse orderbook response for asset {}: {}. Response: {}",
-                    asset_id,
+                    "Failed to parse orderbook response for token {}: {}. Response: {}",
+                    token_id,
                     _e,
                     response_text
                 );
-                // Return an empty orderbook if deserialization fails (asset might not have orders)
+                // Return an empty orderbook if deserialization fails (token might not have orders)
                 Ok(Orderbook {
                     bids: Vec::new(),
                     asks: Vec::new(),

@@ -78,9 +78,9 @@ pub struct Market {
     )]
     pub clob_token_ids: Option<Vec<String>>,
     #[serde(default)]
-    pub outcomes: String,
+    pub outcomes: Vec<String>,
     #[serde(rename = "outcomePrices", default)]
-    pub outcome_prices: String,
+    pub outcome_prices: Vec<String>,
 }
 
 pub struct GammaClient {
@@ -371,16 +371,8 @@ impl GammaClient {
             for market in event.markets {
                 if let Some(ref token_ids) = market.clob_token_ids {
                     if token_ids.contains(&asset_id.to_string()) {
-                        let outcomes: Vec<String> = if market.outcomes.is_empty() {
-                            vec![]
-                        } else {
-                            serde_json::from_str(&market.outcomes).unwrap_or_default()
-                        };
-                        let prices: Vec<String> = if market.outcome_prices.is_empty() {
-                            vec![]
-                        } else {
-                            serde_json::from_str(&market.outcome_prices).unwrap_or_default()
-                        };
+                        let outcomes = market.outcomes.clone();
+                        let prices = market.outcome_prices.clone();
 
                         let market_info = MarketInfo {
                             event_title: event.title,

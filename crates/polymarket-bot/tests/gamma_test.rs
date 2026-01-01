@@ -8,8 +8,8 @@ fn test_market_deserialization_with_json_string() {
         "id": "123",
         "question": "Test market?",
         "clobTokenIds": "[\"token1\", \"token2\"]",
-        "outcomes": "[\"Yes\", \"No\"]",
-        "outcomePrices": "[\"0.5\", \"0.5\"]"
+        "outcomes": ["Yes", "No"],
+        "outcomePrices": ["0.5", "0.5"]
     }
     "#;
 
@@ -17,8 +17,8 @@ fn test_market_deserialization_with_json_string() {
     assert_eq!(market.id, "123");
     assert_eq!(market.question, "Test market?");
     assert_eq!(market.clob_token_ids, Some(vec!["token1".to_string(), "token2".to_string()]));
-    assert_eq!(market.outcomes, "[\"Yes\", \"No\"]");
-    assert_eq!(market.outcome_prices, "[\"0.5\", \"0.5\"]");
+    assert_eq!(market.outcomes, vec!["Yes".to_string(), "No".to_string()]);
+    assert_eq!(market.outcome_prices, vec!["0.5".to_string(), "0.5".to_string()]);
 }
 
 #[test]
@@ -29,8 +29,8 @@ fn test_market_deserialization_with_array() {
         "id": "456",
         "question": "Another market?",
         "clobTokenIds": ["token3", "token4"],
-        "outcomes": "[\"Yes\", \"No\"]",
-        "outcomePrices": "[\"0.6\", \"0.4\"]"
+        "outcomes": ["Yes", "No"],
+        "outcomePrices": ["0.6", "0.4"]
     }
     "#;
 
@@ -46,8 +46,8 @@ fn test_market_deserialization_without_clob_token_ids() {
     {
         "id": "789",
         "question": "Market without tokens?",
-        "outcomes": "[\"Yes\", \"No\"]",
-        "outcomePrices": "[\"0.7\", \"0.3\"]"
+        "outcomes": ["Yes", "No"],
+        "outcomePrices": ["0.7", "0.3"]
     }
     "#;
 
@@ -64,8 +64,8 @@ fn test_market_deserialization_with_null_clob_token_ids() {
         "id": "999",
         "question": "Market with null tokens?",
         "clobTokenIds": null,
-        "outcomes": "[\"Yes\", \"No\"]",
-        "outcomePrices": "[\"0.8\", \"0.2\"]"
+        "outcomes": ["Yes", "No"],
+        "outcomePrices": ["0.8", "0.2"]
     }
     "#;
 
@@ -78,5 +78,90 @@ fn test_market_deserialization_with_null_clob_token_ids() {
 async fn test_gamma_client_creation() {
     let _client = GammaClient::new();
     // Just verify it can be created (doesn't panic)
+}
+
+#[tokio::test]
+async fn test_get_trending_events() {
+    let client = GammaClient::new();
+    let events = client
+        .get_trending_events(Some("volume24hr"), Some(false), Some(10))
+        .await
+        .expect("Should fetch trending events");
+    
+    assert!(!events.is_empty(), "Should return at least one event");
+    assert!(events.len() <= 10, "Should respect limit");
+    
+    // Verify event structure
+    let event = &events[0];
+    assert!(!event.id.is_empty());
+    assert!(!event.slug.is_empty());
+    assert!(!event.title.is_empty());
+}
+
+#[tokio::test]
+async fn test_search_events() {
+    let client = GammaClient::new();
+    let events = client
+        .search_events("election", Some(10))
+        .await
+        .expect("Should search events");
+    
+    // Search might return empty results, but should not error
+    assert!(events.len() <= 10, "Should respect limit");
+    
+    // If we got results, verify structure
+    if let Some(event) = events.first() {
+        assert!(!event.id.is_empty());
+        assert!(!event.slug.is_empty());
+        assert!(!event.title.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn test_get_event_by_slug() {
+    let client = GammaClient::new();
+    // Use a known event slug
+    let event = client
+        .get_event_by_slug("2026-fifa-world-cup-winner")
+        .await
+        .expect("Should fetch event by slug");
+    
+    if let Some(event) = event {
+        assert!(!event.id.is_empty());
+        assert!(!event.slug.is_empty());
+        assert!(!event.title.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn test_get_markets() {
+    let client = GammaClient::new();
+    let markets = client
+        .get_markets(Some(true), Some(false), Some(10))
+        .await
+        .expect("Should fetch markets");
+    
+    assert!(markets.len() <= 10, "Should respect limit");
+    
+    if let Some(market) = markets.first() {
+        assert!(!market.id.is_empty());
+        assert!(!market.question.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn test_get_categories() {
+    let client = GammaClient::new();
+    let categories = client
+        .get_categories()
+        .await
+        .expect("Should fetch categories");
+    
+    // Categories might be empty, but should not error
+    if let Some(category) = categories.first() {
+        assert!(!category.id.is_empty());
+        assert!(!category.label.is_empty());
+        assert!(!category.slug.is_empty());
+    }
 }
 

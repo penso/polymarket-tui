@@ -107,6 +107,7 @@ pub enum FocusedPanel {
     EventDetails, // Right panel - event details
     Markets,      // Right panel - markets
     Trades,       // Right panel - trades
+    Logs,         // Bottom panel - logs
 }
 
 impl TrendingAppState {
@@ -487,6 +488,7 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
         FocusedPanel::EventDetails => "Event Details",
         FocusedPanel::Markets => "Markets",
         FocusedPanel::Trades => "Trades",
+        FocusedPanel::Logs => "Logs",
     };
     let footer_text = if app.search_mode {
         format!(
@@ -1293,12 +1295,13 @@ pub async fn run_trending_tui(
                         }
                         KeyCode::Tab => {
                             if !app.is_in_filter_mode() {
-                                // Cycle through panels: EventsList -> EventDetails -> Markets -> Trades -> EventsList
+                                // Cycle through panels: EventsList -> EventDetails -> Markets -> Trades -> Logs -> EventsList
                                 app.focused_panel = match app.focused_panel {
                                     FocusedPanel::EventsList => FocusedPanel::EventDetails,
                                     FocusedPanel::EventDetails => FocusedPanel::Markets,
                                     FocusedPanel::Markets => FocusedPanel::Trades,
-                                    FocusedPanel::Trades => FocusedPanel::EventsList,
+                                    FocusedPanel::Trades => FocusedPanel::Logs,
+                                    FocusedPanel::Logs => FocusedPanel::EventsList,
                                 };
                             }
                         }
@@ -1321,6 +1324,11 @@ pub async fn run_trending_tui(
                                     FocusedPanel::Trades => {
                                         if app.trades_scroll > 0 {
                                             app.trades_scroll -= 1;
+                                        }
+                                    }
+                                    FocusedPanel::Logs => {
+                                        if app.log_scroll > 0 {
+                                            app.log_scroll -= 1;
                                         }
                                     }
                                 }

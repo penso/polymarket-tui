@@ -1163,8 +1163,19 @@ fn render_logs(f: &mut Frame, app: &mut TrendingAppState, area: Rect) {
         .collect();
 
     let total_log_lines = app.logs.len();
+    let is_focused = app.focused_panel == FocusedPanel::Logs;
+    let block_style = if is_focused {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default()
+    };
     let logs_list = List::new(log_items)
-        .block(Block::default().borders(Borders::ALL).title("Logs"))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(if is_focused { "Logs (Focused)" } else { "Logs" })
+                .border_style(block_style),
+        )
         .style(Style::default().fg(Color::White));
     f.render_widget(logs_list, area);
 

@@ -77,8 +77,8 @@ pub struct TrendingAppState {
     // Map from event slug to websocket task handle
     pub ws_handles: HashMap<String, JoinHandle<()>>,
     // Search functionality
-    pub search_mode: bool,          // API search mode (triggered by '/')
-    pub local_filter_mode: bool,    // Local filter mode (triggered by 'f')
+    pub search_mode: bool,       // API search mode (triggered by '/')
+    pub local_filter_mode: bool, // Local filter mode (triggered by 'f')
     pub search_query: String,
     pub search_results: Vec<Event>, // Results from API search
     pub is_searching: bool,         // Whether a search API call is in progress
@@ -169,7 +169,8 @@ impl TrendingAppState {
             let query_lower = self.search_query.to_lowercase();
             if !self.search_results.is_empty() {
                 // Filter from search results (current displayed list)
-                return self.search_results
+                return self
+                    .search_results
                     .iter()
                     .filter(|event| {
                         event.title.to_lowercase().contains(&query_lower)
@@ -186,7 +187,8 @@ impl TrendingAppState {
                     .collect();
             } else {
                 // Filter from events list
-                return self.events
+                return self
+                    .events
                     .iter()
                     .filter(|event| {
                         event.title.to_lowercase().contains(&query_lower)
@@ -239,7 +241,7 @@ impl TrendingAppState {
         self.local_filter_mode = false;
         self.search_query.clear();
     }
-    
+
     pub fn enter_local_filter_mode(&mut self) {
         self.local_filter_mode = true;
         self.search_mode = false; // Exit API search mode if active
@@ -253,7 +255,7 @@ impl TrendingAppState {
         self.selected_index = 0;
         self.scroll_offset = 0;
     }
-    
+
     pub fn is_in_filter_mode(&self) -> bool {
         self.search_mode || self.local_filter_mode
     }
@@ -289,7 +291,10 @@ impl TrendingAppState {
     pub fn selected_event(&self) -> Option<&Event> {
         // Always use filtered events if we have active search results
         // This ensures we get the correct event even after exiting search mode
-        if !self.search_results.is_empty() && self.search_query == self.last_search_query && !self.local_filter_mode {
+        if !self.search_results.is_empty()
+            && self.search_query == self.last_search_query
+            && !self.local_filter_mode
+        {
             self.selected_event_filtered()
         } else if self.is_in_filter_mode() {
             self.selected_event_filtered()
@@ -408,7 +413,12 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
 
         // Search input field - show full query with proper spacing
         let search_line = if app.search_query.is_empty() {
-            Line::from("🔍 Search: (type to search)".fg(Color::DarkGray))
+            let prompt_text = if app.search_mode {
+                "🔍 API Search: (type to search via API)"
+            } else {
+                "🔍 Filter: (type to filter current list)"
+            };
+            Line::from(prompt_text.fg(Color::DarkGray))
         } else {
             Line::from(vec![
                 Span::styled("🔍 Search: ", Style::default().fg(Color::White)),
@@ -427,7 +437,7 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
         f.render_widget(search_input, header_chunks[1]);
     } else {
         let header_text = format!(
-            "Showing {} events | Watching: {} | Press '/' to search | Use ↑↓ to navigate | Enter to watch/unwatch | 'q' to quit",
+            "Showing {} events | Watching: {} | Press '/' for API search, 'f' for local filter | Use ↑↓ to navigate | Enter to watch/unwatch | 'q' to quit",
             filtered_count,
             watched_count
         );

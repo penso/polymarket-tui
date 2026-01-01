@@ -1886,12 +1886,13 @@ pub async fn run_trending_tui(
                                                                                         .clone(),
                                                                                     price,
                                                                                 );
-                                                                                tracing::info!("Fetched price for asset {}: ${:.3}", asset_id, price);
+                                                                                tracing::debug!("Fetched price for asset {}: ${:.3}", asset_id, price);
                                                                             }
                                                                         }
                                                                     }
                                                                     Err(e) => {
-                                                                        tracing::warn!("Failed to fetch orderbook for asset {}: {}", asset_id, e);
+                                                                        // Only log as debug to reduce noise - empty orderbooks are common
+                                                                        tracing::debug!("Failed to fetch orderbook for asset {}: {}", asset_id, e);
                                                                     }
                                                                 }
                                                             }
@@ -1976,12 +1977,13 @@ pub async fn run_trending_tui(
                                                                                         .clone(),
                                                                                     price,
                                                                                 );
-                                                                                tracing::info!("Fetched price for asset {}: ${:.3}", asset_id, price);
+                                                                                tracing::debug!("Fetched price for asset {}: ${:.3}", asset_id, price);
                                                                             }
                                                                         }
                                                                     }
                                                                     Err(e) => {
-                                                                        tracing::warn!("Failed to fetch orderbook for asset {}: {}", asset_id, e);
+                                                                        // Only log as debug to reduce noise - empty orderbooks are common
+                                                                        tracing::debug!("Failed to fetch orderbook for asset {}: {}", asset_id, e);
                                                                     }
                                                                 }
                                                             }

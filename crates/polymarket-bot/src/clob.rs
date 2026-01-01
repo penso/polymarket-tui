@@ -161,15 +161,36 @@ impl ClobClient {
     pub async fn get_orderbook_by_asset(&self, asset_id: &str) -> Result<Orderbook> {
         let url = format!("{}/book", CLOB_API_BASE);
         let params = [("asset_id", asset_id)];
-        let orderbook: Orderbook = self
+        let response = self
             .client
             .get(&url)
             .query(&params)
             .send()
-            .await?
-            .json()
             .await?;
-        Ok(orderbook)
+        
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(crate::error::PolymarketError::InvalidData(
+                format!("HTTP {}: {}", status, error_text)
+            ).into());
+        }
+        
+        let response_text = response.text().await?;
+        
+        // Try to deserialize as Orderbook
+        match serde_json::from_str::<Orderbook>(&response_text) {
+            Ok(orderbook) => Ok(orderbook),
+            Err(e) => {
+                // Log the actual response for debugging
+                tracing::debug!("Failed to parse orderbook response for asset {}: {}. Response: {}", asset_id, e, response_text);
+                // Return an empty orderbook if deserialization fails (asset might not have orders)
+                Ok(Orderbook {
+                    bids: Vec::new(),
+                    asks: Vec::new(),
+                })
+            }
+        }
     }
 
     /// Get recent trades for a specific asset ID

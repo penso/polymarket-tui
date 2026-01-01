@@ -1,5 +1,6 @@
 //! TUI for browsing trending events with live trade monitoring
 
+mod keys;
 mod render;
 mod state;
 
@@ -121,18 +122,25 @@ pub async fn run_trending_tui(
                     }
                 },
                 KeyCode::Char('/') => {
-                    if !app.is_in_filter_mode() {
+                    // Search is only available when EventsList panel is focused
+                    if !app.is_in_filter_mode()
+                        && app.navigation.focused_panel == FocusedPanel::EventsList
+                    {
                         app.enter_search_mode();
                     }
                 },
                 KeyCode::Char('f') => {
-                    if !app.is_in_filter_mode() {
+                    // Local filter is only available when EventsList panel is focused
+                    if !app.is_in_filter_mode()
+                        && app.navigation.focused_panel == FocusedPanel::EventsList
+                    {
                         app.enter_local_filter_mode();
                     }
                 },
                 KeyCode::Char('r') => {
-                    // Refresh market prices for currently selected event
+                    // Refresh market prices - only available when Markets panel is focused
                     if !app.is_in_filter_mode()
+                        && app.navigation.focused_panel == FocusedPanel::Markets
                         && let Some(event) = app.selected_event()
                     {
                         tracing::info!("Refreshing market prices for event: {}", event.slug);

@@ -481,11 +481,17 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
     // Logs area
     render_logs(f, app, chunks[2]);
 
-    // Footer
+    // Footer - show focused panel info
+    let focused_panel_text = match app.focused_panel {
+        FocusedPanel::EventsList => "Events List",
+        FocusedPanel::EventDetails => "Event Details",
+        FocusedPanel::Markets => "Markets",
+        FocusedPanel::Trades => "Trades",
+    };
     let footer_text = if app.search_mode {
-        "Type to search | Esc to exit search | Enter to watch/unwatch | 'q' to quit"
+        format!("Type to search | Esc to exit | Focused: {} | 'q' to quit", focused_panel_text)
     } else {
-        "Press '/' to search | 'q' to quit | ↑↓ to navigate | Enter to watch/unwatch selected event"
+        format!("Press '/' to search | Tab to switch panels | Focused: {} | ↑↓ to scroll | Enter to watch/unwatch | 'q' to quit", focused_panel_text)
     };
     let footer = Paragraph::new(footer_text)
         .block(Block::default().borders(Borders::ALL))

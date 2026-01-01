@@ -1083,13 +1083,15 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
         return;
     }
 
-    // Calculate visible height and apply scroll
+    // Calculate visible height (accounting for borders: top and bottom)
+    // The List widget with borders takes 2 lines (top border + title, bottom border)
     let visible_height = (area.height as usize).saturating_sub(2);
     let total_markets = event.markets.len();
-    let scroll = app
-        .scroll
-        .markets
-        .min(total_markets.saturating_sub(visible_height.max(1)));
+    
+    // Calculate maximum scroll position (can't scroll past the end)
+    let max_scroll = total_markets.saturating_sub(visible_height.max(1));
+    // Clamp scroll position to valid range
+    let scroll = app.scroll.markets.min(max_scroll);
 
     // Create list items for markets with scroll
     let items: Vec<ListItem> = event
@@ -1194,10 +1196,20 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
     f.render_widget(list, area);
 
     // Render scrollbar if needed
-    // ScrollbarState automatically calculates proportional thumb size
+    // The scrollbar thumb size is: (visible_height / total_markets) * track_height
+    // This ensures proportional thumb that moves correctly when scrolling
     if total_markets > visible_height {
+        // Calculate the scrollable range (max scroll position)
+        let max_scroll = total_markets.saturating_sub(visible_height);
+        // Ensure scroll position is within valid bounds
+        let clamped_scroll = scroll.min(max_scroll);
+        
+        // ScrollbarState calculates thumb size as: (content_length / total) * track_height
+        // content_length = visible_height (how many items fit in viewport)
+        // total = total_markets (total number of items)
+        // position = clamped_scroll (current scroll offset)
         let mut scrollbar_state = ScrollbarState::new(total_markets)
-            .position(scroll)
+            .position(clamped_scroll)
             .content_length(visible_height);
         f.render_stateful_widget(
             Scrollbar::default()

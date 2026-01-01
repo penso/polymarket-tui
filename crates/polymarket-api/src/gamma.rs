@@ -526,12 +526,12 @@ impl GammaClient {
                     // Event not found, use the search result as-is
                     log_debug!("Event not found by slug: {}", event.slug);
                     full_events.push(event.clone());
-                }
+                },
                 Err(_e) => {
                     // Failed to fetch, use the search result as-is
                     log_debug!("Failed to fetch event {}: {}", event.slug, _e);
                     full_events.push(event.clone());
-                }
+                },
             }
         }
 

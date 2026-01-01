@@ -5,8 +5,8 @@ mod render;
 mod state;
 
 use {
-    render::{render, truncate},
     ratatui::layout::{Constraint, Direction, Layout, Rect},
+    render::{render, truncate},
     state::{EventFilter, EventTrades, FocusedPanel, SearchMode},
 };
 
@@ -62,8 +62,15 @@ use {
 
 /// Helper to calculate panel areas for mouse click detection
 /// Returns (header_area, events_list_area, event_details_area, markets_area, trades_area, logs_area)
-fn calculate_panel_areas(size: Rect, is_in_filter_mode: bool) -> (Rect, Rect, Rect, Rect, Rect, Rect) {
-    let header_height = if is_in_filter_mode { 6 } else { 4 };
+fn calculate_panel_areas(
+    size: Rect,
+    is_in_filter_mode: bool,
+) -> (Rect, Rect, Rect, Rect, Rect, Rect) {
+    let header_height = if is_in_filter_mode {
+        6
+    } else {
+        4
+    };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -80,10 +87,7 @@ fn calculate_panel_areas(size: Rect, is_in_filter_mode: bool) -> (Rect, Rect, Re
     // Main content split
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(40),
-            Constraint::Percentage(60),
-        ])
+        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
         .split(chunks[1]);
 
     let events_list_area = main_chunks[0];
@@ -102,23 +106,52 @@ fn calculate_panel_areas(size: Rect, is_in_filter_mode: bool) -> (Rect, Rect, Re
     let markets_area = right_chunks[1];
     let trades_area = right_chunks[2];
 
-    (header_area, events_list_area, event_details_area, markets_area, trades_area, logs_area)
+    (
+        header_area,
+        events_list_area,
+        event_details_area,
+        markets_area,
+        trades_area,
+        logs_area,
+    )
 }
 
 /// Determine which panel was clicked based on coordinates
-fn get_panel_at_position(x: u16, y: u16, size: Rect, is_in_filter_mode: bool) -> Option<FocusedPanel> {
+fn get_panel_at_position(
+    x: u16,
+    y: u16,
+    size: Rect,
+    is_in_filter_mode: bool,
+) -> Option<FocusedPanel> {
     let (header, events_list, event_details, markets, trades, logs) =
         calculate_panel_areas(size, is_in_filter_mode);
 
-    if y >= header.y && y < header.y + header.height && x >= header.x && x < header.x + header.width {
+    if y >= header.y && y < header.y + header.height && x >= header.x && x < header.x + header.width
+    {
         Some(FocusedPanel::Header)
-    } else if y >= events_list.y && y < events_list.y + events_list.height && x >= events_list.x && x < events_list.x + events_list.width {
+    } else if y >= events_list.y
+        && y < events_list.y + events_list.height
+        && x >= events_list.x
+        && x < events_list.x + events_list.width
+    {
         Some(FocusedPanel::EventsList)
-    } else if y >= event_details.y && y < event_details.y + event_details.height && x >= event_details.x && x < event_details.x + event_details.width {
+    } else if y >= event_details.y
+        && y < event_details.y + event_details.height
+        && x >= event_details.x
+        && x < event_details.x + event_details.width
+    {
         Some(FocusedPanel::EventDetails)
-    } else if y >= markets.y && y < markets.y + markets.height && x >= markets.x && x < markets.x + markets.width {
+    } else if y >= markets.y
+        && y < markets.y + markets.height
+        && x >= markets.x
+        && x < markets.x + markets.width
+    {
         Some(FocusedPanel::Markets)
-    } else if y >= trades.y && y < trades.y + trades.height && x >= trades.x && x < trades.x + trades.width {
+    } else if y >= trades.y
+        && y < trades.y + trades.height
+        && x >= trades.x
+        && x < trades.x + trades.width
+    {
         Some(FocusedPanel::Trades)
     } else if y >= logs.y && y < logs.y + logs.height && x >= logs.x && x < logs.x + logs.width {
         Some(FocusedPanel::Logs)
@@ -205,7 +238,7 @@ pub async fn run_trending_tui(
     app_state: Arc<TokioMutex<TrendingAppState>>,
 ) -> anyhow::Result<Option<String>> {
     use {
-        crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseEventKind, MouseButton},
+        crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind},
         polymarket_api::{GammaClient, RTDSClient},
     };
 
@@ -291,14 +324,20 @@ pub async fn run_trending_tui(
                 if let MouseEventKind::Moved = mouse.kind {
                     let mut app = app_state.lock().await;
                     let size = terminal.size()?;
-                    if let Some(panel) = get_panel_at_position(mouse.column, mouse.row, size, app.is_in_filter_mode()) {
+                    if let Some(panel) = get_panel_at_position(
+                        mouse.column,
+                        mouse.row,
+                        size,
+                        app.is_in_filter_mode(),
+                    ) {
                         app.navigation.focused_panel = panel;
                     }
                 }
                 // Click to select event in events list, double-click to toggle watching
                 if let MouseEventKind::Down(MouseButton::Left) = mouse.kind {
                     let now = tokio::time::Instant::now();
-                    let is_double_click = if let Some((last_time, last_col, last_row)) = last_click {
+                    let is_double_click = if let Some((last_time, last_col, last_row)) = last_click
+                    {
                         now.duration_since(last_time) < tokio::time::Duration::from_millis(500)
                             && (mouse.column as i16 - last_col as i16).abs() <= 2
                             && mouse.row == last_row
@@ -309,9 +348,15 @@ pub async fn run_trending_tui(
 
                     let mut app = app_state.lock().await;
                     let size = terminal.size()?;
-                    let (_, events_list_area, _, _, _, _) = calculate_panel_areas(size, app.is_in_filter_mode());
+                    let (_, events_list_area, ..) =
+                        calculate_panel_areas(size, app.is_in_filter_mode());
 
-                    if let Some(panel) = get_panel_at_position(mouse.column, mouse.row, size, app.is_in_filter_mode()) {
+                    if let Some(panel) = get_panel_at_position(
+                        mouse.column,
+                        mouse.row,
+                        size,
+                        app.is_in_filter_mode(),
+                    ) {
                         // If clicking in events list, select the clicked event
                         if panel == FocusedPanel::EventsList {
                             // Calculate which event was clicked
@@ -343,8 +388,8 @@ pub async fn run_trending_tui(
                                             let app_state_ws = Arc::clone(&app_state);
                                             let event_slug_for_closure = event_slug_clone.clone();
 
-                                            let rtds_client =
-                                                RTDSClient::new().with_event_slug(event_slug_clone.clone());
+                                            let rtds_client = RTDSClient::new()
+                                                .with_event_slug(event_slug_clone.clone());
 
                                             log_info!(
                                                 "Starting RTDS WebSocket for event: {}",
@@ -355,12 +400,15 @@ pub async fn run_trending_tui(
                                                 match rtds_client
                                                     .connect_and_listen(move |msg| {
                                                         let app_state = Arc::clone(&app_state_ws);
-                                                        let event_slug = event_slug_for_closure.clone();
+                                                        let event_slug =
+                                                            event_slug_for_closure.clone();
 
                                                         Box::pin(async move {
                                                             let mut app = app_state.lock().await;
-                                                            if let Some(event_trades) =
-                                                                app.trades.event_trades.get_mut(&event_slug)
+                                                            if let Some(event_trades) = app
+                                                                .trades
+                                                                .event_trades
+                                                                .get_mut(&event_slug)
                                                             {
                                                                 event_trades.add_trade(&msg);
                                                             }
@@ -370,10 +418,7 @@ pub async fn run_trending_tui(
                                                 {
                                                     Ok(()) => {},
                                                     Err(_e) => {
-                                                        log_error!(
-                                                            "RTDS WebSocket error: {}",
-                                                            _e
-                                                        );
+                                                        log_error!("RTDS WebSocket error: {}", _e);
                                                     },
                                                 }
                                             });
@@ -390,7 +435,12 @@ pub async fn run_trending_tui(
                 if let MouseEventKind::ScrollUp = mouse.kind {
                     let mut app = app_state.lock().await;
                     let size = terminal.size()?;
-                    if let Some(panel) = get_panel_at_position(mouse.column, mouse.row, size, app.is_in_filter_mode()) {
+                    if let Some(panel) = get_panel_at_position(
+                        mouse.column,
+                        mouse.row,
+                        size,
+                        app.is_in_filter_mode(),
+                    ) {
                         match panel {
                             FocusedPanel::EventsList => app.move_up(),
                             FocusedPanel::EventDetails => {
@@ -420,7 +470,12 @@ pub async fn run_trending_tui(
                 if let MouseEventKind::ScrollDown = mouse.kind {
                     let mut app = app_state.lock().await;
                     let size = terminal.size()?;
-                    if let Some(panel) = get_panel_at_position(mouse.column, mouse.row, size, app.is_in_filter_mode()) {
+                    if let Some(panel) = get_panel_at_position(
+                        mouse.column,
+                        mouse.row,
+                        size,
+                        app.is_in_filter_mode(),
+                    ) {
                         match panel {
                             FocusedPanel::EventsList => {
                                 app.move_down();
@@ -496,7 +551,9 @@ pub async fn run_trending_tui(
                             FocusedPanel::Markets => {
                                 if let Some(event) = app.selected_event() {
                                     let visible_height: usize = 5;
-                                    if app.scroll.markets < event.markets.len().saturating_sub(visible_height) {
+                                    if app.scroll.markets
+                                        < event.markets.len().saturating_sub(visible_height)
+                                    {
                                         app.scroll.markets += 1;
                                     }
                                 }
@@ -514,7 +571,11 @@ pub async fn run_trending_tui(
                             },
                             FocusedPanel::Logs => {
                                 let visible_height: usize = 10;
-                                let max_scroll = app.logs.messages.len().saturating_sub(visible_height.max(1));
+                                let max_scroll = app
+                                    .logs
+                                    .messages
+                                    .len()
+                                    .saturating_sub(visible_height.max(1));
                                 if app.logs.scroll < max_scroll {
                                     app.logs.scroll += 1;
                                 }
@@ -530,549 +591,565 @@ pub async fn run_trending_tui(
                 if key.kind != KeyEventKind::Press {
                     continue;
                 }
-            let mut app = app_state.lock().await;
-            match key.code {
-                KeyCode::Char('q') => {
-                    if app.is_in_filter_mode() {
-                        app.exit_search_mode();
-                    } else {
-                        app.should_quit = true;
-                        break;
-                    }
-                },
-                KeyCode::Esc => {
-                    if app.is_in_filter_mode() {
-                        app.exit_search_mode();
-                    } else {
-                        app.should_quit = true;
-                        break;
-                    }
-                },
-                KeyCode::Char('/') => {
-                    // Search is only available when EventsList panel is focused
-                    if !app.is_in_filter_mode()
-                        && app.navigation.focused_panel == FocusedPanel::EventsList
-                    {
-                        app.enter_search_mode();
-                    }
-                },
-                KeyCode::Char('f') => {
-                    // Local filter is only available when EventsList panel is focused
-                    if !app.is_in_filter_mode()
-                        && app.navigation.focused_panel == FocusedPanel::EventsList
-                    {
-                        app.enter_local_filter_mode();
-                    }
-                },
-                KeyCode::Char('o') => {
-                    // Open event URL in browser (only when EventDetails is focused)
-                    if !app.is_in_filter_mode()
-                        && app.navigation.focused_panel == FocusedPanel::EventDetails
-                    {
-                        if let Some(event) = app.selected_event() {
-                            let url = format!("https://polymarket.com/event/{}", event.slug);
-                            #[cfg(target_os = "macos")]
-                            let _ = std::process::Command::new("open").arg(&url).spawn();
-                            #[cfg(target_os = "linux")]
-                            let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
-                            #[cfg(target_os = "windows")]
-                            let _ = std::process::Command::new("cmd").args(["/C", "start", &url]).spawn();
+                let mut app = app_state.lock().await;
+                match key.code {
+                    KeyCode::Char('q') => {
+                        if app.is_in_filter_mode() {
+                            app.exit_search_mode();
+                        } else {
+                            app.should_quit = true;
+                            break;
                         }
-                    } else if app.is_in_filter_mode() {
-                        app.add_search_char('o');
-                        if app.search.mode == SearchMode::ApiSearch {
-                            search_debounce = Some(tokio::time::Instant::now());
+                    },
+                    KeyCode::Esc => {
+                        if app.is_in_filter_mode() {
+                            app.exit_search_mode();
+                        } else {
+                            app.should_quit = true;
+                            break;
                         }
-                    }
-                },
-                KeyCode::Char('r') => {
-                    if app.is_in_filter_mode() {
-                        // Do nothing in filter mode
-                    } else if app.navigation.focused_panel == FocusedPanel::EventsList {
-                        // Refresh events list
-                        let order_by = app.event_filter.order_by().to_string();
-                        let ascending = app.event_filter == EventFilter::Breaking;
-                        let limit = app.pagination.current_limit;
-                        let app_state_clone = Arc::clone(&app_state);
-                        let gamma_client = GammaClient::new();
+                    },
+                    KeyCode::Char('/') => {
+                        // Search is only available when EventsList panel is focused
+                        if !app.is_in_filter_mode()
+                            && app.navigation.focused_panel == FocusedPanel::EventsList
+                        {
+                            app.enter_search_mode();
+                        }
+                    },
+                    KeyCode::Char('f') => {
+                        // Local filter is only available when EventsList panel is focused
+                        if !app.is_in_filter_mode()
+                            && app.navigation.focused_panel == FocusedPanel::EventsList
+                        {
+                            app.enter_local_filter_mode();
+                        }
+                    },
+                    KeyCode::Char('o') => {
+                        // Open event URL in browser (only when EventDetails is focused)
+                        if !app.is_in_filter_mode()
+                            && app.navigation.focused_panel == FocusedPanel::EventDetails
+                        {
+                            if let Some(event) = app.selected_event() {
+                                let url = format!("https://polymarket.com/event/{}", event.slug);
+                                #[cfg(target_os = "macos")]
+                                let _ = std::process::Command::new("open").arg(&url).spawn();
+                                #[cfg(target_os = "linux")]
+                                let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+                                #[cfg(target_os = "windows")]
+                                let _ = std::process::Command::new("cmd")
+                                    .args(["/C", "start", &url])
+                                    .spawn();
+                            }
+                        } else if app.is_in_filter_mode() {
+                            app.add_search_char('o');
+                            if app.search.mode == SearchMode::ApiSearch {
+                                search_debounce = Some(tokio::time::Instant::now());
+                            }
+                        }
+                    },
+                    KeyCode::Char('r') => {
+                        if app.is_in_filter_mode() {
+                            // Do nothing in filter mode
+                        } else if app.navigation.focused_panel == FocusedPanel::EventsList {
+                            // Refresh events list
+                            let order_by = app.event_filter.order_by().to_string();
+                            let ascending = app.event_filter == EventFilter::Breaking;
+                            let limit = app.pagination.current_limit;
+                            let app_state_clone = Arc::clone(&app_state);
+                            let gamma_client = GammaClient::new();
 
-                        log_info!("Refreshing events list...");
+                            log_info!("Refreshing events list...");
 
-                        tokio::spawn(async move {
-                            match gamma_client
-                                .get_trending_events(Some(&order_by), Some(ascending), Some(limit))
-                                .await
-                            {
-                                Ok(new_events) => {
+                            tokio::spawn(async move {
+                                match gamma_client
+                                    .get_trending_events(
+                                        Some(&order_by),
+                                        Some(ascending),
+                                        Some(limit),
+                                    )
+                                    .await
+                                {
+                                    Ok(new_events) => {
+                                        let mut app = app_state_clone.lock().await;
+                                        app.events = new_events;
+                                        log_info!("Events refreshed ({} events)", app.events.len());
+                                    },
+                                    Err(e) => {
+                                        log_info!("Failed to refresh events: {}", e);
+                                    },
+                                }
+                            });
+                        } else if app.navigation.focused_panel == FocusedPanel::Markets
+                            && let Some(event) = app.selected_event()
+                        {
+                            // Refresh market prices
+                            // Only fetch prices for active (non-closed) markets
+                            let active_markets: Vec<_> = event
+                                .markets
+                                .iter()
+                                .filter(|m| !m.closed)
+                                .filter_map(|m| m.clob_token_ids.clone())
+                                .collect();
+
+                            let _active_count = active_markets.len();
+                            let _closed_count = event.markets.iter().filter(|m| m.closed).count();
+                            log_info!(
+                                "Refreshing market prices for event: {} ({} active, {} resolved)",
+                                event.slug,
+                                _active_count,
+                                _closed_count
+                            );
+
+                            if active_markets.is_empty() {
+                                log_info!("No active markets to refresh");
+                            } else {
+                                let app_state_clone = Arc::clone(&app_state);
+                                let clob_client = ClobClient::new();
+
+                                tokio::spawn(async move {
+                                    let prices =
+                                        fetch_market_prices_batch(&clob_client, active_markets)
+                                            .await;
                                     let mut app = app_state_clone.lock().await;
-                                    app.events = new_events;
-                                    log_info!("Events refreshed ({} events)", app.events.len());
+                                    app.market_prices.extend(prices);
+                                    log_info!("Market prices refreshed via batch API");
+                                });
+                            }
+                        }
+                    },
+                    KeyCode::Tab => {
+                        if !app.is_in_filter_mode() {
+                            // Cycle through panels: Header -> EventsList -> EventDetails -> Markets -> Trades -> Logs -> Header
+                            app.navigation.focused_panel = match app.navigation.focused_panel {
+                                FocusedPanel::Header => FocusedPanel::EventsList,
+                                FocusedPanel::EventsList => FocusedPanel::EventDetails,
+                                FocusedPanel::EventDetails => FocusedPanel::Markets,
+                                FocusedPanel::Markets => FocusedPanel::Trades,
+                                FocusedPanel::Trades => FocusedPanel::Logs,
+                                FocusedPanel::Logs => FocusedPanel::Header,
+                            };
+                        }
+                    },
+                    KeyCode::Left => {
+                        if !app.is_in_filter_mode()
+                            && app.navigation.focused_panel == FocusedPanel::Header
+                        {
+                            // Switch to previous filter
+                            let old_filter = app.event_filter;
+                            app.event_filter = app.event_filter.prev();
+
+                            // If filter changed, trigger refetch
+                            if old_filter != app.event_filter {
+                                // Clear search results when filter changes
+                                app.search.results.clear();
+                                app.search.last_searched_query.clear();
+
+                                let app_state_clone = Arc::clone(&app_state);
+                                let gamma_client_clone = GammaClient::new();
+                                let order_by = app.event_filter.order_by().to_string();
+                                let ascending = false; // Always descending for these views
+                                let limit = app.pagination.current_limit;
+
+                                app.pagination.order_by = order_by.clone();
+                                app.pagination.is_fetching_more = true;
+
+                                log_info!(
+                                    "Switching to {} filter, fetching events...",
+                                    app.event_filter.label()
+                                );
+
+                                tokio::spawn(async move {
+                                    match gamma_client_clone
+                                        .get_trending_events(
+                                            Some(&order_by),
+                                            Some(ascending),
+                                            Some(limit),
+                                        )
+                                        .await
+                                    {
+                                        Ok(new_events) => {
+                                            log_info!(
+                                                "Fetched {} events for {} filter",
+                                                new_events.len(),
+                                                order_by
+                                            );
+                                            let mut app = app_state_clone.lock().await;
+                                            app.events = new_events;
+                                            app.pagination.is_fetching_more = false;
+                                            app.navigation.selected_index = 0;
+                                            app.scroll.events_list = 0;
+                                        },
+                                        Err(_e) => {
+                                            log_error!("Failed to fetch events: {}", _e);
+                                            let mut app = app_state_clone.lock().await;
+                                            app.pagination.is_fetching_more = false;
+                                        },
+                                    }
+                                });
+                            }
+                        }
+                    },
+                    KeyCode::Right => {
+                        if !app.is_in_filter_mode()
+                            && app.navigation.focused_panel == FocusedPanel::Header
+                        {
+                            // Switch to next filter
+                            let old_filter = app.event_filter;
+                            app.event_filter = app.event_filter.next();
+
+                            // If filter changed, trigger refetch
+                            if old_filter != app.event_filter {
+                                // Clear search results when filter changes
+                                app.search.results.clear();
+                                app.search.last_searched_query.clear();
+
+                                let app_state_clone = Arc::clone(&app_state);
+                                let gamma_client_clone = GammaClient::new();
+                                let order_by = app.event_filter.order_by().to_string();
+                                let ascending = false; // Always descending for these views
+                                let limit = app.pagination.current_limit;
+
+                                app.pagination.order_by = order_by.clone();
+                                app.pagination.is_fetching_more = true;
+
+                                log_info!(
+                                    "Switching to {} filter, fetching events...",
+                                    app.event_filter.label()
+                                );
+
+                                tokio::spawn(async move {
+                                    match gamma_client_clone
+                                        .get_trending_events(
+                                            Some(&order_by),
+                                            Some(ascending),
+                                            Some(limit),
+                                        )
+                                        .await
+                                    {
+                                        Ok(new_events) => {
+                                            log_info!(
+                                                "Fetched {} events for {} filter",
+                                                new_events.len(),
+                                                order_by
+                                            );
+                                            let mut app = app_state_clone.lock().await;
+                                            app.events = new_events;
+                                            app.pagination.is_fetching_more = false;
+                                            app.navigation.selected_index = 0;
+                                            app.scroll.events_list = 0;
+                                        },
+                                        Err(_e) => {
+                                            log_error!("Failed to fetch events: {}", _e);
+                                            let mut app = app_state_clone.lock().await;
+                                            app.pagination.is_fetching_more = false;
+                                        },
+                                    }
+                                });
+                            }
+                        }
+                    },
+                    KeyCode::Up => {
+                        if !app.is_in_filter_mode() {
+                            match app.navigation.focused_panel {
+                                FocusedPanel::Header => {
+                                    // Header doesn't scroll, but we can allow it for consistency
                                 },
-                                Err(e) => {
-                                    log_info!("Failed to refresh events: {}", e);
+                                FocusedPanel::EventsList => {
+                                    app.move_up();
+                                    // Fetch market prices when event selection changes
+                                    if let Some(event) = app.selected_event() {
+                                        let current_slug = event.slug.clone();
+                                        if last_selected_event_slug.as_ref() != Some(&current_slug)
+                                        {
+                                            last_selected_event_slug = Some(current_slug);
+                                            // Only fetch prices for active (non-closed) markets
+                                            let active_markets: Vec<_> = event
+                                                .markets
+                                                .iter()
+                                                .filter(|m| !m.closed)
+                                                .filter_map(|m| m.clob_token_ids.clone())
+                                                .collect();
+
+                                            if !active_markets.is_empty() {
+                                                let app_state_clone = Arc::clone(&app_state);
+                                                let clob_client = ClobClient::new();
+
+                                                tokio::spawn(async move {
+                                                    let prices = fetch_market_prices_batch(
+                                                        &clob_client,
+                                                        active_markets,
+                                                    )
+                                                    .await;
+                                                    let mut app = app_state_clone.lock().await;
+                                                    app.market_prices.extend(prices);
+                                                });
+                                            }
+                                        }
+                                    }
+                                },
+                                FocusedPanel::EventDetails => {
+                                    if app.scroll.event_details > 0 {
+                                        app.scroll.event_details -= 1;
+                                    }
+                                },
+                                FocusedPanel::Markets => {
+                                    if app.scroll.markets > 0 {
+                                        app.scroll.markets -= 1;
+                                    }
+                                },
+                                FocusedPanel::Trades => {
+                                    if app.scroll.trades > 0 {
+                                        app.scroll.trades -= 1;
+                                    }
+                                },
+                                FocusedPanel::Logs => {
+                                    if app.logs.scroll > 0 {
+                                        app.logs.scroll -= 1;
+                                    }
                                 },
                             }
-                        });
-                    } else if app.navigation.focused_panel == FocusedPanel::Markets
-                        && let Some(event) = app.selected_event()
-                    {
-                        // Refresh market prices
-                        // Only fetch prices for active (non-closed) markets
-                        let active_markets: Vec<_> = event
-                            .markets
-                            .iter()
-                            .filter(|m| !m.closed)
-                            .filter_map(|m| m.clob_token_ids.clone())
-                            .collect();
-
-                        let _active_count = active_markets.len();
-                        let _closed_count = event.markets.iter().filter(|m| m.closed).count();
-                        log_info!(
-                            "Refreshing market prices for event: {} ({} active, {} resolved)",
-                            event.slug,
-                            _active_count,
-                            _closed_count
-                        );
-
-                        if active_markets.is_empty() {
-                            log_info!("No active markets to refresh");
-                        } else {
-                            let app_state_clone = Arc::clone(&app_state);
-                            let clob_client = ClobClient::new();
-
-                            tokio::spawn(async move {
-                                let prices =
-                                    fetch_market_prices_batch(&clob_client, active_markets).await;
-                                let mut app = app_state_clone.lock().await;
-                                app.market_prices.extend(prices);
-                                log_info!("Market prices refreshed via batch API");
-                            });
                         }
-                    }
-                },
-                KeyCode::Tab => {
-                    if !app.is_in_filter_mode() {
-                        // Cycle through panels: Header -> EventsList -> EventDetails -> Markets -> Trades -> Logs -> Header
-                        app.navigation.focused_panel = match app.navigation.focused_panel {
-                            FocusedPanel::Header => FocusedPanel::EventsList,
-                            FocusedPanel::EventsList => FocusedPanel::EventDetails,
-                            FocusedPanel::EventDetails => FocusedPanel::Markets,
-                            FocusedPanel::Markets => FocusedPanel::Trades,
-                            FocusedPanel::Trades => FocusedPanel::Logs,
-                            FocusedPanel::Logs => FocusedPanel::Header,
-                        };
-                    }
-                },
-                KeyCode::Left => {
-                    if !app.is_in_filter_mode()
-                        && app.navigation.focused_panel == FocusedPanel::Header
-                    {
-                        // Switch to previous filter
-                        let old_filter = app.event_filter;
-                        app.event_filter = app.event_filter.prev();
-
-                        // If filter changed, trigger refetch
-                        if old_filter != app.event_filter {
-                            // Clear search results when filter changes
-                            app.search.results.clear();
-                            app.search.last_searched_query.clear();
-
-                            let app_state_clone = Arc::clone(&app_state);
-                            let gamma_client_clone = GammaClient::new();
-                            let order_by = app.event_filter.order_by().to_string();
-                            let ascending = false; // Always descending for these views
-                            let limit = app.pagination.current_limit;
-
-                            app.pagination.order_by = order_by.clone();
-                            app.pagination.is_fetching_more = true;
-
-                            log_info!(
-                                "Switching to {} filter, fetching events...",
-                                app.event_filter.label()
-                            );
-
-                            tokio::spawn(async move {
-                                match gamma_client_clone
-                                    .get_trending_events(
-                                        Some(&order_by),
-                                        Some(ascending),
-                                        Some(limit),
-                                    )
-                                    .await
-                                {
-                                    Ok(new_events) => {
-                                        log_info!(
-                                            "Fetched {} events for {} filter",
-                                            new_events.len(),
-                                            order_by
-                                        );
-                                        let mut app = app_state_clone.lock().await;
-                                        app.events = new_events;
-                                        app.pagination.is_fetching_more = false;
-                                        app.navigation.selected_index = 0;
-                                        app.scroll.events_list = 0;
-                                    },
-                                    Err(_e) => {
-                                        log_error!("Failed to fetch events: {}", _e);
-                                        let mut app = app_state_clone.lock().await;
-                                        app.pagination.is_fetching_more = false;
-                                    },
-                                }
-                            });
-                        }
-                    }
-                },
-                KeyCode::Right => {
-                    if !app.is_in_filter_mode()
-                        && app.navigation.focused_panel == FocusedPanel::Header
-                    {
-                        // Switch to next filter
-                        let old_filter = app.event_filter;
-                        app.event_filter = app.event_filter.next();
-
-                        // If filter changed, trigger refetch
-                        if old_filter != app.event_filter {
-                            // Clear search results when filter changes
-                            app.search.results.clear();
-                            app.search.last_searched_query.clear();
-
-                            let app_state_clone = Arc::clone(&app_state);
-                            let gamma_client_clone = GammaClient::new();
-                            let order_by = app.event_filter.order_by().to_string();
-                            let ascending = false; // Always descending for these views
-                            let limit = app.pagination.current_limit;
-
-                            app.pagination.order_by = order_by.clone();
-                            app.pagination.is_fetching_more = true;
-
-                            log_info!(
-                                "Switching to {} filter, fetching events...",
-                                app.event_filter.label()
-                            );
-
-                            tokio::spawn(async move {
-                                match gamma_client_clone
-                                    .get_trending_events(
-                                        Some(&order_by),
-                                        Some(ascending),
-                                        Some(limit),
-                                    )
-                                    .await
-                                {
-                                    Ok(new_events) => {
-                                        log_info!(
-                                            "Fetched {} events for {} filter",
-                                            new_events.len(),
-                                            order_by
-                                        );
-                                        let mut app = app_state_clone.lock().await;
-                                        app.events = new_events;
-                                        app.pagination.is_fetching_more = false;
-                                        app.navigation.selected_index = 0;
-                                        app.scroll.events_list = 0;
-                                    },
-                                    Err(_e) => {
-                                        log_error!("Failed to fetch events: {}", _e);
-                                        let mut app = app_state_clone.lock().await;
-                                        app.pagination.is_fetching_more = false;
-                                    },
-                                }
-                            });
-                        }
-                    }
-                },
-                KeyCode::Up => {
-                    if !app.is_in_filter_mode() {
-                        match app.navigation.focused_panel {
-                            FocusedPanel::Header => {
-                                // Header doesn't scroll, but we can allow it for consistency
-                            },
-                            FocusedPanel::EventsList => {
-                                app.move_up();
-                                // Fetch market prices when event selection changes
-                                if let Some(event) = app.selected_event() {
-                                    let current_slug = event.slug.clone();
-                                    if last_selected_event_slug.as_ref() != Some(&current_slug) {
-                                        last_selected_event_slug = Some(current_slug);
-                                        // Only fetch prices for active (non-closed) markets
-                                        let active_markets: Vec<_> = event
-                                            .markets
-                                            .iter()
-                                            .filter(|m| !m.closed)
-                                            .filter_map(|m| m.clob_token_ids.clone())
-                                            .collect();
-
-                                        if !active_markets.is_empty() {
-                                            let app_state_clone = Arc::clone(&app_state);
-                                            let clob_client = ClobClient::new();
-
-                                            tokio::spawn(async move {
-                                                let prices = fetch_market_prices_batch(
-                                                    &clob_client,
-                                                    active_markets,
-                                                )
-                                                .await;
-                                                let mut app = app_state_clone.lock().await;
-                                                app.market_prices.extend(prices);
-                                            });
-                                        }
-                                    }
-                                }
-                            },
-                            FocusedPanel::EventDetails => {
-                                if app.scroll.event_details > 0 {
-                                    app.scroll.event_details -= 1;
-                                }
-                            },
-                            FocusedPanel::Markets => {
-                                if app.scroll.markets > 0 {
-                                    app.scroll.markets -= 1;
-                                }
-                            },
-                            FocusedPanel::Trades => {
-                                if app.scroll.trades > 0 {
-                                    app.scroll.trades -= 1;
-                                }
-                            },
-                            FocusedPanel::Logs => {
-                                if app.logs.scroll > 0 {
-                                    app.logs.scroll -= 1;
-                                }
-                            },
-                        }
-                    }
-                },
-                KeyCode::Down => {
-                    if !app.is_in_filter_mode() {
-                        match app.navigation.focused_panel {
-                            FocusedPanel::Header => {
-                                // Header doesn't scroll, but we can allow it for consistency
-                            },
-                            FocusedPanel::EventsList => {
-                                app.move_down();
-                                // Fetch market prices when event selection changes
-                                if let Some(event) = app.selected_event() {
-                                    let current_slug = event.slug.clone();
-                                    if last_selected_event_slug.as_ref() != Some(&current_slug) {
-                                        last_selected_event_slug = Some(current_slug);
-                                        // Only fetch prices for active (non-closed) markets
-                                        let active_markets: Vec<_> = event
-                                            .markets
-                                            .iter()
-                                            .filter(|m| !m.closed)
-                                            .filter_map(|m| m.clob_token_ids.clone())
-                                            .collect();
-
-                                        if !active_markets.is_empty() {
-                                            let app_state_clone = Arc::clone(&app_state);
-                                            let clob_client = ClobClient::new();
-
-                                            tokio::spawn(async move {
-                                                let prices = fetch_market_prices_batch(
-                                                    &clob_client,
-                                                    active_markets,
-                                                )
-                                                .await;
-                                                let mut app = app_state_clone.lock().await;
-                                                app.market_prices.extend(prices);
-                                            });
-                                        }
-                                    }
-                                }
-                                // Check if we need to fetch more events (infinite scroll)
-                                if app.should_fetch_more() {
-                                    let app_state_clone = Arc::clone(&app_state);
-                                    let gamma_client_clone = GammaClient::new();
-                                    let order_by = app.pagination.order_by.clone();
-                                    let ascending = app.pagination.ascending;
-                                    let current_limit = app.pagination.current_limit;
-
-                                    // Set fetching flag to prevent duplicate requests
-                                    app.pagination.is_fetching_more = true;
-
-                                    // Fetch 50 more events
-                                    let new_limit = current_limit + 50;
-                                    log_info!(
-                                        "Fetching more trending events (limit: {})",
-                                        new_limit
-                                    );
-
-                                    tokio::spawn(async move {
-                                        match gamma_client_clone
-                                            .get_trending_events(
-                                                Some(&order_by),
-                                                Some(ascending),
-                                                Some(new_limit),
-                                            )
-                                            .await
+                    },
+                    KeyCode::Down => {
+                        if !app.is_in_filter_mode() {
+                            match app.navigation.focused_panel {
+                                FocusedPanel::Header => {
+                                    // Header doesn't scroll, but we can allow it for consistency
+                                },
+                                FocusedPanel::EventsList => {
+                                    app.move_down();
+                                    // Fetch market prices when event selection changes
+                                    if let Some(event) = app.selected_event() {
+                                        let current_slug = event.slug.clone();
+                                        if last_selected_event_slug.as_ref() != Some(&current_slug)
                                         {
-                                            Ok(mut new_events) => {
-                                                // Remove duplicates by comparing slugs
-                                                let existing_slugs: std::collections::HashSet<_> = {
-                                                    let app = app_state_clone.lock().await;
-                                                    app.events
-                                                        .iter()
-                                                        .map(|e| e.slug.clone())
-                                                        .collect()
-                                                };
+                                            last_selected_event_slug = Some(current_slug);
+                                            // Only fetch prices for active (non-closed) markets
+                                            let active_markets: Vec<_> = event
+                                                .markets
+                                                .iter()
+                                                .filter(|m| !m.closed)
+                                                .filter_map(|m| m.clob_token_ids.clone())
+                                                .collect();
 
-                                                new_events
-                                                    .retain(|e| !existing_slugs.contains(&e.slug));
+                                            if !active_markets.is_empty() {
+                                                let app_state_clone = Arc::clone(&app_state);
+                                                let clob_client = ClobClient::new();
 
-                                                if !new_events.is_empty() {
-                                                    log_info!(
-                                                        "Fetched {} new trending events",
-                                                        new_events.len()
+                                                tokio::spawn(async move {
+                                                    let prices = fetch_market_prices_batch(
+                                                        &clob_client,
+                                                        active_markets,
+                                                    )
+                                                    .await;
+                                                    let mut app = app_state_clone.lock().await;
+                                                    app.market_prices.extend(prices);
+                                                });
+                                            }
+                                        }
+                                    }
+                                    // Check if we need to fetch more events (infinite scroll)
+                                    if app.should_fetch_more() {
+                                        let app_state_clone = Arc::clone(&app_state);
+                                        let gamma_client_clone = GammaClient::new();
+                                        let order_by = app.pagination.order_by.clone();
+                                        let ascending = app.pagination.ascending;
+                                        let current_limit = app.pagination.current_limit;
+
+                                        // Set fetching flag to prevent duplicate requests
+                                        app.pagination.is_fetching_more = true;
+
+                                        // Fetch 50 more events
+                                        let new_limit = current_limit + 50;
+                                        log_info!(
+                                            "Fetching more trending events (limit: {})",
+                                            new_limit
+                                        );
+
+                                        tokio::spawn(async move {
+                                            match gamma_client_clone
+                                                .get_trending_events(
+                                                    Some(&order_by),
+                                                    Some(ascending),
+                                                    Some(new_limit),
+                                                )
+                                                .await
+                                            {
+                                                Ok(mut new_events) => {
+                                                    // Remove duplicates by comparing slugs
+                                                    let existing_slugs: std::collections::HashSet<
+                                                        _,
+                                                    > = {
+                                                        let app = app_state_clone.lock().await;
+                                                        app.events
+                                                            .iter()
+                                                            .map(|e| e.slug.clone())
+                                                            .collect()
+                                                    };
+
+                                                    new_events.retain(|e| {
+                                                        !existing_slugs.contains(&e.slug)
+                                                    });
+
+                                                    if !new_events.is_empty() {
+                                                        log_info!(
+                                                            "Fetched {} new trending events",
+                                                            new_events.len()
+                                                        );
+                                                        let mut app = app_state_clone.lock().await;
+                                                        app.events.append(&mut new_events);
+                                                        app.pagination.current_limit = new_limit;
+                                                    } else {
+                                                        log_info!(
+                                                            "No new events to add (already have all events)"
+                                                        );
+                                                    }
+
+                                                    let mut app = app_state_clone.lock().await;
+                                                    app.pagination.is_fetching_more = false;
+                                                },
+                                                Err(_e) => {
+                                                    log_error!(
+                                                        "Failed to fetch more events: {}",
+                                                        _e
                                                     );
                                                     let mut app = app_state_clone.lock().await;
-                                                    app.events.append(&mut new_events);
-                                                    app.pagination.current_limit = new_limit;
-                                                } else {
-                                                    log_info!(
-                                                        "No new events to add (already have all events)"
-                                                    );
-                                                }
+                                                    app.pagination.is_fetching_more = false;
+                                                },
+                                            }
+                                        });
+                                    }
+                                },
+                                FocusedPanel::EventDetails => {
+                                    // Calculate actual content height for event details
+                                    if let Some(event) = app.selected_event() {
+                                        // Base lines: Title, Slug, Event ID, Status, Estimated End, Total Volume
+                                        let mut total_lines = 6;
 
-                                                let mut app = app_state_clone.lock().await;
-                                                app.pagination.is_fetching_more = false;
-                                            },
-                                            Err(_e) => {
-                                                log_error!("Failed to fetch more events: {}", _e);
-                                                let mut app = app_state_clone.lock().await;
-                                                app.pagination.is_fetching_more = false;
-                                            },
+                                        // Calculate wrapped tags lines
+                                        if !event.tags.is_empty() {
+                                            let tag_labels: Vec<String> = event
+                                                .tags
+                                                .iter()
+                                                .map(|tag| truncate(&tag.label, 20))
+                                                .collect();
+                                            let tags_text = tag_labels.join(", ");
+                                            // Approximate available width (will be calculated more accurately in render)
+                                            // Assume ~60 chars available for tags content
+                                            let tags_content_width = 60;
+                                            if tags_text.len() > tags_content_width {
+                                                // Tags wrap - calculate how many lines
+                                                let wrapped_lines =
+                                                    tags_text.len().div_ceil(tags_content_width);
+                                                total_lines += wrapped_lines;
+                                            } else {
+                                                total_lines += 1; // Single line for tags
+                                            }
                                         }
-                                    });
-                                }
-                            },
-                            FocusedPanel::EventDetails => {
-                                // Calculate actual content height for event details
-                                if let Some(event) = app.selected_event() {
-                                    // Base lines: Title, Slug, Event ID, Status, Estimated End, Total Volume
-                                    let mut total_lines = 6;
 
-                                    // Calculate wrapped tags lines
-                                    if !event.tags.is_empty() {
-                                        let tag_labels: Vec<String> = event
-                                            .tags
-                                            .iter()
-                                            .map(|tag| truncate(&tag.label, 20))
-                                            .collect();
-                                        let tags_text = tag_labels.join(", ");
-                                        // Approximate available width (will be calculated more accurately in render)
-                                        // Assume ~60 chars available for tags content
-                                        let tags_content_width = 60;
-                                        if tags_text.len() > tags_content_width {
-                                            // Tags wrap - calculate how many lines
-                                            let wrapped_lines =
-                                                tags_text.len().div_ceil(tags_content_width);
-                                            total_lines += wrapped_lines;
-                                        } else {
-                                            total_lines += 1; // Single line for tags
+                                        // Get visible height from the actual area (approximate)
+                                        let visible_height: usize = 6; // Minimum height minus borders
+                                        let max_scroll =
+                                            total_lines.saturating_sub(visible_height.max(1));
+                                        if app.scroll.event_details < max_scroll {
+                                            app.scroll.event_details += 1;
                                         }
                                     }
-
-                                    // Get visible height from the actual area (approximate)
-                                    let visible_height: usize = 6; // Minimum height minus borders
-                                    let max_scroll =
-                                        total_lines.saturating_sub(visible_height.max(1));
-                                    if app.scroll.event_details < max_scroll {
-                                        app.scroll.event_details += 1;
+                                },
+                                FocusedPanel::Markets => {
+                                    if let Some(event) = app.selected_event() {
+                                        let visible_height: usize = 5; // Markets panel height
+                                        if app.scroll.markets
+                                            < event.markets.len().saturating_sub(visible_height)
+                                        {
+                                            app.scroll.markets += 1;
+                                        }
                                     }
-                                }
-                            },
-                            FocusedPanel::Markets => {
-                                if let Some(event) = app.selected_event() {
-                                    let visible_height: usize = 5; // Markets panel height
-                                    if app.scroll.markets
-                                        < event.markets.len().saturating_sub(visible_height)
+                                },
+                                FocusedPanel::Trades => {
+                                    let trades_len = if let Some(event) = app.selected_event() {
+                                        app.get_trades(&event.slug).len()
+                                    } else {
+                                        0
+                                    };
+                                    let visible_height: usize = 10; // Approximate
+                                    if app.scroll.trades < trades_len.saturating_sub(visible_height)
                                     {
-                                        app.scroll.markets += 1;
+                                        app.scroll.trades += 1;
                                     }
-                                }
-                            },
-                            FocusedPanel::Trades => {
-                                let trades_len = if let Some(event) = app.selected_event() {
-                                    app.get_trades(&event.slug).len()
-                                } else {
-                                    0
-                                };
-                                let visible_height: usize = 10; // Approximate
-                                if app.scroll.trades < trades_len.saturating_sub(visible_height) {
-                                    app.scroll.trades += 1;
-                                }
-                            },
-                            FocusedPanel::Logs => {
-                                // Calculate max scroll based on visible height (approximate)
-                                // The render function will clamp it to the exact visible height
-                                let visible_height: usize = 10; // Approximate, will be clamped in render
-                                let max_scroll = app
-                                    .logs
-                                    .messages
-                                    .len()
-                                    .saturating_sub(visible_height.max(1));
-                                if app.logs.scroll < max_scroll {
-                                    app.logs.scroll += 1;
-                                }
-                            },
+                                },
+                                FocusedPanel::Logs => {
+                                    // Calculate max scroll based on visible height (approximate)
+                                    // The render function will clamp it to the exact visible height
+                                    let visible_height: usize = 10; // Approximate, will be clamped in render
+                                    let max_scroll = app
+                                        .logs
+                                        .messages
+                                        .len()
+                                        .saturating_sub(visible_height.max(1));
+                                    if app.logs.scroll < max_scroll {
+                                        app.logs.scroll += 1;
+                                    }
+                                },
+                            }
                         }
-                    }
-                },
-                KeyCode::Backspace => {
-                    if app.is_in_filter_mode() {
-                        app.delete_search_char();
-                        // Trigger API search after backspace only if in API search mode (with debounce)
-                        if app.search.mode == SearchMode::ApiSearch {
-                            search_debounce = Some(tokio::time::Instant::now());
-                        }
-                    }
-                },
-                KeyCode::Char(c) => {
-                    if app.is_in_filter_mode() {
-                        app.add_search_char(c);
-                        // Trigger API search after character input only if in API search mode (with debounce)
-                        if app.search.mode == SearchMode::ApiSearch {
-                            search_debounce = Some(tokio::time::Instant::now());
-                        }
-                        // Local filter mode filters immediately (no API call needed)
-                    }
-                },
-                KeyCode::Enter => {
-                    // Only handle Enter when EventsList panel is focused
-                    if app.navigation.focused_panel == FocusedPanel::EventsList {
+                    },
+                    KeyCode::Backspace => {
                         if app.is_in_filter_mode() {
-                            // Exit search/filter mode and keep selection
-                            app.search.mode = SearchMode::None;
-                        } else {
-                            // Toggle watching the selected event
-                            if let Some(event_slug) = app.selected_event_slug() {
-                                if app.is_watching(&event_slug) {
-                                    // Stop watching
-                                    app.stop_watching(&event_slug);
-                                } else {
-                                    // Start watching
-                                    let event_slug_clone = event_slug.clone();
+                            app.delete_search_char();
+                            // Trigger API search after backspace only if in API search mode (with debounce)
+                            if app.search.mode == SearchMode::ApiSearch {
+                                search_debounce = Some(tokio::time::Instant::now());
+                            }
+                        }
+                    },
+                    KeyCode::Char(c) => {
+                        if app.is_in_filter_mode() {
+                            app.add_search_char(c);
+                            // Trigger API search after character input only if in API search mode (with debounce)
+                            if app.search.mode == SearchMode::ApiSearch {
+                                search_debounce = Some(tokio::time::Instant::now());
+                            }
+                            // Local filter mode filters immediately (no API call needed)
+                        }
+                    },
+                    KeyCode::Enter => {
+                        // Only handle Enter when EventsList panel is focused
+                        if app.navigation.focused_panel == FocusedPanel::EventsList {
+                            if app.is_in_filter_mode() {
+                                // Exit search/filter mode and keep selection
+                                app.search.mode = SearchMode::None;
+                            } else {
+                                // Toggle watching the selected event
+                                if let Some(event_slug) = app.selected_event_slug() {
+                                    if app.is_watching(&event_slug) {
+                                        // Stop watching
+                                        app.stop_watching(&event_slug);
+                                    } else {
+                                        // Start watching
+                                        let event_slug_clone = event_slug.clone();
 
-                                    // Ensure the event_trades entry exists before starting websocket
-                                    app.trades
-                                        .event_trades
-                                        .entry(event_slug_clone.clone())
-                                        .or_insert_with(EventTrades::new);
+                                        // Ensure the event_trades entry exists before starting websocket
+                                        app.trades
+                                            .event_trades
+                                            .entry(event_slug_clone.clone())
+                                            .or_insert_with(EventTrades::new);
 
-                                    let app_state_ws = Arc::clone(&app_state);
-                                    let event_slug_for_closure = event_slug_clone.clone();
+                                        let app_state_ws = Arc::clone(&app_state);
+                                        let event_slug_for_closure = event_slug_clone.clone();
 
-                                    let rtds_client =
-                                        RTDSClient::new().with_event_slug(event_slug_clone.clone());
-                                    let _event_slug_for_log = event_slug_clone.clone();
+                                        let rtds_client = RTDSClient::new()
+                                            .with_event_slug(event_slug_clone.clone());
+                                        let _event_slug_for_log = event_slug_clone.clone();
 
-                                    log_info!(
-                                        "Starting RTDS WebSocket for event: {}",
-                                        event_slug_clone
-                                    );
+                                        log_info!(
+                                            "Starting RTDS WebSocket for event: {}",
+                                            event_slug_clone
+                                        );
 
-                                    let ws_handle = tokio::spawn(async move {
-                                        match rtds_client
+                                        let ws_handle = tokio::spawn(async move {
+                                            match rtds_client
                                             .connect_and_listen(move |msg| {
                                                 let app_state = Arc::clone(&app_state_ws);
                                                 let event_slug = event_slug_for_closure.clone();
@@ -1116,16 +1193,16 @@ pub async fn run_trending_tui(
                                                 );
                                             },
                                         }
-                                    });
+                                        });
 
-                                    app.start_watching(event_slug_clone, ws_handle);
+                                        app.start_watching(event_slug_clone, ws_handle);
+                                    }
                                 }
                             }
                         }
-                    }
-                },
-                _ => {},
-            }
+                    },
+                    _ => {},
+                }
             }
         }
 

@@ -74,11 +74,54 @@ impl EventTrades {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FocusedPanel {
+    Header,       // Top panel with filter options
     EventsList,   // Left panel with events
     EventDetails, // Right panel - event details
     Markets,      // Right panel - markets
     Trades,       // Right panel - trades
     Logs,         // Bottom panel - logs
+}
+
+/// Event filter type for different views
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EventFilter {
+    Trending, // Order by volume24hr (default)
+    Breaking, // Order by startTime
+    New,      // Order by creationTime/createdAt
+}
+
+impl EventFilter {
+    pub fn order_by(&self) -> &'static str {
+        match self {
+            EventFilter::Trending => "volume24hr",
+            EventFilter::Breaking => "startTime",
+            EventFilter::New => "creationTime",
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            EventFilter::Trending => "Trending",
+            EventFilter::Breaking => "Breaking",
+            EventFilter::New => "New",
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            EventFilter::Trending => EventFilter::Breaking,
+            EventFilter::Breaking => EventFilter::New,
+            EventFilter::New => EventFilter::Trending,
+        }
+    }
+
+    pub fn prev(&self) -> Self {
+        match self {
+            EventFilter::Trending => EventFilter::New,
+            EventFilter::Breaking => EventFilter::Trending,
+            EventFilter::New => EventFilter::Breaking,
+        }
+    }
 }
 
 /// Search mode enum to replace boolean flags
@@ -184,7 +227,7 @@ impl NavigationState {
     pub fn new() -> Self {
         Self {
             selected_index: 0,
-            focused_panel: FocusedPanel::EventsList,
+            focused_panel: FocusedPanel::Header, // Start with Header focused so users can see filter options
         }
     }
 }
@@ -217,11 +260,20 @@ pub struct TrendingAppState {
     pub logs: LogsState,
     pub navigation: NavigationState,
     pub trades: TradesState,
+    pub event_filter: EventFilter, // Current filter (Trending, Breaking, New)
 }
 
 impl TrendingAppState {
     pub fn new(events: Vec<Event>, order_by: String, ascending: bool) -> Self {
         let current_limit = events.len();
+        // Determine initial filter based on order_by
+        let event_filter = if order_by == "startTime" {
+            EventFilter::Breaking
+        } else if order_by == "creationTime" || order_by == "createdAt" {
+            EventFilter::New
+        } else {
+            EventFilter::Trending
+        };
         Self {
             events,
             should_quit: false,
@@ -231,6 +283,7 @@ impl TrendingAppState {
             logs: LogsState::new(),
             navigation: NavigationState::new(),
             trades: TradesState::new(),
+            event_filter,
         }
     }
 
@@ -486,7 +539,8 @@ impl TrendingAppState {
 }
 
 pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
-    let header_height = if app.is_in_filter_mode() { 6 } else { 3 };
+    // Header height: 3 lines for normal mode (title, filters, info), 6 for search mode
+    let header_height = if app.is_in_filter_mode() { 6 } else { 4 };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -516,6 +570,44 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
             ])
             .split(chunks[0]);
 
+        // Render filter options in header (even in search mode, show current filter)
+        let is_header_focused = app.navigation.focused_panel == FocusedPanel::Header;
+        let header_block_style = if is_header_focused {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default()
+        };
+        
+        // Build filter options line with selection highlighting
+        let filter_options = vec![
+            (EventFilter::Trending, "Trending"),
+            (EventFilter::Breaking, "Breaking"),
+            (EventFilter::New, "New"),
+        ];
+        
+        let mut filter_spans = Vec::new();
+        for (filter, label) in &filter_options {
+            let is_selected = *filter == app.event_filter;
+            let style = if is_selected {
+                if is_header_focused {
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+                } else {
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
+                }
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+            
+            if !filter_spans.is_empty() {
+                filter_spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
+            }
+            filter_spans.push(Span::styled(*label, style));
+        }
+        
         let header_text = format!(
             "Showing {}/{} events | Watching: {} | Press Esc to exit search",
             filtered_count,
@@ -523,10 +615,20 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
             watched_count
         );
         let header = Paragraph::new(vec![
-            Line::from("🔥 Trending Events".fg(Color::Yellow).bold()),
+            Line::from("🔥 Polymarket".fg(Color::Yellow).bold()),
+            Line::from(filter_spans),
             Line::from(header_text),
         ])
-        .block(Block::default().borders(Borders::ALL).title("Polymarket"))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(if is_header_focused {
+                    "Polymarket (Focused)"
+                } else {
+                    "Polymarket"
+                })
+                .border_style(header_block_style)
+        )
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: true });
         f.render_widget(header, header_chunks[0]);
@@ -556,16 +658,64 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
             .wrap(Wrap { trim: true });
         f.render_widget(search_input, header_chunks[1]);
     } else {
+        // Render filter options in header
+        let is_header_focused = app.navigation.focused_panel == FocusedPanel::Header;
+        let header_block_style = if is_header_focused {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default()
+        };
+        
+        // Build filter options line with selection highlighting
+        let filter_options = vec![
+            (EventFilter::Trending, "Trending"),
+            (EventFilter::Breaking, "Breaking"),
+            (EventFilter::New, "New"),
+        ];
+        
+        let mut filter_spans = Vec::new();
+        for (filter, label) in &filter_options {
+            let is_selected = *filter == app.event_filter;
+            let style = if is_selected {
+                if is_header_focused {
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+                } else {
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
+                }
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+            
+            if !filter_spans.is_empty() {
+                filter_spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
+            }
+            filter_spans.push(Span::styled(*label, style));
+        }
+        
         let header_text = format!(
             "Showing {} events | Watching: {} | Press '/' for API search, 'f' for local filter | Use ↑↓ to navigate | Enter to watch/unwatch | 'q' to quit",
             filtered_count,
             watched_count
         );
         let header = Paragraph::new(vec![
-            Line::from("🔥 Trending Events".fg(Color::Yellow).bold()),
+            Line::from("🔥 Polymarket".fg(Color::Yellow).bold()),
+            Line::from(filter_spans),
             Line::from(header_text),
         ])
-        .block(Block::default().borders(Borders::ALL).title("Polymarket"))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(if is_header_focused {
+                    "Polymarket (Focused)"
+                } else {
+                    "Polymarket"
+                })
+                .border_style(header_block_style)
+        )
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: true });
         f.render_widget(header, chunks[0]);
@@ -588,6 +738,7 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
 
     // Footer - show focused panel info
     let focused_panel_text = match app.navigation.focused_panel {
+        FocusedPanel::Header => "Filter",
         FocusedPanel::EventsList => "Events List",
         FocusedPanel::EventDetails => "Event Details",
         FocusedPanel::Markets => "Markets",
@@ -1447,19 +1598,115 @@ pub async fn run_trending_tui(
                         }
                         KeyCode::Tab => {
                             if !app.is_in_filter_mode() {
-                                // Cycle through panels: EventsList -> EventDetails -> Markets -> Trades -> Logs -> EventsList
+                                // Cycle through panels: Header -> EventsList -> EventDetails -> Markets -> Trades -> Logs -> Header
                                 app.navigation.focused_panel = match app.navigation.focused_panel {
+                                    FocusedPanel::Header => FocusedPanel::EventsList,
                                     FocusedPanel::EventsList => FocusedPanel::EventDetails,
                                     FocusedPanel::EventDetails => FocusedPanel::Markets,
                                     FocusedPanel::Markets => FocusedPanel::Trades,
                                     FocusedPanel::Trades => FocusedPanel::Logs,
-                                    FocusedPanel::Logs => FocusedPanel::EventsList,
+                                    FocusedPanel::Logs => FocusedPanel::Header,
                                 };
+                            }
+                        }
+                        KeyCode::Left => {
+                            if !app.is_in_filter_mode() && app.navigation.focused_panel == FocusedPanel::Header {
+                                // Switch to previous filter
+                                let old_filter = app.event_filter;
+                                app.event_filter = app.event_filter.prev();
+                                
+                                // If filter changed, trigger refetch
+                                if old_filter != app.event_filter {
+                                    // Clear search results when filter changes
+                                    app.search.results.clear();
+                                    app.search.last_searched_query.clear();
+                                    
+                                    let app_state_clone = Arc::clone(&app_state);
+                                    let gamma_client_clone = GammaClient::new();
+                                    let order_by = app.event_filter.order_by().to_string();
+                                    let ascending = false; // Always descending for these views
+                                    let limit = app.pagination.current_limit;
+                                    
+                                    app.pagination.order_by = order_by.clone();
+                                    app.pagination.is_fetching_more = true;
+                                    
+                                    tracing::info!("Switching to {} filter, fetching events...", app.event_filter.label());
+                                    
+                                    tokio::spawn(async move {
+                                        match gamma_client_clone
+                                            .get_trending_events(Some(&order_by), Some(ascending), Some(limit))
+                                            .await
+                                        {
+                                            Ok(new_events) => {
+                                                tracing::info!("Fetched {} events for {} filter", new_events.len(), order_by);
+                                                let mut app = app_state_clone.lock().await;
+                                                app.events = new_events;
+                                                app.pagination.is_fetching_more = false;
+                                                app.navigation.selected_index = 0;
+                                                app.scroll.events_list = 0;
+                                            }
+                                            Err(e) => {
+                                                tracing::error!("Failed to fetch events: {}", e);
+                                                let mut app = app_state_clone.lock().await;
+                                                app.pagination.is_fetching_more = false;
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                        KeyCode::Right => {
+                            if !app.is_in_filter_mode() && app.navigation.focused_panel == FocusedPanel::Header {
+                                // Switch to next filter
+                                let old_filter = app.event_filter;
+                                app.event_filter = app.event_filter.next();
+                                
+                                // If filter changed, trigger refetch
+                                if old_filter != app.event_filter {
+                                    // Clear search results when filter changes
+                                    app.search.results.clear();
+                                    app.search.last_searched_query.clear();
+                                    
+                                    let app_state_clone = Arc::clone(&app_state);
+                                    let gamma_client_clone = GammaClient::new();
+                                    let order_by = app.event_filter.order_by().to_string();
+                                    let ascending = false; // Always descending for these views
+                                    let limit = app.pagination.current_limit;
+                                    
+                                    app.pagination.order_by = order_by.clone();
+                                    app.pagination.is_fetching_more = true;
+                                    
+                                    tracing::info!("Switching to {} filter, fetching events...", app.event_filter.label());
+                                    
+                                    tokio::spawn(async move {
+                                        match gamma_client_clone
+                                            .get_trending_events(Some(&order_by), Some(ascending), Some(limit))
+                                            .await
+                                        {
+                                            Ok(new_events) => {
+                                                tracing::info!("Fetched {} events for {} filter", new_events.len(), order_by);
+                                                let mut app = app_state_clone.lock().await;
+                                                app.events = new_events;
+                                                app.pagination.is_fetching_more = false;
+                                                app.navigation.selected_index = 0;
+                                                app.scroll.events_list = 0;
+                                            }
+                                            Err(e) => {
+                                                tracing::error!("Failed to fetch events: {}", e);
+                                                let mut app = app_state_clone.lock().await;
+                                                app.pagination.is_fetching_more = false;
+                                            }
+                                        }
+                                    });
+                                }
                             }
                         }
                         KeyCode::Up => {
                             if !app.is_in_filter_mode() {
                                 match app.navigation.focused_panel {
+                                    FocusedPanel::Header => {
+                                        // Header doesn't scroll, but we can allow it for consistency
+                                    }
                                     FocusedPanel::EventsList => {
                                         app.move_up();
                                     }
@@ -1489,6 +1736,9 @@ pub async fn run_trending_tui(
                         KeyCode::Down => {
                             if !app.is_in_filter_mode() {
                                 match app.navigation.focused_panel {
+                                    FocusedPanel::Header => {
+                                        // Header doesn't scroll, but we can allow it for consistency
+                                    }
                                     FocusedPanel::EventsList => {
                                         app.move_down();
                                         // Check if we need to fetch more events (infinite scroll)

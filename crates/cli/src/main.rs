@@ -130,7 +130,7 @@ enum Commands {
         /// Maximum number of markets to fetch
         #[arg(long, default_value = "500")]
         limit: usize,
-        /// Minimum volume to filter by (note: many markets report 0 volume)
+        /// Minimum 24h volume to filter by
         #[arg(long, default_value = "0")]
         min_volume: f64,
     },
@@ -779,8 +779,8 @@ async fn run_yield(min_prob: f64, limit: usize, min_volume: f64) -> Result<()> {
             continue;
         }
 
-        // Check volume threshold
-        let volume = market.volume_total.unwrap_or(0.0);
+        // Check volume threshold (use 24hr volume as it's more reliably populated)
+        let volume = market.volume_24hr.unwrap_or(0.0);
         if volume < min_volume {
             continue;
         }

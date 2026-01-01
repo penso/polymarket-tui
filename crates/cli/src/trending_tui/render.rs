@@ -575,11 +575,11 @@ fn render_event_details(
     trade_count: usize,
     area: Rect,
 ) {
-    // Calculate total volume from all markets
+    // Calculate total volume from all markets (use 24hr volume, more reliable)
     let total_volume: f64 = event
         .markets
         .iter()
-        .map(|m| m.volume_total.unwrap_or(0.0))
+        .map(|m| m.volume_24hr.or(m.volume_total).unwrap_or(0.0))
         .sum();
 
     // Format end date if available

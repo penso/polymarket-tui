@@ -1468,9 +1468,10 @@ pub async fn run_trending_tui(
                                         }
                                     }
                                     FocusedPanel::Logs => {
-                                        // Logs scroll is handled in render_logs, but we can still increment here
-                                        // The render function will clamp it to valid range
-                                        let max_scroll = app.logs.len().saturating_sub(1);
+                                        // Calculate max scroll based on visible height (approximate)
+                                        // The render function will clamp it to the exact visible height
+                                        let visible_height: usize = 10; // Approximate, will be clamped in render
+                                        let max_scroll = app.logs.len().saturating_sub(visible_height.max(1));
                                         if app.log_scroll < max_scroll {
                                             app.log_scroll += 1;
                                         }

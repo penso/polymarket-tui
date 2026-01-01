@@ -429,22 +429,9 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
 
             let markets_count = event.markets.len();
 
-            // Format: "title ...spaces... markets amount" (right-aligned)
+            // Format: "title ...spaces... markets / trades" (right-aligned)
             // Account for List widget borders (2 chars) and some padding
             let usable_width = area.width.saturating_sub(2) as usize; // -2 for borders
-            let markets_text = markets_count.to_string();
-            let markets_width = markets_text.len();
-
-            // Reserve space for markets count + 1 space padding
-            let reserved_width = markets_width + 1;
-            let available_width = usable_width.saturating_sub(reserved_width);
-
-            // Truncate title to fit available space
-            let title = if event.title.len() > available_width {
-                truncate(&event.title, available_width.saturating_sub(3))
-            } else {
-                event.title.clone()
-            };
 
             // Build the right-aligned text: "markets" or "markets / trades" if watching
             let right_text = if is_watching {
@@ -458,7 +445,7 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             let reserved_width = right_text_width + 1;
             let available_width = usable_width.saturating_sub(reserved_width);
             
-            // Truncate title to fit available space (recalculate with new reserved width)
+            // Truncate title to fit available space
             let title = if event.title.len() > available_width {
                 truncate(&event.title, available_width.saturating_sub(3))
             } else {

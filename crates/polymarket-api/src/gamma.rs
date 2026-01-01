@@ -192,6 +192,17 @@ impl Market {
     pub fn event(&self) -> Option<&MarketEventRef> {
         self.events.first()
     }
+
+    /// Get human-readable status string
+    pub fn status(&self) -> &'static str {
+        if self.closed {
+            "closed"
+        } else if self.active {
+            "open"
+        } else {
+            "paused"
+        }
+    }
 }
 
 /// Lightweight event reference embedded in market responses
@@ -202,6 +213,23 @@ pub struct MarketEventRef {
     pub title: String,
     #[serde(rename = "endDate")]
     pub end_date: Option<String>,
+    #[serde(default)]
+    pub active: bool,
+    #[serde(default)]
+    pub closed: bool,
+}
+
+impl MarketEventRef {
+    /// Get human-readable status string
+    pub fn status(&self) -> &'static str {
+        if self.closed {
+            "closed"
+        } else if self.active {
+            "active"
+        } else {
+            "inactive"
+        }
+    }
 }
 
 pub struct GammaClient {

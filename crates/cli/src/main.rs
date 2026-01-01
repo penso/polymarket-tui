@@ -800,12 +800,14 @@ async fn run_yield(
     // Structure to hold yield opportunities
     struct YieldOpportunity {
         market_name: String,
+        market_status: &'static str,
         outcome: String,
         price: f64,
         est_return: f64,
         volume: f64,
         event_slug: String,
         event_title: String,
+        event_status: &'static str,
         end_date: Option<DateTime<Utc>>,
     }
 
@@ -866,12 +868,14 @@ async fn run_yield(
 
                 opportunities.push(YieldOpportunity {
                     market_name,
+                    market_status: market.status(),
                     outcome,
                     price,
                     est_return,
                     volume,
                     event_slug: event.slug.clone(),
                     event_title: event.title.clone(),
+                    event_status: event.status(),
                     end_date,
                 });
             }
@@ -905,19 +909,19 @@ async fn run_yield(
             let url = format!("https://polymarket.com/event/{}", opp.event_slug);
             let end_str = opp
                 .end_date
-                .map(|d| format!(" (ends {})", d.format("%Y-%m-%d")))
+                .map(|d| format!(" ends {}", d.format("%Y-%m-%d")))
                 .unwrap_or_default();
-            println!("\n📊 {}{}", opp.event_title, end_str);
+            println!("\n📊 {} [{}]{}", opp.event_title, opp.event_status, end_str);
             println!("   {}", url);
             println!(
-                "   {:<40} {:>6} {:>8} {:>8} {:>10}",
-                "Market", "Out", "Price", "Return", "Volume"
+                "   {:<35} {:>6} {:>6} {:>8} {:>8} {:>10}",
+                "Market", "Status", "Out", "Price", "Return", "Volume"
             );
-            println!("   {}", "─".repeat(80));
+            println!("   {}", "─".repeat(85));
         }
 
-        let truncated_name: String = if opp.market_name.len() > 38 {
-            format!("{}…", &opp.market_name[..37])
+        let truncated_name: String = if opp.market_name.len() > 33 {
+            format!("{}…", &opp.market_name[..32])
         } else {
             opp.market_name.clone()
         };
@@ -925,8 +929,9 @@ async fn run_yield(
         let return_str = format!("{:.2}%", opp.est_return);
 
         println!(
-            "   {:<40} {:>6} {:>7.1}¢ {:>8} {:>9.0}$",
+            "   {:<35} {:>6} {:>6} {:>7.1}¢ {:>8} {:>9.0}$",
             truncated_name,
+            opp.market_status,
             opp.outcome,
             opp.price * 100.0,
             return_str,

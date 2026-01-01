@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use polymarket_tui::gamma::Event;
 use polymarket_tui::rtds::RTDSMessage;
-use polymarket_tui::{ClobClient, GammaClient};
+use polymarket_tui::GammaClient;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout},
@@ -11,7 +11,6 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap},
     Frame, Terminal,
 };
-use std::collections::HashMap;
 use std::io;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
@@ -34,7 +33,6 @@ pub struct AppState {
     pub event_slug: String,
     pub should_quit: bool,
     pub event: Option<Event>,
-    pub market_prices: HashMap<String, f64>,
     pub is_loading: bool,
     pub last_refresh: Option<DateTime<Utc>>,
 }
@@ -46,7 +44,6 @@ impl AppState {
             event_slug,
             should_quit: false,
             event,
-            market_prices: HashMap::new(),
             is_loading: false,
             last_refresh: None,
         }
@@ -279,29 +276,18 @@ fn render_markets(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
                 .iter()
                 .take(area.height.saturating_sub(2) as usize) // Account for borders
                 .map(|market| {
-                    // Build outcome prices string
+                    // Build outcome prices string - use outcome_prices from Gamma API
+                    // (this is what the website displays and is kept up-to-date)
                     let outcomes_str: String = market
                         .outcomes
                         .iter()
                         .enumerate()
                         .map(|(idx, outcome)| {
-                            // Try to get live price from market_prices, else use static outcome_prices
-                            let price = if let Some(ref token_ids) = market.clob_token_ids {
-                                token_ids
-                                    .get(idx)
-                                    .and_then(|asset_id| app.market_prices.get(asset_id).copied())
-                                    .or_else(|| {
-                                        market
-                                            .outcome_prices
-                                            .get(idx)
-                                            .and_then(|p| p.parse::<f64>().ok())
-                                    })
-                            } else {
-                                market
-                                    .outcome_prices
-                                    .get(idx)
-                                    .and_then(|p| p.parse::<f64>().ok())
-                            };
+                            // Use outcome_prices from the fresh Gamma API data
+                            let price = market
+                                .outcome_prices
+                                .get(idx)
+                                .and_then(|p| p.parse::<f64>().ok());
 
                             match price {
                                 Some(p) => format!("{}: ${:.2} ({:.0}%)", outcome, p, p * 100.0),
@@ -353,48 +339,21 @@ pub async fn refresh_market_data(app_state: Arc<TokioMutex<AppState>>) {
 
     info!("Refreshing market data for event: {}", event_slug);
 
-    // Fetch event data from Gamma API
+    // Fetch fresh event data from Gamma API (includes current outcome_prices)
     let gamma_client = GammaClient::new();
     let event_result = gamma_client.get_event_by_slug(&event_slug).await;
 
     match event_result {
         Ok(Some(event)) => {
-            // Collect all asset IDs to fetch prices for
-            let asset_ids: Vec<String> = event
-                .markets
-                .iter()
-                .filter_map(|m| m.clob_token_ids.as_ref())
-                .flatten()
-                .cloned()
-                .collect();
-
-            // Fetch prices from CLOB API
-            let clob_client = ClobClient::new();
-            let mut prices: HashMap<String, f64> = HashMap::new();
-
-            for asset_id in &asset_ids {
-                match clob_client.get_orderbook_by_asset(asset_id).await {
-                    Ok(orderbook) => {
-                        // Use best ask price (price to buy)
-                        if let Some(best_ask) = orderbook.asks.first() {
-                            if let Ok(price) = best_ask.price.parse::<f64>() {
-                                prices.insert(asset_id.clone(), price);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::debug!("Failed to fetch orderbook for {}: {}", asset_id, e);
-                    }
-                }
-            }
-
-            // Update app state
+            let market_count = event.markets.len();
             let mut app = app_state.lock().await;
             app.event = Some(event);
-            app.market_prices = prices;
             app.is_loading = false;
             app.last_refresh = Some(Utc::now());
-            info!("Market data refreshed successfully");
+            info!(
+                "Market data refreshed: {} markets with current prices",
+                market_count
+            );
         }
         Ok(None) => {
             let mut app = app_state.lock().await;

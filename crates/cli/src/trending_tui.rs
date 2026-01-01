@@ -489,7 +489,10 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
         FocusedPanel::Trades => "Trades",
     };
     let footer_text = if app.search_mode {
-        format!("Type to search | Esc to exit | Focused: {} | 'q' to quit", focused_panel_text)
+        format!(
+            "Type to search | Esc to exit | Focused: {} | 'q' to quit",
+            focused_panel_text
+        )
     } else {
         format!("Press '/' to search | Tab to switch panels | Focused: {} | ↑↓ to scroll | Enter to watch/unwatch | 'q' to quit", focused_panel_text)
     };
@@ -735,14 +738,36 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                         .add_modifier(Modifier::BOLD),
                 ),
             )
-            .block(Block::default().borders(Borders::ALL).title(format!(
-                "Trades ({})",
-                if is_watching {
-                    "🔴 Watching"
+            .block({
+                let is_focused = app.focused_panel == FocusedPanel::Trades;
+                let block_style = if is_focused {
+                    Style::default().fg(Color::Yellow)
                 } else {
-                    "Stopped"
-                }
-            )))
+                    Style::default()
+                };
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(if is_focused {
+                        format!(
+                            "Trades ({}) (Focused)",
+                            if is_watching {
+                                "🔴 Watching"
+                            } else {
+                                "Stopped"
+                            }
+                        )
+                    } else {
+                        format!(
+                            "Trades ({})",
+                            if is_watching {
+                                "🔴 Watching"
+                            } else {
+                                "Stopped"
+                            }
+                        )
+                    })
+                    .border_style(block_style)
+            })
             .column_spacing(1);
 
             f.render_widget(table, chunks[2]);
@@ -909,11 +934,23 @@ fn render_event_details(
         ]));
     }
 
+    let is_focused = app.focused_panel == FocusedPanel::EventDetails;
+    let block_style = if is_focused {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default()
+    };
+    
     let paragraph = Paragraph::new(lines)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Event Details"),
+                .title(if is_focused {
+                    "Event Details (Focused)"
+                } else {
+                    "Event Details"
+                })
+                .border_style(block_style),
         )
         .wrap(Wrap { trim: true });
     f.render_widget(paragraph, area);
@@ -962,7 +999,7 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
             let usable_width = (area.width as usize).saturating_sub(2); // -2 for borders
             let question = truncate(&market.question, 40); // Reserve more space for right-aligned content
             let question_width = question.len();
-            
+
             // Calculate space needed for outcomes and volume (right-aligned)
             let outcomes_width = outcomes_str.len();
             let volume_width = volume_str.len();
@@ -977,29 +1014,35 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
             } else {
                 0
             };
-            
+
             let remaining_width = usable_width
                 .saturating_sub(question_width)
                 .saturating_sub(right_content_width);
-            
+
             let mut line_spans = vec![Span::styled(question, Style::default().fg(Color::White))];
-            
+
             // Add spaces to push outcomes and volume to the right
             if remaining_width > 0 {
                 line_spans.push(Span::styled(" ".repeat(remaining_width), Style::default()));
             }
-            
+
             // Add right-aligned outcomes and volume
             if has_outcomes {
-                line_spans.push(Span::styled(outcomes_str.clone(), Style::default().fg(Color::Cyan)));
+                line_spans.push(Span::styled(
+                    outcomes_str.clone(),
+                    Style::default().fg(Color::Cyan),
+                ));
             }
             if has_volume {
                 if has_outcomes {
                     line_spans.push(Span::styled(" ", Style::default()));
                 }
-                line_spans.push(Span::styled(volume_str.clone(), Style::default().fg(Color::Green)));
+                line_spans.push(Span::styled(
+                    volume_str.clone(),
+                    Style::default().fg(Color::Green),
+                ));
             }
-            
+
             ListItem::new(Line::from(line_spans))
         })
         .collect();

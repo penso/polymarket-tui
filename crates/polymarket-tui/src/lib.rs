@@ -7,12 +7,13 @@ pub mod gamma;
 pub mod rtds;
 pub mod websocket;
 
-pub use cache::{default_cache_dir, FileCache};
-pub use clob::ClobClient;
-pub use data::DataClient;
-pub use display::MarketUpdateFormatter;
-pub use display::RTDSFormatter;
-pub use error::{lock_mutex, PolymarketError, Result};
-pub use gamma::GammaClient;
-pub use rtds::{ActivityPayload, RTDSClient, RTDSMessage};
-pub use websocket::PolymarketWebSocket;
+pub use {
+    cache::{FileCache, default_cache_dir},
+    clob::ClobClient,
+    data::DataClient,
+    display::{MarketUpdateFormatter, RTDSFormatter},
+    error::{PolymarketError, Result, lock_mutex},
+    gamma::GammaClient,
+    rtds::{ActivityPayload, RTDSClient, RTDSMessage},
+    websocket::PolymarketWebSocket,
+};

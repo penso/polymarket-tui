@@ -9,19 +9,23 @@ mod trending_tui;
 #[cfg(feature = "tui")]
 mod tui_log_layer;
 
-use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
-use colored::Colorize;
-use display_trait::TradeDisplay;
-use polymarket_tui::{
-    default_cache_dir, lock_mutex, ClobClient, DataClient, GammaClient, MarketUpdateFormatter,
-    PolymarketWebSocket, RTDSClient,
+use {
+    anyhow::{Context, Result},
+    clap::{Parser, Subcommand},
+    colored::Colorize,
+    display_trait::TradeDisplay,
+    polymarket_tui::{
+        ClobClient, DataClient, GammaClient, MarketUpdateFormatter, PolymarketWebSocket,
+        RTDSClient, default_cache_dir, lock_mutex,
+    },
+    std::{
+        collections::HashMap,
+        env,
+        path::PathBuf,
+        sync::{Arc, Mutex},
+    },
+    tracing::info,
 };
-use std::collections::HashMap;
-use std::env;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use tracing::info;
 
 #[derive(Parser)]
 #[command(name = "polymarket-cli")]
@@ -213,16 +217,16 @@ async fn run_monitor(use_rtds: bool, event_slug: Option<String>) -> Result<()> {
             let asset_id = match &msg {
                 polymarket_tui::websocket::WebSocketMessage::Orderbook(update) => {
                     Some(update.asset_id.clone())
-                }
+                },
                 polymarket_tui::websocket::WebSocketMessage::Trade(update) => {
                     Some(update.asset_id.clone())
-                }
+                },
                 polymarket_tui::websocket::WebSocketMessage::Order(update) => {
                     Some(update.asset_id.clone())
-                }
+                },
                 polymarket_tui::websocket::WebSocketMessage::Price(update) => {
                     Some(update.asset_id.clone())
-                }
+                },
                 _ => None,
             };
 
@@ -333,15 +337,18 @@ async fn run_watch_event(event: String, use_tui: bool) -> Result<()> {
 
 #[cfg(feature = "tui")]
 async fn run_watch_event_tui(event_slug: String) -> Result<()> {
-    use crossterm::{
-        event::{DisableMouseCapture, EnableMouseCapture},
-        execute,
-        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    use {
+        crossterm::{
+            event::{DisableMouseCapture, EnableMouseCapture},
+            execute,
+            terminal::{
+                EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+            },
+        },
+        ratatui::{Terminal, backend::CrosstermBackend},
+        std::io,
+        tokio::sync::Mutex as TokioMutex,
     };
-    use ratatui::backend::CrosstermBackend;
-    use ratatui::Terminal;
-    use std::io;
-    use tokio::sync::Mutex as TokioMutex;
 
     // Fetch event data from Gamma API before starting TUI
     info!("Fetching event data for: {}", event_slug);
@@ -450,15 +457,18 @@ async fn main() -> Result<()> {
 
 #[cfg(feature = "tui")]
 async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result<()> {
-    use crossterm::{
-        event::{DisableMouseCapture, EnableMouseCapture},
-        execute,
-        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    use {
+        crossterm::{
+            event::{DisableMouseCapture, EnableMouseCapture},
+            execute,
+            terminal::{
+                EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+            },
+        },
+        ratatui::{Terminal, backend::CrosstermBackend},
+        std::io,
+        tokio::sync::Mutex as TokioMutex,
     };
-    use ratatui::backend::CrosstermBackend;
-    use ratatui::Terminal;
-    use std::io;
-    use tokio::sync::Mutex as TokioMutex;
 
     // Setup custom tracing layer to capture logs for TUI
     // IMPORTANT: Set this up BEFORE any tracing calls (including API calls)

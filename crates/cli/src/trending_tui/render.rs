@@ -1,23 +1,29 @@
 //! Render functions for the trending TUI
 
-use super::state::{EventFilter, FocusedPanel, SearchMode, TrendingAppState};
-use chrono::{DateTime, Utc};
-use polymarket_tui::gamma::Event;
-use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    prelude::Stylize,
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{
-        Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Scrollbar,
-        ScrollbarOrientation, ScrollbarState, Table, Wrap,
+use {
+    super::state::{EventFilter, FocusedPanel, SearchMode, TrendingAppState},
+    chrono::{DateTime, Utc},
+    polymarket_tui::gamma::Event,
+    ratatui::{
+        Frame,
+        layout::{Alignment, Constraint, Direction, Layout, Rect},
+        prelude::Stylize,
+        style::{Color, Modifier, Style},
+        text::{Line, Span},
+        widgets::{
+            Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Scrollbar,
+            ScrollbarOrientation, ScrollbarState, Table, Wrap,
+        },
     },
-    Frame,
 };
 
 pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
     // Header height: 3 lines for normal mode (title, filters, info), 6 for search mode
-    let header_height = if app.is_in_filter_mode() { 6 } else { 4 };
+    let header_height = if app.is_in_filter_mode() {
+        6
+    } else {
+        4
+    };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -175,8 +181,7 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
 
         let header_text = format!(
             "Showing {} events | Watching: {} | Press '/' for API search, 'f' for local filter | Use ↑↓ to navigate | Enter to watch/unwatch | 'q' to quit",
-            filtered_count,
-            watched_count
+            filtered_count, watched_count
         );
         let header = Paragraph::new(vec![
             Line::from("🔥 Polymarket".fg(Color::Yellow).bold()),
@@ -228,7 +233,10 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
             focused_panel_text
         )
     } else {
-        format!("Press '/' to search | 'r' to refresh prices | Tab to switch panels | Focused: {} | ↑↓ to scroll | Enter to watch/unwatch | 'q' to quit", focused_panel_text)
+        format!(
+            "Press '/' to search | 'r' to refresh prices | Tab to switch panels | Focused: {} | ↑↓ to scroll | Enter to watch/unwatch | 'q' to quit",
+            focused_panel_text
+        )
     };
     let footer = Paragraph::new(footer_text)
         .block(Block::default().borders(Borders::ALL))
@@ -477,19 +485,16 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 })
                 .collect();
 
-            let table = Table::new(
-                rows,
-                [
-                    Constraint::Length(10),     // Time
-                    Constraint::Length(8),      // Side
-                    Constraint::Length(5),      // Outcome
-                    Constraint::Length(10),     // Price
-                    Constraint::Length(10),     // Shares
-                    Constraint::Length(10),     // Value
-                    Constraint::Percentage(30), // Title
-                    Constraint::Length(15),     // User
-                ],
-            )
+            let table = Table::new(rows, [
+                Constraint::Length(10),     // Time
+                Constraint::Length(8),      // Side
+                Constraint::Length(5),      // Outcome
+                Constraint::Length(10),     // Price
+                Constraint::Length(10),     // Shares
+                Constraint::Length(10),     // Value
+                Constraint::Percentage(30), // Title
+                Constraint::Length(15),     // User
+            ])
             .header(
                 Row::new(vec![
                     "Time", "Side", "Out", "Price", "Shares", "Value", "Market", "User",
@@ -612,7 +617,11 @@ fn render_event_details(
     lines.push(Line::from(vec![
         Span::styled("Status: ", Style::default().fg(Color::Yellow).bold()),
         Span::styled(
-            if event.active { "Active" } else { "Inactive" },
+            if event.active {
+                "Active"
+            } else {
+                "Inactive"
+            },
             Style::default().fg(if event.active {
                 Color::Green
             } else {
@@ -621,7 +630,11 @@ fn render_event_details(
         ),
         Span::styled(" | ", Style::default().fg(Color::Gray)),
         Span::styled(
-            if event.closed { "Closed" } else { "Open" },
+            if event.closed {
+                "Closed"
+            } else {
+                "Open"
+            },
             Style::default().fg(if event.closed {
                 Color::Red
             } else {
@@ -635,7 +648,11 @@ fn render_event_details(
             } else {
                 "Not Watching"
             },
-            Style::default().fg(if is_watching { Color::Red } else { Color::Gray }),
+            Style::default().fg(if is_watching {
+                Color::Red
+            } else {
+                Color::Gray
+            }),
         ),
     ]));
     lines.push(Line::from(vec![
@@ -1042,7 +1059,11 @@ fn render_logs(f: &mut Frame, app: &mut TrendingAppState, area: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(if is_focused { "Logs (Focused)" } else { "Logs" })
+                .title(if is_focused {
+                    "Logs (Focused)"
+                } else {
+                    "Logs"
+                })
                 .border_style(block_style),
         )
         .style(Style::default().fg(Color::White));

@@ -1,9 +1,11 @@
-use crate::error::{PolymarketError, Result};
-use futures_util::{SinkExt, StreamExt};
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use {
+    crate::error::{PolymarketError, Result},
+    futures_util::{SinkExt, StreamExt},
+    serde::{Deserialize, Serialize},
+    std::sync::Arc,
+    tokio::sync::Mutex,
+    tokio_tungstenite::{connect_async, tungstenite::Message},
+};
 
 #[cfg(feature = "tracing")]
 use tracing::{debug, error, warn};
@@ -114,7 +116,7 @@ impl RTDSClient {
                     secret,
                     passphrase,
                 })
-            }
+            },
             _ => None,
         };
 
@@ -335,7 +337,7 @@ impl RTDSClient {
                             );
                         }
                     }
-                }
+                },
                 Ok(Message::Ping(data)) => {
                     // Respond to ping with pong
                     let mut w = write.lock().await;
@@ -346,18 +348,18 @@ impl RTDSClient {
                         eprintln!("Failed to send pong: {}", e);
                         break;
                     }
-                }
+                },
                 Ok(Message::Close(_)) => {
                     break;
-                }
+                },
                 Err(e) => {
                     #[cfg(feature = "tracing")]
                     error!("RTDS WebSocket error: {}", e);
                     #[cfg(not(feature = "tracing"))]
                     eprintln!("RTDS WebSocket error: {}", e);
                     break;
-                }
-                _ => {}
+                },
+                _ => {},
             }
         }
 

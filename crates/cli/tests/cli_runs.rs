@@ -1,6 +1,4 @@
-use std::process::Command;
-use std::thread;
-use std::time::Duration;
+use std::{process::Command, thread, time::Duration};
 
 #[test]
 fn cli_starts_and_connects() {
@@ -25,15 +23,15 @@ fn cli_starts_and_connects() {
                 status.code().is_some(),
                 "Process should exit with a status code, not be killed by signal"
             );
-        }
+        },
         Ok(None) => {
             // Process is still running - great! It connected successfully
             let _ = child.kill();
             let _ = child.wait();
-        }
+        },
         Err(e) => {
             let _ = child.kill();
             panic!("Error checking process status: {}", e);
-        }
+        },
     }
 }

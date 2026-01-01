@@ -1,20 +1,19 @@
-use chrono::{DateTime, Utc};
-use polymarket_tui::gamma::Event;
-use polymarket_tui::rtds::RTDSMessage;
-use polymarket_tui::GammaClient;
-use ratatui::{
-    backend::CrosstermBackend,
-    layout::{Alignment, Constraint, Direction, Layout},
-    prelude::Stylize,
-    style::{Color, Modifier, Style},
-    text::Line,
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap},
-    Frame, Terminal,
+use {
+    chrono::{DateTime, Utc},
+    polymarket_tui::{GammaClient, gamma::Event, rtds::RTDSMessage},
+    ratatui::{
+        Frame, Terminal,
+        backend::CrosstermBackend,
+        layout::{Alignment, Constraint, Direction, Layout},
+        prelude::Stylize,
+        style::{Color, Modifier, Style},
+        text::Line,
+        widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap},
+    },
+    std::{io, sync::Arc},
+    tokio::sync::Mutex as TokioMutex,
+    tracing::debug,
 };
-use std::io;
-use std::sync::Arc;
-use tokio::sync::Mutex as TokioMutex;
-use tracing::debug;
 
 pub struct Trade {
     pub timestamp: i64,
@@ -86,7 +85,11 @@ pub fn render(f: &mut Frame, app: &AppState) {
         .split(f.size());
 
     // Header
-    let loading_indicator = if app.is_loading { " [Loading...]" } else { "" };
+    let loading_indicator = if app.is_loading {
+        " [Loading...]"
+    } else {
+        ""
+    };
     let header = Paragraph::new(vec![
         Line::from("💸 Polymarket Trade Monitor".fg(Color::Yellow).bold()),
         Line::from(format!(
@@ -159,20 +162,17 @@ pub fn render(f: &mut Frame, app: &AppState) {
             })
             .collect();
 
-        let table = Table::new(
-            rows,
-            [
-                Constraint::Length(10),     // Time
-                Constraint::Length(8),      // Side
-                Constraint::Length(5),      // Outcome
-                Constraint::Length(10),     // Price
-                Constraint::Length(10),     // Shares
-                Constraint::Length(10),     // Value
-                Constraint::Percentage(25), // Title
-                Constraint::Length(20),     // User
-                Constraint::Length(20),     // Pseudonym
-            ],
-        )
+        let table = Table::new(rows, [
+            Constraint::Length(10),     // Time
+            Constraint::Length(8),      // Side
+            Constraint::Length(5),      // Outcome
+            Constraint::Length(10),     // Price
+            Constraint::Length(10),     // Shares
+            Constraint::Length(10),     // Value
+            Constraint::Percentage(25), // Title
+            Constraint::Length(20),     // User
+            Constraint::Length(20),     // Pseudonym
+        ])
         .header(
             Row::new(vec![
                 "Time",
@@ -353,17 +353,17 @@ pub async fn refresh_market_data(app_state: Arc<TokioMutex<AppState>>) {
             app.is_loading = false;
             app.last_refresh = Some(Utc::now());
             debug!("✓ Market data refreshed successfully");
-        }
+        },
         Ok(None) => {
             debug!("⚠ Event not found: {}", event_slug);
             let mut app = app_state.lock().await;
             app.is_loading = false;
-        }
+        },
         Err(e) => {
             debug!("✗ Failed to fetch event from Gamma API: {}", e);
             let mut app = app_state.lock().await;
             app.is_loading = false;
-        }
+        },
     }
 }
 
@@ -394,7 +394,7 @@ pub async fn run_tui(
                             let mut app = app_state.lock().await;
                             app.should_quit = true;
                             break;
-                        }
+                        },
                         KeyCode::Char('r') => {
                             // Check if not already loading
                             let is_loading = {
@@ -407,8 +407,8 @@ pub async fn run_tui(
                                     refresh_market_data(app_state_clone).await;
                                 });
                             }
-                        }
-                        _ => {}
+                        },
+                        _ => {},
                     }
                 }
             }

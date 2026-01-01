@@ -1,8 +1,12 @@
-use crate::error::{PolymarketError, Result};
-use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use {
+    crate::error::{PolymarketError, Result},
+    serde::{Deserialize, Serialize},
+    std::{
+        fs,
+        path::{Path, PathBuf},
+        time::{SystemTime, UNIX_EPOCH},
+    },
+};
 
 /// Generic file-based cache for storing serializable data
 #[derive(Clone)]

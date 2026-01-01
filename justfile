@@ -4,15 +4,15 @@ default:
 
 # Format Rust code
 format:
-    cargo fmt
+    cargo +nightly fmt --all
 
 # Check if code is formatted
 format-check:
-    cargo fmt -- --check
+    cargo +nightly fmt -- --check
 
 # Lint Rust code using clippy
 lint:
-    cargo clippy --all-targets --all-features -- -D warnings
+    cargo clippy --bins --tests --benches --examples --all-features --all-targets -- -D warnings
 
 # Build the project
 build:

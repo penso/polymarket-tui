@@ -3,8 +3,10 @@
 //! This module provides a client for interacting with Polymarket's Data API,
 //! which allows querying user positions, trade history, and portfolio data.
 
-use crate::error::Result;
-use serde::{Deserialize, Serialize};
+use {
+    crate::error::Result,
+    serde::{Deserialize, Serialize},
+};
 
 const DATA_API_BASE: &str = "https://data-api.polymarket.com";
 

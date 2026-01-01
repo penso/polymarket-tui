@@ -1,9 +1,9 @@
 //! Tests for WebSocketMessage enum
 
 use polymarket_tui::websocket::{
+    WebSocketMessage,
     messages::SubscribedMessage,
     types::{ErrorMessage, OrderUpdate, OrderbookUpdate, PriceLevel, PriceUpdate, TradeUpdate},
-    WebSocketMessage,
 };
 
 #[test]
@@ -129,7 +129,7 @@ fn test_websocket_message_deserialization_orderbook() {
         WebSocketMessage::Orderbook(update) => {
             assert_eq!(update.market, "0x123");
             assert_eq!(update.asset_id, "0x456");
-        }
+        },
         _ => panic!("Expected Orderbook variant"),
     }
 }
@@ -151,7 +151,7 @@ fn test_websocket_message_deserialization_trade() {
         WebSocketMessage::Trade(update) => {
             assert_eq!(update.price, "0.55");
             assert_eq!(update.side, "buy");
-        }
+        },
         _ => panic!("Expected Trade variant"),
     }
 }
@@ -174,7 +174,7 @@ fn test_websocket_message_deserialization_order() {
         WebSocketMessage::Order(update) => {
             assert_eq!(update.status, "filled");
             assert_eq!(update.side, "buy");
-        }
+        },
         _ => panic!("Expected Order variant"),
     }
 }
@@ -193,7 +193,7 @@ fn test_websocket_message_deserialization_price() {
     match msg {
         WebSocketMessage::Price(update) => {
             assert_eq!(update.price, "0.75");
-        }
+        },
         _ => panic!("Expected Price variant"),
     }
 }
@@ -211,7 +211,7 @@ fn test_websocket_message_deserialization_error() {
         WebSocketMessage::Error(err) => {
             assert_eq!(err.error, "Invalid request");
             assert_eq!(err.message, Some("Missing field".to_string()));
-        }
+        },
         _ => panic!("Expected Error variant"),
     }
 }
@@ -232,7 +232,7 @@ fn test_websocket_message_deserialization_subscribed() {
                 sub.assets_ids,
                 Some(vec!["token1".to_string(), "token2".to_string()])
             );
-        }
+        },
         _ => panic!("Expected Subscribed variant"),
     }
 }
@@ -246,7 +246,7 @@ fn test_websocket_message_unknown_type() {
 
     let msg: WebSocketMessage = serde_json::from_str(json).expect("Should deserialize as Unknown");
     match msg {
-        WebSocketMessage::Unknown => {}
+        WebSocketMessage::Unknown => {},
         _ => panic!("Expected Unknown variant for unknown type"),
     }
 }
@@ -289,7 +289,7 @@ fn test_round_trip_websocket_message_orderbook() {
         (WebSocketMessage::Orderbook(orig), WebSocketMessage::Orderbook(deser)) => {
             assert_eq!(orig.market, deser.market);
             assert_eq!(orig.asset_id, deser.asset_id);
-        }
+        },
         _ => panic!("Round trip failed"),
     }
 }

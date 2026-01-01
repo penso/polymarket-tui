@@ -21,10 +21,10 @@ fn test_market_deserialization_with_json_string() {
         Some(vec!["token1".to_string(), "token2".to_string()])
     );
     assert_eq!(market.outcomes, vec!["Yes".to_string(), "No".to_string()]);
-    assert_eq!(
-        market.outcome_prices,
-        vec!["0.5".to_string(), "0.5".to_string()]
-    );
+    assert_eq!(market.outcome_prices, vec![
+        "0.5".to_string(),
+        "0.5".to_string()
+    ]);
 }
 
 #[test]

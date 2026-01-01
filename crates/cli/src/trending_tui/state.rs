@@ -1,9 +1,10 @@
 //! State types for the trending TUI
 
-use polymarket_tui::gamma::Event;
-use polymarket_tui::rtds::RTDSMessage;
-use std::collections::HashMap;
-use tokio::task::JoinHandle;
+use {
+    polymarket_tui::{gamma::Event, rtds::RTDSMessage},
+    std::collections::HashMap,
+    tokio::task::JoinHandle,
+};
 
 #[derive(Debug)]
 pub struct Trade {
@@ -213,7 +214,7 @@ impl NavigationState {
     pub fn new() -> Self {
         Self {
             selected_index: 0,
-            focused_panel: FocusedPanel::Header, // Start with Header focused so users can see filter options
+            focused_panel: FocusedPanel::Header, /* Start with Header focused so users can see filter options */
         }
     }
 }

@@ -3,8 +3,10 @@
 //! This module provides a client for interacting with Polymarket's CLOB REST API,
 //! which allows fetching orderbooks, trades, and managing orders.
 
-use crate::error::Result;
-use serde::{Deserialize, Serialize};
+use {
+    crate::error::Result,
+    serde::{Deserialize, Serialize},
+};
 
 const CLOB_API_BASE: &str = "https://clob.polymarket.com";
 
@@ -189,7 +191,7 @@ impl ClobClient {
                     bids: Vec::new(),
                     asks: Vec::new(),
                 })
-            }
+            },
         }
     }
 

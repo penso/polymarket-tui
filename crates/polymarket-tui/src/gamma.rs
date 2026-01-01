@@ -1,6 +1,7 @@
-use crate::cache::FileCache;
-use crate::error::Result;
-use serde::{Deserialize, Deserializer, Serialize};
+use {
+    crate::{cache::FileCache, error::Result},
+    serde::{Deserialize, Deserializer, Serialize},
+};
 
 const GAMMA_API_BASE: &str = "https://gamma-api.polymarket.com";
 
@@ -29,7 +30,7 @@ where
         serde_json::Value::String(s) => {
             // It's a JSON string, parse it
             serde_json::from_str(&s).map(Some).map_err(Error::custom)
-        }
+        },
         serde_json::Value::Array(arr) => {
             // It's already an array, convert it
             Ok(Some(
@@ -43,7 +44,7 @@ where
                     })
                     .collect(),
             ))
-        }
+        },
         _ => Ok(None),
     }
 }
@@ -61,7 +62,7 @@ where
         serde_json::Value::String(s) => {
             // It's a JSON string, parse it
             serde_json::from_str(&s).map_err(Error::custom)
-        }
+        },
         serde_json::Value::Array(arr) => {
             // It's already an array, convert it
             Ok(arr
@@ -74,7 +75,7 @@ where
                     }
                 })
                 .collect())
-        }
+        },
         _ => Ok(vec![]),
     }
 }

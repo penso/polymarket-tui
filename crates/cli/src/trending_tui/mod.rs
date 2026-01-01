@@ -3,24 +3,28 @@
 mod render;
 mod state;
 
-use render::{render, truncate};
-use state::{EventTrades, FocusedPanel, SearchMode};
+use {
+    render::{render, truncate},
+    state::{EventTrades, FocusedPanel, SearchMode},
+};
 
 pub use state::TrendingAppState;
 
-use polymarket_tui::clob::ClobClient;
-use ratatui::{backend::CrosstermBackend, Terminal};
-use std::collections::HashMap;
-use std::io;
-use std::sync::Arc;
-use tokio::sync::Mutex as TokioMutex;
+use {
+    polymarket_tui::clob::ClobClient,
+    ratatui::{Terminal, backend::CrosstermBackend},
+    std::{collections::HashMap, io, sync::Arc},
+    tokio::sync::Mutex as TokioMutex,
+};
 
 pub async fn run_trending_tui(
     mut terminal: Terminal<CrosstermBackend<io::Stdout>>,
     app_state: Arc<TokioMutex<TrendingAppState>>,
 ) -> anyhow::Result<Option<String>> {
-    use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-    use polymarket_tui::{GammaClient, RTDSClient};
+    use {
+        crossterm::event::{self, Event, KeyCode, KeyEventKind},
+        polymarket_tui::{GammaClient, RTDSClient},
+    };
 
     let mut search_debounce: Option<tokio::time::Instant> = None;
     let mut last_selected_event_slug: Option<String> = None;
@@ -68,13 +72,13 @@ pub async fn run_trending_tui(
                                 tracing::info!("Search found {} results", results.len());
                                 let mut app = app_state_clone.lock().await;
                                 app.set_search_results(results, query_clone);
-                            }
+                            },
                             Err(e) => {
                                 tracing::error!("Search failed: {}", e);
                                 let mut app = app_state_clone.lock().await;
                                 app.set_searching(false);
                                 app.search.results.clear();
-                            }
+                            },
                         }
                     });
                 } else {
@@ -106,7 +110,7 @@ pub async fn run_trending_tui(
                                 app.should_quit = true;
                                 break;
                             }
-                        }
+                        },
                         KeyCode::Esc => {
                             if app.is_in_filter_mode() {
                                 app.exit_search_mode();
@@ -114,17 +118,17 @@ pub async fn run_trending_tui(
                                 app.should_quit = true;
                                 break;
                             }
-                        }
+                        },
                         KeyCode::Char('/') => {
                             if !app.is_in_filter_mode() {
                                 app.enter_search_mode();
                             }
-                        }
+                        },
                         KeyCode::Char('f') => {
                             if !app.is_in_filter_mode() {
                                 app.enter_local_filter_mode();
                             }
-                        }
+                        },
                         KeyCode::Char('r') => {
                             // Refresh market prices for currently selected event
                             if !app.is_in_filter_mode() {
@@ -162,14 +166,14 @@ pub async fn run_trending_tui(
                                                                 );
                                                             }
                                                         }
-                                                    }
+                                                    },
                                                     Err(e) => {
                                                         tracing::debug!(
                                                             "Failed to fetch orderbook for asset {}: {}",
                                                             asset_id,
                                                             e
                                                         );
-                                                    }
+                                                    },
                                                 }
                                             }
                                         }
@@ -180,7 +184,7 @@ pub async fn run_trending_tui(
                                     });
                                 }
                             }
-                        }
+                        },
                         KeyCode::Tab => {
                             if !app.is_in_filter_mode() {
                                 // Cycle through panels: Header -> EventsList -> EventDetails -> Markets -> Trades -> Logs -> Header
@@ -193,7 +197,7 @@ pub async fn run_trending_tui(
                                     FocusedPanel::Logs => FocusedPanel::Header,
                                 };
                             }
-                        }
+                        },
                         KeyCode::Left => {
                             if !app.is_in_filter_mode()
                                 && app.navigation.focused_panel == FocusedPanel::Header
@@ -242,17 +246,17 @@ pub async fn run_trending_tui(
                                                 app.pagination.is_fetching_more = false;
                                                 app.navigation.selected_index = 0;
                                                 app.scroll.events_list = 0;
-                                            }
+                                            },
                                             Err(e) => {
                                                 tracing::error!("Failed to fetch events: {}", e);
                                                 let mut app = app_state_clone.lock().await;
                                                 app.pagination.is_fetching_more = false;
-                                            }
+                                            },
                                         }
                                     });
                                 }
                             }
-                        }
+                        },
                         KeyCode::Right => {
                             if !app.is_in_filter_mode()
                                 && app.navigation.focused_panel == FocusedPanel::Header
@@ -301,23 +305,23 @@ pub async fn run_trending_tui(
                                                 app.pagination.is_fetching_more = false;
                                                 app.navigation.selected_index = 0;
                                                 app.scroll.events_list = 0;
-                                            }
+                                            },
                                             Err(e) => {
                                                 tracing::error!("Failed to fetch events: {}", e);
                                                 let mut app = app_state_clone.lock().await;
                                                 app.pagination.is_fetching_more = false;
-                                            }
+                                            },
                                         }
                                     });
                                 }
                             }
-                        }
+                        },
                         KeyCode::Up => {
                             if !app.is_in_filter_mode() {
                                 match app.navigation.focused_panel {
                                     FocusedPanel::Header => {
                                         // Header doesn't scroll, but we can allow it for consistency
-                                    }
+                                    },
                                     FocusedPanel::EventsList => {
                                         app.move_up();
                                         // Fetch market prices when event selection changes
@@ -358,14 +362,22 @@ pub async fn run_trending_tui(
                                                                                 asset_id.clone(),
                                                                                 price,
                                                                             );
-                                                                            tracing::debug!("Fetched price for asset {}: ${:.3}", asset_id, price);
+                                                                            tracing::debug!(
+                                                                                "Fetched price for asset {}: ${:.3}",
+                                                                                asset_id,
+                                                                                price
+                                                                            );
                                                                         }
                                                                     }
-                                                                }
+                                                                },
                                                                 Err(e) => {
                                                                     // Only log as debug to reduce noise - empty orderbooks are common
-                                                                    tracing::debug!("Failed to fetch orderbook for asset {}: {}", asset_id, e);
-                                                                }
+                                                                    tracing::debug!(
+                                                                        "Failed to fetch orderbook for asset {}: {}",
+                                                                        asset_id,
+                                                                        e
+                                                                    );
+                                                                },
                                                             }
                                                         }
                                                     }
@@ -375,36 +387,36 @@ pub async fn run_trending_tui(
                                                 });
                                             }
                                         }
-                                    }
+                                    },
                                     FocusedPanel::EventDetails => {
                                         if app.scroll.event_details > 0 {
                                             app.scroll.event_details -= 1;
                                         }
-                                    }
+                                    },
                                     FocusedPanel::Markets => {
                                         if app.scroll.markets > 0 {
                                             app.scroll.markets -= 1;
                                         }
-                                    }
+                                    },
                                     FocusedPanel::Trades => {
                                         if app.scroll.trades > 0 {
                                             app.scroll.trades -= 1;
                                         }
-                                    }
+                                    },
                                     FocusedPanel::Logs => {
                                         if app.logs.scroll > 0 {
                                             app.logs.scroll -= 1;
                                         }
-                                    }
+                                    },
                                 }
                             }
-                        }
+                        },
                         KeyCode::Down => {
                             if !app.is_in_filter_mode() {
                                 match app.navigation.focused_panel {
                                     FocusedPanel::Header => {
                                         // Header doesn't scroll, but we can allow it for consistency
-                                    }
+                                    },
                                     FocusedPanel::EventsList => {
                                         app.move_down();
                                         // Fetch market prices when event selection changes
@@ -445,14 +457,22 @@ pub async fn run_trending_tui(
                                                                                 asset_id.clone(),
                                                                                 price,
                                                                             );
-                                                                            tracing::debug!("Fetched price for asset {}: ${:.3}", asset_id, price);
+                                                                            tracing::debug!(
+                                                                                "Fetched price for asset {}: ${:.3}",
+                                                                                asset_id,
+                                                                                price
+                                                                            );
                                                                         }
                                                                     }
-                                                                }
+                                                                },
                                                                 Err(e) => {
                                                                     // Only log as debug to reduce noise - empty orderbooks are common
-                                                                    tracing::debug!("Failed to fetch orderbook for asset {}: {}", asset_id, e);
-                                                                }
+                                                                    tracing::debug!(
+                                                                        "Failed to fetch orderbook for asset {}: {}",
+                                                                        asset_id,
+                                                                        e
+                                                                    );
+                                                                },
                                                             }
                                                         }
                                                     }
@@ -514,12 +534,14 @@ pub async fn run_trending_tui(
                                                             app.pagination.current_limit =
                                                                 new_limit;
                                                         } else {
-                                                            tracing::info!("No new events to add (already have all events)");
+                                                            tracing::info!(
+                                                                "No new events to add (already have all events)"
+                                                            );
                                                         }
 
                                                         let mut app = app_state_clone.lock().await;
                                                         app.pagination.is_fetching_more = false;
-                                                    }
+                                                    },
                                                     Err(e) => {
                                                         tracing::error!(
                                                             "Failed to fetch more events: {}",
@@ -527,11 +549,11 @@ pub async fn run_trending_tui(
                                                         );
                                                         let mut app = app_state_clone.lock().await;
                                                         app.pagination.is_fetching_more = false;
-                                                    }
+                                                    },
                                                 }
                                             });
                                         }
-                                    }
+                                    },
                                     FocusedPanel::EventDetails => {
                                         // Calculate actual content height for event details
                                         if let Some(event) = app.selected_event() {
@@ -568,7 +590,7 @@ pub async fn run_trending_tui(
                                                 app.scroll.event_details += 1;
                                             }
                                         }
-                                    }
+                                    },
                                     FocusedPanel::Markets => {
                                         if let Some(event) = app.selected_event() {
                                             let visible_height: usize = 5; // Markets panel height
@@ -578,7 +600,7 @@ pub async fn run_trending_tui(
                                                 app.scroll.markets += 1;
                                             }
                                         }
-                                    }
+                                    },
                                     FocusedPanel::Trades => {
                                         let trades_len = if let Some(event) = app.selected_event() {
                                             app.get_trades(&event.slug).len()
@@ -591,7 +613,7 @@ pub async fn run_trending_tui(
                                         {
                                             app.scroll.trades += 1;
                                         }
-                                    }
+                                    },
                                     FocusedPanel::Logs => {
                                         // Calculate max scroll based on visible height (approximate)
                                         // The render function will clamp it to the exact visible height
@@ -604,10 +626,10 @@ pub async fn run_trending_tui(
                                         if app.logs.scroll < max_scroll {
                                             app.logs.scroll += 1;
                                         }
-                                    }
+                                    },
                                 }
                             }
-                        }
+                        },
                         KeyCode::Backspace => {
                             if app.is_in_filter_mode() {
                                 app.delete_search_char();
@@ -616,7 +638,7 @@ pub async fn run_trending_tui(
                                     search_debounce = Some(tokio::time::Instant::now());
                                 }
                             }
-                        }
+                        },
                         KeyCode::Char(c) => {
                             if app.is_in_filter_mode() {
                                 app.add_search_char(c);
@@ -626,7 +648,7 @@ pub async fn run_trending_tui(
                                 }
                                 // Local filter mode filters immediately (no API call needed)
                             }
-                        }
+                        },
                         KeyCode::Enter => {
                             // Only handle Enter when EventsList panel is focused
                             if app.navigation.focused_panel == FocusedPanel::EventsList {
@@ -701,8 +723,8 @@ pub async fn run_trending_tui(
                                     }
                                 }
                             }
-                        }
-                        _ => {}
+                        },
+                        _ => {},
                     }
                 }
             }

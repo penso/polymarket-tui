@@ -33,8 +33,10 @@ fn test_websocket_client_creation() {
 #[tokio::test]
 async fn test_websocket_connection_with_subscription() {
     // Test that we can connect and send a subscription message
-    use futures_util::{SinkExt, StreamExt};
-    use tokio_tungstenite::{connect_async, tungstenite::Message};
+    use {
+        futures_util::{SinkExt, StreamExt},
+        tokio_tungstenite::{connect_async, tungstenite::Message},
+    };
 
     // Connect to WebSocket
     let (ws_stream, _) =
@@ -45,7 +47,7 @@ async fn test_websocket_connection_with_subscription() {
                 // The actual connection test happens when running the CLI
                 eprintln!("WebSocket connection test skipped: {}", e);
                 return;
-            }
+            },
         };
 
     let (mut write, mut read) = ws_stream.split();
@@ -63,7 +65,7 @@ async fn test_websocket_connection_with_subscription() {
         .is_ok()
     {
         // Try to read a response (with timeout)
-        use tokio::time::{timeout, Duration};
+        use tokio::time::{Duration, timeout};
         if let Ok(Some(Ok(Message::Text(_)))) = timeout(Duration::from_secs(2), read.next()).await {
             // Got a response - connection works!
         }

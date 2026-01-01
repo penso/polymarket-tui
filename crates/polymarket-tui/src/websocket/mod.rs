@@ -7,17 +7,21 @@
 pub mod messages;
 pub mod types;
 
-use anyhow::{Context, Result};
-use futures_util::{SinkExt, StreamExt};
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use {
+    anyhow::{Context, Result},
+    futures_util::{SinkExt, StreamExt},
+    serde::{Deserialize, Serialize},
+    std::collections::HashMap,
+    tokio_tungstenite::{connect_async, tungstenite::Message},
+};
 
 #[cfg(feature = "tracing")]
 use tracing::{error, warn};
 
-pub use messages::{Auth, SubscribedMessage, SubscriptionMessage, UpdateSubscriptionMessage};
-pub use types::{ErrorMessage, OrderUpdate, OrderbookUpdate, PriceLevel, PriceUpdate, TradeUpdate};
+pub use {
+    messages::{Auth, SubscribedMessage, SubscriptionMessage, UpdateSubscriptionMessage},
+    types::{ErrorMessage, OrderUpdate, OrderbookUpdate, PriceLevel, PriceUpdate, TradeUpdate},
+};
 
 const WS_URL: &str = "wss://ws-subscriptions-clob.polymarket.com/ws/market";
 
@@ -107,40 +111,40 @@ impl PolymarketWebSocket {
                                         {
                                             on_update(WebSocketMessage::Orderbook(update));
                                         }
-                                    }
+                                    },
                                     "trade" => {
                                         if let Ok(update) =
                                             serde_json::from_value::<TradeUpdate>(json)
                                         {
                                             on_update(WebSocketMessage::Trade(update));
                                         }
-                                    }
+                                    },
                                     "order" => {
                                         if let Ok(update) =
                                             serde_json::from_value::<OrderUpdate>(json)
                                         {
                                             on_update(WebSocketMessage::Order(update));
                                         }
-                                    }
+                                    },
                                     "price" => {
                                         if let Ok(update) =
                                             serde_json::from_value::<PriceUpdate>(json)
                                         {
                                             on_update(WebSocketMessage::Price(update));
                                         }
-                                    }
+                                    },
                                     _ => {
                                         // Unknown message type, log for debugging
                                         #[cfg(feature = "tracing")]
                                         warn!("Unknown message type: {}", text);
                                         #[cfg(not(feature = "tracing"))]
                                         eprintln!("Unknown message type: {}", text);
-                                    }
+                                    },
                                 }
                             }
                         }
                     }
-                }
+                },
                 Ok(Message::Ping(data)) => {
                     // Respond to ping with pong
                     if let Err(e) = write.send(Message::Pong(data)).await {
@@ -150,18 +154,18 @@ impl PolymarketWebSocket {
                         eprintln!("Failed to send pong: {}", e);
                         break;
                     }
-                }
+                },
                 Ok(Message::Close(_)) => {
                     break;
-                }
+                },
                 Err(e) => {
                     #[cfg(feature = "tracing")]
                     error!("WebSocket error: {}", e);
                     #[cfg(not(feature = "tracing"))]
                     eprintln!("WebSocket error: {}", e);
                     break;
-                }
-                _ => {}
+                },
+                _ => {},
             }
         }
 

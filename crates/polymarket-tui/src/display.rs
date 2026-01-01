@@ -1,8 +1,12 @@
-use crate::gamma::MarketInfo;
-use crate::rtds::RTDSMessage;
-use crate::websocket::{OrderUpdate, OrderbookUpdate, PriceUpdate, TradeUpdate, WebSocketMessage};
-use chrono::DateTime;
-use colored::*;
+use {
+    crate::{
+        gamma::MarketInfo,
+        rtds::RTDSMessage,
+        websocket::{OrderUpdate, OrderbookUpdate, PriceUpdate, TradeUpdate, WebSocketMessage},
+    },
+    chrono::DateTime,
+    colored::*,
+};
 
 pub struct MarketUpdateFormatter;
 
@@ -17,10 +21,10 @@ impl MarketUpdateFormatter {
             WebSocketMessage::Price(update) => Self::format_price(update, market_info),
             WebSocketMessage::Error(err) => {
                 format!("{} {}", "ERROR".red().bold(), err.error.red())
-            }
+            },
             WebSocketMessage::Subscribed(sub) => {
                 format!("{} {}", "✓ SUBSCRIBED".green().bold(), sub.message.green())
-            }
+            },
             WebSocketMessage::Unknown => "Unknown message type".yellow().to_string(),
         }
     }

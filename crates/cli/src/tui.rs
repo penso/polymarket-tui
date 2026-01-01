@@ -347,10 +347,7 @@ pub async fn refresh_market_data(app_state: Arc<TokioMutex<AppState>>) {
     match event_result {
         Ok(Some(event)) => {
             let market_count = event.markets.len();
-            debug!(
-                "✓ Gamma API returned event with {} markets",
-                market_count
-            );
+            debug!("✓ Gamma API returned event with {} markets", market_count);
             let mut app = app_state.lock().await;
             app.event = Some(event);
             app.is_loading = false;

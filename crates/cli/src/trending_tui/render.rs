@@ -218,25 +218,15 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
     // Logs area
     render_logs(f, app, chunks[2]);
 
-    // Footer - show focused panel info
-    let focused_panel_text = match app.navigation.focused_panel {
-        FocusedPanel::Header => "Filter",
-        FocusedPanel::EventsList => "Events List",
-        FocusedPanel::EventDetails => "Event Details",
-        FocusedPanel::Markets => "Markets",
-        FocusedPanel::Trades => "Trades",
-        FocusedPanel::Logs => "Logs",
-    };
+    // Footer - show focused panel info with context-sensitive help
+    let panel_name = app.navigation.focused_panel.name();
+    let panel_help = app.navigation.focused_panel.help_text();
     let footer_text = if app.search.mode == SearchMode::ApiSearch {
-        format!(
-            "Type to search | Esc to exit | Focused: {} | 'q' to quit",
-            focused_panel_text
-        )
+        format!("Type to search | Esc: Cancel | [{}]", panel_name)
+    } else if app.search.mode == SearchMode::LocalFilter {
+        format!("Type to filter | Esc: Cancel | [{}]", panel_name)
     } else {
-        format!(
-            "Press '/' to search | 'r' to refresh prices | Tab to switch panels | Focused: {} | ↑↓ to scroll | Enter to watch/unwatch | 'q' to quit",
-            focused_panel_text
-        )
+        format!("{} | Tab: Switch | q: Quit | [{}]", panel_help, panel_name)
     };
     let footer = Paragraph::new(footer_text)
         .block(Block::default().borders(Borders::ALL))

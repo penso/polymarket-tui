@@ -873,8 +873,12 @@ pub async fn run_trending_tui(
 
                                         let rtds_client = RTDSClient::new()
                                             .with_event_slug(event_slug_clone.clone());
+                                        let event_slug_for_log = event_slug_clone.clone();
+                                        
+                                        tracing::info!("Starting RTDS WebSocket for event: {}", event_slug_clone);
+                                        
                                         let ws_handle = tokio::spawn(async move {
-                                            let _ = rtds_client
+                                            match rtds_client
                                                 .connect_and_listen(move |msg| {
                                                     let app_state = Arc::clone(&app_state_ws);
                                                     let event_slug = event_slug_for_closure.clone();
@@ -887,7 +891,15 @@ pub async fn run_trending_tui(
                                                         }
                                                     });
                                                 })
-                                                .await;
+                                                .await
+                                            {
+                                                Ok(()) => {
+                                                    tracing::info!("RTDS WebSocket connection closed normally for event: {}", event_slug_for_log);
+                                                }
+                                                Err(e) => {
+                                                    tracing::error!("RTDS WebSocket error for event {}: {}", event_slug_for_log, e);
+                                                }
+                                            }
                                         });
 
                                         app.start_watching(event_slug_clone, ws_handle);

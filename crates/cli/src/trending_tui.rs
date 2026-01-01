@@ -1446,6 +1446,14 @@ pub async fn run_trending_tui(
                                             app.trades_scroll += 1;
                                         }
                                     }
+                                    FocusedPanel::Logs => {
+                                        // Logs scroll is handled in render_logs, but we can still increment here
+                                        // The render function will clamp it to valid range
+                                        let max_scroll = app.logs.len().saturating_sub(1);
+                                        if app.log_scroll < max_scroll {
+                                            app.log_scroll += 1;
+                                        }
+                                    }
                                 }
                             }
                         }

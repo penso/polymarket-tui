@@ -15,7 +15,7 @@ name = "polymarket-tui"
 path = "src/main.rs"
 
 [features]
-default = []
+default = ["tui"]
 tui = ["ratatui", "crossterm", "unicode-width"]
 tracing = ["dep:tracing", "dep:tracing-subscriber", "polymarket-api/tracing"]
 

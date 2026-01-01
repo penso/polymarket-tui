@@ -1,4 +1,4 @@
-use polymarket_tui::gamma::{GammaClient, Market};
+use polymarket_api::gamma::{GammaClient, Market};
 
 #[test]
 fn test_market_deserialization_with_json_string() {

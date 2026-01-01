@@ -1,6 +1,6 @@
 use {
     chrono::{DateTime, Utc},
-    polymarket_tui::{GammaClient, gamma::Event, rtds::RTDSMessage},
+    polymarket_api::{GammaClient, gamma::Event, rtds::RTDSMessage},
     ratatui::{
         Frame, Terminal,
         backend::CrosstermBackend,

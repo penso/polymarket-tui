@@ -3,7 +3,7 @@
 use {
     super::state::{EventFilter, FocusedPanel, SearchMode, TrendingAppState},
     chrono::{DateTime, Utc},
-    polymarket_tui::gamma::Event,
+    polymarket_api::gamma::Event,
     ratatui::{
         Frame,
         layout::{Alignment, Constraint, Direction, Layout, Rect},

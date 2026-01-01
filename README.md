@@ -16,7 +16,7 @@ Badge targets `penso/polymarket-tui` based on the configured origin.
 
 ## Workspace
 
-- `crates/polymarket-tui`: Core library with WebSocket client, Gamma API client, and display formatters
+- `crates/polymarket-api`: Core library with WebSocket client, Gamma API client, and display formatters
 - `crates/cli`: Binary application for real-time monitoring
 
 ## Usage
@@ -36,7 +36,7 @@ The CLI will:
 ### Use the Library
 
 ```rust
-use polymarket_tui::{GammaClient, PolymarketWebSocket, MarketUpdateFormatter};
+use polymarket_api::{GammaClient, PolymarketWebSocket, MarketUpdateFormatter};
 
 // Fetch active markets
 let gamma = GammaClient::new();

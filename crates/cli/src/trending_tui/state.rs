@@ -1,7 +1,7 @@
 //! State types for the trending TUI
 
 use {
-    polymarket_tui::{gamma::Event, rtds::RTDSMessage},
+    polymarket_api::{gamma::Event, rtds::RTDSMessage},
     std::collections::HashMap,
     tokio::task::JoinHandle,
 };

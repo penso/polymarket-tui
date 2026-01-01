@@ -1,6 +1,6 @@
 //! Tests for WebSocket data update types
 
-use polymarket_tui::websocket::types::{
+use polymarket_api::websocket::types::{
     ErrorMessage, OrderUpdate, OrderbookUpdate, PriceLevel, PriceUpdate, TradeUpdate,
 };
 

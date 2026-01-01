@@ -1,5 +1,5 @@
 [package]
-name = "polymarket-tui"
+name = "polymarket-api"
 version = "0.1.0"
 edition = "2024"
 

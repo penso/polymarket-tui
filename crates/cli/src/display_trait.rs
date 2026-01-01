@@ -1,4 +1,4 @@
-use polymarket_tui::rtds::RTDSMessage;
+use polymarket_api::rtds::RTDSMessage;
 
 /// Trait for displaying RTDS trade messages
 pub trait TradeDisplay: Send + Sync {
@@ -11,7 +11,7 @@ pub struct SimpleDisplay;
 
 impl TradeDisplay for SimpleDisplay {
     fn display_trade(&mut self, msg: &RTDSMessage) -> anyhow::Result<()> {
-        use polymarket_tui::RTDSFormatter;
+        use polymarket_api::RTDSFormatter;
 
         let formatted = RTDSFormatter::format_message(msg);
         print!("{}", formatted);

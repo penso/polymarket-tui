@@ -25,7 +25,7 @@ just format
 
 This is a Rust workspace with two crates:
 
-- **`crates/polymarket-tui`**: Core library providing:
+- **`crates/polymarket-api`**: Core library providing:
   - `GammaClient` - Polymarket's Gamma API for market discovery
   - `ClobClient` - CLOB API for orderbook and trades
   - `DataClient` - Data API for trade history
@@ -42,8 +42,8 @@ This is a Rust workspace with two crates:
 ## Key Patterns
 
 - TUI features are behind `--features tui` flag (uses ratatui/crossterm)
-- The `tracing` feature on polymarket-tui enables logging integration
-- File caching for market info uses `POLYMARKET_CACHE_DIR` env var or `~/.cache/polymarket-tui/`
+- The `tracing` feature on polymarket-api enables logging integration
+- File caching for market info uses `POLYMARKET_CACHE_DIR` env var or `~/.cache/polymarket-api/`
 
 ## Git Workflow
 

@@ -11,7 +11,7 @@ use {
 pub use state::TrendingAppState;
 
 use {
-    polymarket_tui::clob::ClobClient,
+    polymarket_api::clob::ClobClient,
     ratatui::{Terminal, backend::CrosstermBackend},
     std::{collections::HashMap, io, sync::Arc},
     tokio::sync::Mutex as TokioMutex,
@@ -23,7 +23,7 @@ pub async fn run_trending_tui(
 ) -> anyhow::Result<Option<String>> {
     use {
         crossterm::event::{self, Event, KeyCode, KeyEventKind},
-        polymarket_tui::{GammaClient, RTDSClient},
+        polymarket_api::{GammaClient, RTDSClient},
     };
 
     let mut search_debounce: Option<tokio::time::Instant> = None;

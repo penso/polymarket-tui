@@ -1,6 +1,7 @@
 //! TUI for browsing trending events with live trade monitoring
 
 use chrono::{DateTime, Utc};
+use polymarket_bot::clob::ClobClient;
 use polymarket_bot::gamma::Event;
 use polymarket_bot::rtds::RTDSMessage;
 use ratatui::{
@@ -261,6 +262,7 @@ pub struct TrendingAppState {
     pub navigation: NavigationState,
     pub trades: TradesState,
     pub event_filter: EventFilter, // Current filter (Trending, Breaking, New)
+    pub market_prices: HashMap<String, f64>, // asset_id -> current price from API
 }
 
 impl TrendingAppState {
@@ -284,6 +286,7 @@ impl TrendingAppState {
             navigation: NavigationState::new(),
             trades: TradesState::new(),
             event_filter,
+            market_prices: HashMap::new(),
         }
     }
 
@@ -1333,16 +1336,33 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
                 .map(|v| format!(" ${:.2}", v))
                 .unwrap_or_default();
 
-            // Build outcome strings with prices and percentages
+            // Build outcome strings with prices and percentages from API
             let mut outcome_strings = Vec::new();
             for (idx, outcome) in market.outcomes.iter().enumerate() {
-                let price_str = market
-                    .outcome_prices
-                    .get(idx)
-                    .and_then(|p| p.parse::<f64>().ok())
-                    .map(|price| {
-                        let percent = price * 100.0;
-                        format!("${:.3} ({:.1}%)", price, percent)
+                // Try to get price from API-fetched market_prices first
+                let price = if let Some(ref token_ids) = market.clob_token_ids {
+                    token_ids
+                        .get(idx)
+                        .and_then(|asset_id| app.market_prices.get(asset_id).copied())
+                        .or_else(|| {
+                            // Fallback to outcome_prices if API price not available
+                            market
+                                .outcome_prices
+                                .get(idx)
+                                .and_then(|p| p.parse::<f64>().ok())
+                        })
+                } else {
+                    // Fallback to outcome_prices if no token IDs
+                    market
+                        .outcome_prices
+                        .get(idx)
+                        .and_then(|p| p.parse::<f64>().ok())
+                };
+
+                let price_str = price
+                    .map(|p| {
+                        let percent = p * 100.0;
+                        format!("${:.3} ({:.1}%)", p, percent)
                     })
                     .unwrap_or_else(|| "N/A".to_string());
 
@@ -1584,6 +1604,7 @@ pub async fn run_trending_tui(
     use polymarket_bot::{GammaClient, RTDSClient};
 
     let mut search_debounce: Option<tokio::time::Instant> = None;
+    let mut last_selected_event_slug: Option<String> = None;
 
     loop {
         // Handle search debouncing and API calls
@@ -1824,6 +1845,45 @@ pub async fn run_trending_tui(
                                     }
                                     FocusedPanel::EventsList => {
                                         app.move_up();
+                                        // Fetch market prices when event selection changes
+                                        if let Some(event) = app.selected_event() {
+                                            let current_slug = event.slug.clone();
+                                            if last_selected_event_slug.as_ref() != Some(&current_slug) {
+                                                last_selected_event_slug = Some(current_slug);
+                                                let app_state_clone = Arc::clone(&app_state);
+                                                let clob_client = ClobClient::new();
+                                                let markets_clone: Vec<_> = event.markets.iter().map(|m| {
+                                                    m.clob_token_ids.clone()
+                                                }).collect();
+                                                
+                                                tokio::spawn(async move {
+                                                    let mut prices = HashMap::new();
+                                                    for token_ids in markets_clone {
+                                                        if let Some(ref token_ids) = token_ids {
+                                                            for asset_id in token_ids {
+                                                                match clob_client.get_orderbook_by_asset(asset_id).await {
+                                                                    Ok(orderbook) => {
+                                                                        // Get best ask price (price to buy)
+                                                                        if let Some(best_ask) = orderbook.asks.first() {
+                                                                            if let Ok(price) = best_ask.price.parse::<f64>() {
+                                                                                prices.insert(asset_id.clone(), price);
+                                                                                tracing::info!("Fetched price for asset {}: ${:.3}", asset_id, price);
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    Err(e) => {
+                                                                        tracing::warn!("Failed to fetch orderbook for asset {}: {}", asset_id, e);
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    
+                                                    let mut app = app_state_clone.lock().await;
+                                                    app.market_prices.extend(prices);
+                                                });
+                                            }
+                                        }
                                     }
                                     FocusedPanel::EventDetails => {
                                         if app.scroll.event_details > 0 {
@@ -1856,6 +1916,45 @@ pub async fn run_trending_tui(
                                     }
                                     FocusedPanel::EventsList => {
                                         app.move_down();
+                                        // Fetch market prices when event selection changes
+                                        if let Some(event) = app.selected_event() {
+                                            let current_slug = event.slug.clone();
+                                            if last_selected_event_slug.as_ref() != Some(&current_slug) {
+                                                last_selected_event_slug = Some(current_slug);
+                                                let app_state_clone = Arc::clone(&app_state);
+                                                let clob_client = ClobClient::new();
+                                                let markets_clone: Vec<_> = event.markets.iter().map(|m| {
+                                                    m.clob_token_ids.clone()
+                                                }).collect();
+                                                
+                                                tokio::spawn(async move {
+                                                    let mut prices = HashMap::new();
+                                                    for token_ids in markets_clone {
+                                                        if let Some(ref token_ids) = token_ids {
+                                                            for asset_id in token_ids {
+                                                                match clob_client.get_orderbook_by_asset(asset_id).await {
+                                                                    Ok(orderbook) => {
+                                                                        // Get best ask price (price to buy)
+                                                                        if let Some(best_ask) = orderbook.asks.first() {
+                                                                            if let Ok(price) = best_ask.price.parse::<f64>() {
+                                                                                prices.insert(asset_id.clone(), price);
+                                                                                tracing::info!("Fetched price for asset {}: ${:.3}", asset_id, price);
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    Err(e) => {
+                                                                        tracing::warn!("Failed to fetch orderbook for asset {}: {}", asset_id, e);
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    
+                                                    let mut app = app_state_clone.lock().await;
+                                                    app.market_prices.extend(prices);
+                                                });
+                                            }
+                                        }
                                         // Check if we need to fetch more events (infinite scroll)
                                         if app.should_fetch_more() {
                                             let app_state_clone = Arc::clone(&app_state);

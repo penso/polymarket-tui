@@ -672,10 +672,18 @@ fn render_event_details(
         Span::styled("Estimated End: ", Style::default().fg(Color::Yellow).bold()),
         Span::styled(end_date_str, Style::default().fg(Color::Magenta)),
     ]));
+    // Format volume in short form
+    let volume_str = if total_volume >= 1_000_000.0 {
+        format!("${:.1}M", total_volume / 1_000_000.0)
+    } else if total_volume >= 1_000.0 {
+        format!("${:.1}K", total_volume / 1_000.0)
+    } else {
+        format!("${:.0}", total_volume)
+    };
     lines.push(Line::from(vec![
         Span::styled("Total Volume: ", Style::default().fg(Color::Yellow).bold()),
         Span::styled(
-            format!("${:.2}", total_volume),
+            volume_str,
             Style::default()
                 .fg(Color::Green)
                 .add_modifier(Modifier::BOLD),

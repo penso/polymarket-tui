@@ -761,12 +761,17 @@ pub async fn run_trending_tui(
                     // Spawn the search task with tracing context
                     use tracing::Instrument;
                     let query_for_span = query_clone.clone();
-                    
-                    // Create a span for this search task and enter it briefly
-                    // This ensures the span is registered with the subscriber
-                    let search_span = tracing::info_span!("search", query = %query_for_span);
-                    let _enter = search_span.enter(); // Enter to register with subscriber
-                    drop(_enter); // Drop immediately - .instrument() will re-enter it
+
+                    // Create a span for this search task as a child of the current span
+                    // This ensures proper context inheritance
+                    let current_span = tracing::Span::current();
+                    let search_span = if current_span.is_none() {
+                        // No current span, create a root span
+                        tracing::info_span!("search", query = %query_for_span)
+                    } else {
+                        // Create as child of current span
+                        tracing::info_span!(parent: &current_span, "search", query = %query_for_span)
+                    };
 
                     // Spawn the task with the span attached via .instrument()
                     // This ensures the tracing context is properly inherited

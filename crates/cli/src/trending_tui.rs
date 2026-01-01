@@ -577,14 +577,14 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
         } else {
             Style::default()
         };
-        
+
         // Build filter options line with selection highlighting
         let filter_options = vec![
             (EventFilter::Trending, "Trending"),
             (EventFilter::Breaking, "Breaking"),
             (EventFilter::New, "New"),
         ];
-        
+
         let mut filter_spans = Vec::new();
         for (filter, label) in &filter_options {
             let is_selected = *filter == app.event_filter;
@@ -601,13 +601,13 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
             } else {
                 Style::default().fg(Color::Gray)
             };
-            
+
             if !filter_spans.is_empty() {
                 filter_spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
             }
             filter_spans.push(Span::styled(*label, style));
         }
-        
+
         let header_text = format!(
             "Showing {}/{} events | Watching: {} | Press Esc to exit search",
             filtered_count,
@@ -627,7 +627,7 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
                 } else {
                     "Polymarket"
                 })
-                .border_style(header_block_style)
+                .border_style(header_block_style),
         )
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: true });
@@ -665,14 +665,14 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
         } else {
             Style::default()
         };
-        
+
         // Build filter options line with selection highlighting
         let filter_options = vec![
             (EventFilter::Trending, "Trending"),
             (EventFilter::Breaking, "Breaking"),
             (EventFilter::New, "New"),
         ];
-        
+
         let mut filter_spans = Vec::new();
         for (filter, label) in &filter_options {
             let is_selected = *filter == app.event_filter;
@@ -689,13 +689,13 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
             } else {
                 Style::default().fg(Color::Gray)
             };
-            
+
             if !filter_spans.is_empty() {
                 filter_spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
             }
             filter_spans.push(Span::styled(*label, style));
         }
-        
+
         let header_text = format!(
             "Showing {} events | Watching: {} | Press '/' for API search, 'f' for local filter | Use ↑↓ to navigate | Enter to watch/unwatch | 'q' to quit",
             filtered_count,
@@ -714,7 +714,7 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
                 } else {
                     "Polymarket"
                 })
-                .border_style(header_block_style)
+                .border_style(header_block_style),
         )
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: true });
@@ -901,11 +901,19 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         let trades = app.get_trades(event_slug);
         let is_watching = app.is_watching(event_slug);
 
+        // Calculate dynamic height for event details based on content
+        // Base lines: Title, Slug, Event ID, Status, Estimated End, Total Volume, Tags (if present)
+        let mut event_details_lines = 6; // Base lines: Title, Slug, Event ID, Status, Estimated End, Total Volume
+        if !event.tags.is_empty() {
+            event_details_lines += 1; // Tags line
+        }
+        let event_details_height = event_details_lines + 2; // +2 for borders
+        
         // Split area into event details, markets, and trades
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(12), // Event details (compact)
+                Constraint::Length(event_details_height as u16), // Event details (dynamic height)
                 Constraint::Length(7),  // Markets panel (5 lines + 2 for borders)
                 Constraint::Min(0),     // Trades table
             ])
@@ -1119,14 +1127,6 @@ fn render_event_details(
             Style::default().fg(Color::White),
         ),
     ])];
-
-    // Add image thumbnail if available
-    if let Some(ref image_url) = event.image {
-        lines.push(Line::from(vec![
-            Span::styled("Image: ", Style::default().fg(Color::Yellow).bold()),
-            Span::styled(truncate(image_url, 50), Style::default().fg(Color::Blue)),
-        ]));
-    }
 
     lines.push(Line::from(vec![
         Span::styled("Slug: ", Style::default().fg(Color::Yellow).bold()),
@@ -1610,35 +1610,48 @@ pub async fn run_trending_tui(
                             }
                         }
                         KeyCode::Left => {
-                            if !app.is_in_filter_mode() && app.navigation.focused_panel == FocusedPanel::Header {
+                            if !app.is_in_filter_mode()
+                                && app.navigation.focused_panel == FocusedPanel::Header
+                            {
                                 // Switch to previous filter
                                 let old_filter = app.event_filter;
                                 app.event_filter = app.event_filter.prev();
-                                
+
                                 // If filter changed, trigger refetch
                                 if old_filter != app.event_filter {
                                     // Clear search results when filter changes
                                     app.search.results.clear();
                                     app.search.last_searched_query.clear();
-                                    
+
                                     let app_state_clone = Arc::clone(&app_state);
                                     let gamma_client_clone = GammaClient::new();
                                     let order_by = app.event_filter.order_by().to_string();
                                     let ascending = false; // Always descending for these views
                                     let limit = app.pagination.current_limit;
-                                    
+
                                     app.pagination.order_by = order_by.clone();
                                     app.pagination.is_fetching_more = true;
-                                    
-                                    tracing::info!("Switching to {} filter, fetching events...", app.event_filter.label());
-                                    
+
+                                    tracing::info!(
+                                        "Switching to {} filter, fetching events...",
+                                        app.event_filter.label()
+                                    );
+
                                     tokio::spawn(async move {
                                         match gamma_client_clone
-                                            .get_trending_events(Some(&order_by), Some(ascending), Some(limit))
+                                            .get_trending_events(
+                                                Some(&order_by),
+                                                Some(ascending),
+                                                Some(limit),
+                                            )
                                             .await
                                         {
                                             Ok(new_events) => {
-                                                tracing::info!("Fetched {} events for {} filter", new_events.len(), order_by);
+                                                tracing::info!(
+                                                    "Fetched {} events for {} filter",
+                                                    new_events.len(),
+                                                    order_by
+                                                );
                                                 let mut app = app_state_clone.lock().await;
                                                 app.events = new_events;
                                                 app.pagination.is_fetching_more = false;
@@ -1656,35 +1669,48 @@ pub async fn run_trending_tui(
                             }
                         }
                         KeyCode::Right => {
-                            if !app.is_in_filter_mode() && app.navigation.focused_panel == FocusedPanel::Header {
+                            if !app.is_in_filter_mode()
+                                && app.navigation.focused_panel == FocusedPanel::Header
+                            {
                                 // Switch to next filter
                                 let old_filter = app.event_filter;
                                 app.event_filter = app.event_filter.next();
-                                
+
                                 // If filter changed, trigger refetch
                                 if old_filter != app.event_filter {
                                     // Clear search results when filter changes
                                     app.search.results.clear();
                                     app.search.last_searched_query.clear();
-                                    
+
                                     let app_state_clone = Arc::clone(&app_state);
                                     let gamma_client_clone = GammaClient::new();
                                     let order_by = app.event_filter.order_by().to_string();
                                     let ascending = false; // Always descending for these views
                                     let limit = app.pagination.current_limit;
-                                    
+
                                     app.pagination.order_by = order_by.clone();
                                     app.pagination.is_fetching_more = true;
-                                    
-                                    tracing::info!("Switching to {} filter, fetching events...", app.event_filter.label());
-                                    
+
+                                    tracing::info!(
+                                        "Switching to {} filter, fetching events...",
+                                        app.event_filter.label()
+                                    );
+
                                     tokio::spawn(async move {
                                         match gamma_client_clone
-                                            .get_trending_events(Some(&order_by), Some(ascending), Some(limit))
+                                            .get_trending_events(
+                                                Some(&order_by),
+                                                Some(ascending),
+                                                Some(limit),
+                                            )
                                             .await
                                         {
                                             Ok(new_events) => {
-                                                tracing::info!("Fetched {} events for {} filter", new_events.len(), order_by);
+                                                tracing::info!(
+                                                    "Fetched {} events for {} filter",
+                                                    new_events.len(),
+                                                    order_by
+                                                );
                                                 let mut app = app_state_clone.lock().await;
                                                 app.events = new_events;
                                                 app.pagination.is_fetching_more = false;

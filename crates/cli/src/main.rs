@@ -763,13 +763,13 @@ async fn run_yield(min_prob: f64, limit: usize, min_volume: f64) -> Result<()> {
 
     // Structure to hold yield opportunities
     struct YieldOpportunity {
-        question: String,
-        short_name: Option<String>,
+        market_name: String,
         outcome: String,
         price: f64,
         est_return: f64,
         volume: f64,
-        slug: Option<String>,
+        event_slug: String,
+        event_title: String,
     }
 
     let mut opportunities: Vec<YieldOpportunity> = Vec::new();
@@ -779,6 +779,12 @@ async fn run_yield(min_prob: f64, limit: usize, min_volume: f64) -> Result<()> {
         if market.closed {
             continue;
         }
+
+        // Skip markets without event info
+        let event = match market.events.first() {
+            Some(e) => e,
+            None => continue,
+        };
 
         // Check volume threshold (use 24hr volume as it's more reliably populated)
         let volume = market.volume_24hr.unwrap_or(0.0);
@@ -798,18 +804,22 @@ async fn run_yield(min_prob: f64, limit: usize, min_volume: f64) -> Result<()> {
                     .unwrap_or_else(|| format!("Outcome {}", i));
                 let est_return = (1.0 - price) * 100.0; // Return as percentage
 
+                // Use short name if available, otherwise market question
+                let market_name = market
+                    .group_item_title
+                    .as_ref()
+                    .filter(|s| !s.is_empty())
+                    .cloned()
+                    .unwrap_or_else(|| market.question.clone());
+
                 opportunities.push(YieldOpportunity {
-                    question: market.question.clone(),
-                    short_name: market
-                        .group_item_title
-                        .as_ref()
-                        .filter(|s| !s.is_empty())
-                        .cloned(),
+                    market_name,
                     outcome,
                     price,
                     est_return,
                     volume,
-                    slug: market.slug.clone(),
+                    event_slug: event.slug.clone(),
+                    event_title: event.title.clone(),
                 });
             }
         }
@@ -832,37 +842,38 @@ async fn run_yield(min_prob: f64, limit: usize, min_volume: f64) -> Result<()> {
         opportunities.len()
     );
 
-    // Print header
-    println!(
-        "{:<40} {:>6} {:>8} {:>8} {:>10}   URL",
-        "Market", "Out", "Price", "Return", "Volume"
-    );
-    println!("{}", "─".repeat(120));
+    // Group by event for display
+    let mut current_event_slug = String::new();
 
     for opp in &opportunities {
-        // Use short name if available, otherwise truncate question
-        let display_name = opp.short_name.as_deref().unwrap_or(&opp.question);
-        let truncated_name: String = if display_name.len() > 38 {
-            format!("{}…", &display_name[..37])
+        // Print event header when event changes
+        if opp.event_slug != current_event_slug {
+            current_event_slug = opp.event_slug.clone();
+            let url = format!("https://polymarket.com/event/{}", opp.event_slug);
+            println!("\n📊 {} ", opp.event_title);
+            println!("   {}", url);
+            println!(
+                "   {:<40} {:>6} {:>8} {:>8} {:>10}",
+                "Market", "Out", "Price", "Return", "Volume"
+            );
+            println!("   {}", "─".repeat(80));
+        }
+
+        let truncated_name: String = if opp.market_name.len() > 38 {
+            format!("{}…", &opp.market_name[..37])
         } else {
-            display_name.to_string()
+            opp.market_name.clone()
         };
 
         let return_str = format!("{:.2}%", opp.est_return);
-        let url = opp
-            .slug
-            .as_ref()
-            .map(|s| format!("https://polymarket.com/event/{}", s))
-            .unwrap_or_default();
 
         println!(
-            "{:<40} {:>6} {:>7.1}¢ {:>8} {:>9.0}$   {}",
+            "   {:<40} {:>6} {:>7.1}¢ {:>8} {:>9.0}$",
             truncated_name,
             opp.outcome,
             opp.price * 100.0,
             return_str,
             opp.volume,
-            url,
         );
     }
 

@@ -182,6 +182,17 @@ pub struct Market {
     /// Market slug for URL construction
     #[serde(default)]
     pub slug: Option<String>,
+    /// Events this market belongs to (for getting event slug)
+    #[serde(default)]
+    pub events: Vec<MarketEventRef>,
+}
+
+/// Lightweight event reference embedded in market responses
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarketEventRef {
+    pub id: String,
+    pub slug: String,
+    pub title: String,
 }
 
 pub struct GammaClient {

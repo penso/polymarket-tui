@@ -202,11 +202,8 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
             .divider(" ");
         f.render_widget(tabs, header_chunks[0]);
 
-        // Info block
-        let header_text = format!(
-            "🔥 {} events | Watching: {} | /: Search | f: Filter | ←→: Tabs | q: Quit",
-            filtered_count, watched_count
-        );
+        // Info block - status only, shortcuts are in the footer
+        let header_text = format!("🔥 {} events | Watching: {}", filtered_count, watched_count);
         let info = Paragraph::new(header_text)
             .block(
                 Block::default()

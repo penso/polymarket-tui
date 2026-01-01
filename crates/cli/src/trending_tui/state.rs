@@ -72,7 +72,7 @@ pub enum FocusedPanel {
 }
 
 /// Event filter type for different views
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EventFilter {
     Trending, // Order by volume24hr (default)
     Breaking, // Order by startTime
@@ -267,6 +267,7 @@ pub struct TrendingAppState {
     pub popup: Option<PopupType>,  // Currently active popup/modal
     pub trades_table_state: TableState, // State for trades table selection
     pub loading_progress: f64,     // Loading progress (0.0 to 1.0) for LineGauge
+    pub events_cache: HashMap<EventFilter, Vec<Event>>, // Cache for each filter tab
 }
 
 impl TrendingAppState {
@@ -280,6 +281,9 @@ impl TrendingAppState {
         } else {
             EventFilter::Trending
         };
+        // Initialize cache with the initial events for the current filter
+        let mut events_cache = HashMap::new();
+        events_cache.insert(event_filter, events.clone());
         Self {
             events,
             should_quit: false,
@@ -296,6 +300,7 @@ impl TrendingAppState {
             popup: None,
             trades_table_state: TableState::default(),
             loading_progress: 0.0,
+            events_cache,
         }
     }
 

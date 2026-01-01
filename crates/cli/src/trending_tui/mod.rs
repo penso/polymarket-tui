@@ -54,7 +54,10 @@ macro_rules! log_warn {
 }
 
 use {
-    polymarket_api::clob::{BatchTokenRequest, ClobClient, Side},
+    polymarket_api::{
+        GammaClient,
+        clob::{BatchTokenRequest, ClobClient, Side},
+    },
     ratatui::{Terminal, backend::CrosstermBackend},
     std::{collections::HashMap, io, sync::Arc},
     tokio::sync::Mutex as TokioMutex,
@@ -162,6 +165,80 @@ fn get_panel_at_position(
     } else {
         None
     }
+}
+
+/// Switch to a new filter tab, using cache if available.
+/// Returns `Some((order_by, limit))` if API fetch is needed, `None` if cache was used.
+fn switch_filter_tab(
+    app: &mut TrendingAppState,
+    new_filter: EventFilter,
+) -> Option<(String, usize)> {
+    if new_filter == app.event_filter {
+        return None;
+    }
+
+    app.event_filter = new_filter;
+    app.search.results.clear();
+    app.search.last_searched_query.clear();
+    app.navigation.selected_index = 0;
+    app.scroll.events_list = 0;
+    app.pagination.order_by = new_filter.order_by().to_string();
+    app.pagination.ascending = false;
+
+    // Check cache first
+    if let Some(cached_events) = app.events_cache.get(&new_filter) {
+        log_info!(
+            "Using cached {} events for {} filter",
+            cached_events.len(),
+            new_filter.label()
+        );
+        app.events = cached_events.clone();
+        None
+    } else {
+        // Need to fetch from API
+        app.pagination.is_fetching_more = true;
+        log_info!(
+            "Switching to {} filter, fetching events...",
+            new_filter.label()
+        );
+        Some((new_filter.order_by().to_string(), app.pagination.current_limit))
+    }
+}
+
+/// Spawn async task to fetch events for a filter tab
+fn spawn_filter_fetch(
+    app_state: Arc<TokioMutex<TrendingAppState>>,
+    order_by: String,
+    limit: usize,
+) {
+    let gamma_client = GammaClient::new();
+
+    tokio::spawn(async move {
+        match gamma_client
+            .get_trending_events(Some(&order_by), Some(false), Some(limit))
+            .await
+        {
+            Ok(new_events) => {
+                log_info!(
+                    "Fetched {} events for {} filter",
+                    new_events.len(),
+                    order_by
+                );
+                let mut app = app_state.lock().await;
+                let filter = app.event_filter;
+                app.events_cache.insert(filter, new_events.clone());
+                app.events = new_events;
+                app.pagination.is_fetching_more = false;
+                app.navigation.selected_index = 0;
+                app.scroll.events_list = 0;
+            },
+            Err(e) => {
+                log_error!("Failed to fetch events: {}", e);
+                let mut app = app_state.lock().await;
+                app.pagination.is_fetching_more = false;
+            },
+        }
+    });
 }
 
 /// Fetch trade count for an event's markets using authenticated CLOB API
@@ -305,6 +382,52 @@ pub async fn run_trending_tui(
         }
     }
 
+    // Preload data for all filter tabs (Trending, Breaking, New)
+    {
+        let app = app_state.lock().await;
+        let current_filter = app.event_filter;
+        let limit = app.pagination.current_limit;
+
+        // Preload the two filters that aren't currently loaded
+        let filters_to_preload: Vec<EventFilter> = [
+            EventFilter::Trending,
+            EventFilter::Breaking,
+            EventFilter::New,
+        ]
+        .into_iter()
+        .filter(|f| *f != current_filter)
+        .collect();
+
+        for filter in filters_to_preload {
+            let app_state_clone = Arc::clone(&app_state);
+            let gamma_client = GammaClient::new();
+            let order_by = filter.order_by().to_string();
+
+            tokio::spawn(async move {
+                match gamma_client
+                    .get_trending_events(Some(&order_by), Some(false), Some(limit))
+                    .await
+                {
+                    Ok(events) => {
+                        let mut app = app_state_clone.lock().await;
+                        // Only cache if not already cached (in case user switched tabs quickly)
+                        app.events_cache.entry(filter).or_insert_with(|| {
+                            log_info!(
+                                "Preloaded {} events for {} filter",
+                                events.len(),
+                                filter.label()
+                            );
+                            events
+                        });
+                    },
+                    Err(e) => {
+                        log_error!("Failed to preload {} filter: {}", filter.label(), e);
+                    },
+                }
+            });
+        }
+    }
+
     loop {
         // Handle search debouncing and API calls
         // Check debounce timer and trigger search if needed
@@ -413,28 +536,8 @@ pub async fn run_trending_tui(
                     // Check for tab clicks first (tabs are on the first line)
                     if let Some(new_filter) = render::get_clicked_tab(mouse.column, mouse.row, size)
                     {
-                        if new_filter != app.event_filter {
-                            app.event_filter = new_filter;
-                            app.pagination.order_by = new_filter.order_by().to_string();
-                            app.pagination.ascending = false;
-                            app.navigation.selected_index = 0;
-                            app.scroll.events_list = 0;
-
-                            // Trigger refresh with new filter
-                            let app_state_clone = Arc::clone(&app_state);
-                            let gamma_client = GammaClient::new();
-                            let order_by = new_filter.order_by().to_string();
-
-                            tokio::spawn(async move {
-                                if let Ok(events) = gamma_client
-                                    .get_trending_events(Some(&order_by), Some(false), Some(150))
-                                    .await
-                                {
-                                    let mut app = app_state_clone.lock().await;
-                                    app.events = events;
-                                    app.pagination.current_limit = app.events.len();
-                                }
-                            });
+                        if let Some((order_by, limit)) = switch_filter_tab(&mut app, new_filter) {
+                            spawn_filter_fetch(Arc::clone(&app_state), order_by, limit);
                         }
                         continue;
                     }
@@ -753,9 +856,10 @@ pub async fn run_trending_tui(
                         if app.is_in_filter_mode() {
                             // Do nothing in filter mode
                         } else if app.navigation.focused_panel == FocusedPanel::EventsList {
-                            // Refresh events list
-                            let order_by = app.event_filter.order_by().to_string();
-                            let ascending = app.event_filter == EventFilter::Breaking;
+                            // Refresh events list and update cache
+                            let current_filter = app.event_filter;
+                            let order_by = current_filter.order_by().to_string();
+                            let ascending = current_filter == EventFilter::Breaking;
                             let limit = app.pagination.current_limit;
                             let app_state_clone = Arc::clone(&app_state);
                             let gamma_client = GammaClient::new();
@@ -773,6 +877,9 @@ pub async fn run_trending_tui(
                                 {
                                     Ok(new_events) => {
                                         let mut app = app_state_clone.lock().await;
+                                        // Update cache for current filter
+                                        app.events_cache
+                                            .insert(current_filter, new_events.clone());
                                         app.events = new_events;
                                         log_info!("Events refreshed ({} events)", app.events.len());
                                     },
@@ -836,58 +943,10 @@ pub async fn run_trending_tui(
                         if !app.is_in_filter_mode()
                             && app.navigation.focused_panel == FocusedPanel::Header
                         {
-                            // Switch to previous filter
-                            let old_filter = app.event_filter;
-                            app.event_filter = app.event_filter.prev();
-
-                            // If filter changed, trigger refetch
-                            if old_filter != app.event_filter {
-                                // Clear search results when filter changes
-                                app.search.results.clear();
-                                app.search.last_searched_query.clear();
-
-                                let app_state_clone = Arc::clone(&app_state);
-                                let gamma_client_clone = GammaClient::new();
-                                let order_by = app.event_filter.order_by().to_string();
-                                let ascending = false; // Always descending for these views
-                                let limit = app.pagination.current_limit;
-
-                                app.pagination.order_by = order_by.clone();
-                                app.pagination.is_fetching_more = true;
-
-                                log_info!(
-                                    "Switching to {} filter, fetching events...",
-                                    app.event_filter.label()
-                                );
-
-                                tokio::spawn(async move {
-                                    match gamma_client_clone
-                                        .get_trending_events(
-                                            Some(&order_by),
-                                            Some(ascending),
-                                            Some(limit),
-                                        )
-                                        .await
-                                    {
-                                        Ok(new_events) => {
-                                            log_info!(
-                                                "Fetched {} events for {} filter",
-                                                new_events.len(),
-                                                order_by
-                                            );
-                                            let mut app = app_state_clone.lock().await;
-                                            app.events = new_events;
-                                            app.pagination.is_fetching_more = false;
-                                            app.navigation.selected_index = 0;
-                                            app.scroll.events_list = 0;
-                                        },
-                                        Err(_e) => {
-                                            log_error!("Failed to fetch events: {}", _e);
-                                            let mut app = app_state_clone.lock().await;
-                                            app.pagination.is_fetching_more = false;
-                                        },
-                                    }
-                                });
+                            let new_filter = app.event_filter.prev();
+                            if let Some((order_by, limit)) = switch_filter_tab(&mut app, new_filter)
+                            {
+                                spawn_filter_fetch(Arc::clone(&app_state), order_by, limit);
                             }
                         }
                     },
@@ -895,58 +954,10 @@ pub async fn run_trending_tui(
                         if !app.is_in_filter_mode()
                             && app.navigation.focused_panel == FocusedPanel::Header
                         {
-                            // Switch to next filter
-                            let old_filter = app.event_filter;
-                            app.event_filter = app.event_filter.next();
-
-                            // If filter changed, trigger refetch
-                            if old_filter != app.event_filter {
-                                // Clear search results when filter changes
-                                app.search.results.clear();
-                                app.search.last_searched_query.clear();
-
-                                let app_state_clone = Arc::clone(&app_state);
-                                let gamma_client_clone = GammaClient::new();
-                                let order_by = app.event_filter.order_by().to_string();
-                                let ascending = false; // Always descending for these views
-                                let limit = app.pagination.current_limit;
-
-                                app.pagination.order_by = order_by.clone();
-                                app.pagination.is_fetching_more = true;
-
-                                log_info!(
-                                    "Switching to {} filter, fetching events...",
-                                    app.event_filter.label()
-                                );
-
-                                tokio::spawn(async move {
-                                    match gamma_client_clone
-                                        .get_trending_events(
-                                            Some(&order_by),
-                                            Some(ascending),
-                                            Some(limit),
-                                        )
-                                        .await
-                                    {
-                                        Ok(new_events) => {
-                                            log_info!(
-                                                "Fetched {} events for {} filter",
-                                                new_events.len(),
-                                                order_by
-                                            );
-                                            let mut app = app_state_clone.lock().await;
-                                            app.events = new_events;
-                                            app.pagination.is_fetching_more = false;
-                                            app.navigation.selected_index = 0;
-                                            app.scroll.events_list = 0;
-                                        },
-                                        Err(_e) => {
-                                            log_error!("Failed to fetch events: {}", _e);
-                                            let mut app = app_state_clone.lock().await;
-                                            app.pagination.is_fetching_more = false;
-                                        },
-                                    }
-                                });
+                            let new_filter = app.event_filter.next();
+                            if let Some((order_by, limit)) = switch_filter_tab(&mut app, new_filter)
+                            {
+                                spawn_filter_fetch(Arc::clone(&app_state), order_by, limit);
                             }
                         }
                     },

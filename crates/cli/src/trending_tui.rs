@@ -77,7 +77,8 @@ pub struct TrendingAppState {
     // Map from event slug to websocket task handle
     pub ws_handles: HashMap<String, JoinHandle<()>>,
     // Search functionality
-    pub search_mode: bool,
+    pub search_mode: bool,          // API search mode (triggered by '/')
+    pub local_filter_mode: bool,    // Local filter mode (triggered by 'f')
     pub search_query: String,
     pub search_results: Vec<Event>, // Results from API search
     pub is_searching: bool,         // Whether a search API call is in progress
@@ -103,6 +104,7 @@ impl TrendingAppState {
             event_trades: HashMap::new(),
             ws_handles: HashMap::new(),
             search_mode: false,
+            local_filter_mode: false,
             search_query: String::new(),
             search_results: Vec::new(),
             is_searching: false,
@@ -118,8 +120,8 @@ impl TrendingAppState {
 
     /// Check if we need to fetch more events (when user is near the end)
     pub fn should_fetch_more(&self) -> bool {
-        // Only fetch more if not in search mode and not already fetching
-        if self.search_mode || !self.search_query.is_empty() || self.is_fetching_more {
+        // Only fetch more if not in search/filter mode and not already fetching
+        if self.is_in_filter_mode() || !self.search_query.is_empty() || self.is_fetching_more {
             return false;
         }
 
@@ -148,18 +150,66 @@ impl TrendingAppState {
     }
 
     /// Get filtered events based on search query
-    /// If search_results is populated (from API), use those; otherwise filter locally
+    /// If in local filter mode, always filter locally from current list
+    /// If in API search mode and results are available, use those
+    /// Otherwise filter locally
     pub fn filtered_events(&self) -> Vec<&Event> {
         if self.search_query.is_empty() {
+            // No query, return all events from the current source
+            // If we have search results and not in local filter mode, return those; otherwise return all events
+            if !self.search_results.is_empty() && !self.local_filter_mode && self.search_mode {
+                return self.search_results.iter().collect();
+            }
             return self.events.iter().collect();
         }
 
-        // If we have API search results, use those
+        // If in local filter mode, always filter from the source list
+        if self.local_filter_mode {
+            // Determine source list: if we have search results, filter from those; otherwise filter from events
+            let query_lower = self.search_query.to_lowercase();
+            if !self.search_results.is_empty() {
+                // Filter from search results (current displayed list)
+                return self.search_results
+                    .iter()
+                    .filter(|event| {
+                        event.title.to_lowercase().contains(&query_lower)
+                            || event.slug.to_lowercase().contains(&query_lower)
+                            || event
+                                .tags
+                                .iter()
+                                .any(|tag| tag.label.to_lowercase().contains(&query_lower))
+                            || event
+                                .markets
+                                .iter()
+                                .any(|market| market.question.to_lowercase().contains(&query_lower))
+                    })
+                    .collect();
+            } else {
+                // Filter from events list
+                return self.events
+                    .iter()
+                    .filter(|event| {
+                        event.title.to_lowercase().contains(&query_lower)
+                            || event.slug.to_lowercase().contains(&query_lower)
+                            || event
+                                .tags
+                                .iter()
+                                .any(|tag| tag.label.to_lowercase().contains(&query_lower))
+                            || event
+                                .markets
+                                .iter()
+                                .any(|market| market.question.to_lowercase().contains(&query_lower))
+                    })
+                    .collect();
+            }
+        }
+
+        // API search mode: use API results if available
         if !self.search_results.is_empty() && self.search_query == self.last_search_query {
             return self.search_results.iter().collect();
         }
 
-        // Otherwise, fall back to local filtering
+        // Fall back to local filtering
         let query_lower = self.search_query.to_lowercase();
         self.events
             .iter()
@@ -186,14 +236,26 @@ impl TrendingAppState {
 
     pub fn enter_search_mode(&mut self) {
         self.search_mode = true;
+        self.local_filter_mode = false;
+        self.search_query.clear();
+    }
+    
+    pub fn enter_local_filter_mode(&mut self) {
+        self.local_filter_mode = true;
+        self.search_mode = false; // Exit API search mode if active
         self.search_query.clear();
     }
 
     pub fn exit_search_mode(&mut self) {
         self.search_mode = false;
+        self.local_filter_mode = false;
         self.search_query.clear();
         self.selected_index = 0;
         self.scroll_offset = 0;
+    }
+    
+    pub fn is_in_filter_mode(&self) -> bool {
+        self.search_mode || self.local_filter_mode
     }
 
     pub fn add_search_char(&mut self, c: char) {
@@ -227,9 +289,9 @@ impl TrendingAppState {
     pub fn selected_event(&self) -> Option<&Event> {
         // Always use filtered events if we have active search results
         // This ensures we get the correct event even after exiting search mode
-        if !self.search_results.is_empty() && self.search_query == self.last_search_query {
+        if !self.search_results.is_empty() && self.search_query == self.last_search_query && !self.local_filter_mode {
             self.selected_event_filtered()
-        } else if self.search_mode {
+        } else if self.is_in_filter_mode() {
             self.selected_event_filtered()
         } else {
             self.events.get(self.selected_index)
@@ -300,7 +362,7 @@ impl TrendingAppState {
 }
 
 pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
-    let header_height = if app.search_mode { 6 } else { 3 };
+    let header_height = if app.is_in_filter_mode() { 6 } else { 3 };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -319,7 +381,7 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
         .count();
     let filtered_count = app.filtered_events().len();
 
-    if app.search_mode {
+    if app.is_in_filter_mode() {
         // Split header into info and search input
         let header_chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -440,18 +502,18 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 markets_count.to_string()
             };
             let right_text_width = right_text.len();
-            
+
             // Reserve space for right text + 1 space padding
             let reserved_width = right_text_width + 1;
             let available_width = usable_width.saturating_sub(reserved_width);
-            
+
             // Truncate title to fit available space
             let title = if event.title.len() > available_width {
                 truncate(&event.title, available_width.saturating_sub(3))
             } else {
                 event.title.clone()
             };
-            
+
             let title_width = title.len();
             let remaining_width = usable_width
                 .saturating_sub(title_width)
@@ -877,7 +939,7 @@ pub async fn run_trending_tui(
                     let mut app = app_state.lock().await;
                     match key.code {
                         KeyCode::Char('q') => {
-                            if app.search_mode {
+                            if app.is_in_filter_mode() {
                                 app.exit_search_mode();
                             } else {
                                 app.should_quit = true;
@@ -885,7 +947,7 @@ pub async fn run_trending_tui(
                             }
                         }
                         KeyCode::Esc => {
-                            if app.search_mode {
+                            if app.is_in_filter_mode() {
                                 app.exit_search_mode();
                             } else {
                                 app.should_quit = true;
@@ -893,17 +955,22 @@ pub async fn run_trending_tui(
                             }
                         }
                         KeyCode::Char('/') => {
-                            if !app.search_mode {
+                            if !app.is_in_filter_mode() {
                                 app.enter_search_mode();
                             }
                         }
+                        KeyCode::Char('f') => {
+                            if !app.is_in_filter_mode() {
+                                app.enter_local_filter_mode();
+                            }
+                        }
                         KeyCode::Up => {
-                            if !app.search_mode {
+                            if !app.is_in_filter_mode() {
                                 app.move_up();
                             }
                         }
                         KeyCode::Down => {
-                            if !app.search_mode {
+                            if !app.is_in_filter_mode() {
                                 app.move_down();
 
                                 // Check if we need to fetch more events (infinite scroll)
@@ -975,23 +1042,29 @@ pub async fn run_trending_tui(
                             }
                         }
                         KeyCode::Backspace => {
-                            if app.search_mode {
+                            if app.is_in_filter_mode() {
                                 app.delete_search_char();
-                                // Trigger search after backspace (with debounce)
-                                search_debounce = Some(tokio::time::Instant::now());
+                                // Trigger API search after backspace only if in API search mode (with debounce)
+                                if app.search_mode {
+                                    search_debounce = Some(tokio::time::Instant::now());
+                                }
                             }
                         }
                         KeyCode::Char(c) => {
-                            if app.search_mode {
+                            if app.is_in_filter_mode() {
                                 app.add_search_char(c);
-                                // Trigger search after character input (with debounce)
-                                search_debounce = Some(tokio::time::Instant::now());
+                                // Trigger API search after character input only if in API search mode (with debounce)
+                                if app.search_mode {
+                                    search_debounce = Some(tokio::time::Instant::now());
+                                }
+                                // Local filter mode filters immediately (no API call needed)
                             }
                         }
                         KeyCode::Enter => {
-                            if app.search_mode {
-                                // Exit search mode and keep selection
+                            if app.is_in_filter_mode() {
+                                // Exit search/filter mode and keep selection
                                 app.search_mode = false;
+                                app.local_filter_mode = false;
                             } else {
                                 // Toggle watching the selected event
                                 if let Some(event_slug) = app.selected_event_slug() {

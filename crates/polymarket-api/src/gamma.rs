@@ -170,6 +170,12 @@ pub struct Market {
     pub volume_24hr: Option<f64>,
     #[serde(rename = "volumeTotal", default)]
     pub volume_total: Option<f64>,
+    /// Whether the market is active (accepting new trades)
+    #[serde(default)]
+    pub active: bool,
+    /// Whether the market has been closed/resolved
+    #[serde(default)]
+    pub closed: bool,
 }
 
 pub struct GammaClient {

@@ -823,23 +823,39 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
                 .map(|v| format!(" ${:.2}", v))
                 .unwrap_or_default();
 
+            // Determine market status
+            let status_str = if market.closed {
+                "[Resolved] "
+            } else if market.active {
+                ""
+            } else {
+                "[Inactive] "
+            };
+
             // Build outcome strings with prices and percentages from API
             let mut outcome_strings = Vec::new();
             for (idx, outcome) in market.outcomes.iter().enumerate() {
-                // Try to get price from API-fetched market_prices first
-                let price = if let Some(ref token_ids) = market.clob_token_ids {
+                // For closed markets, only use outcome_prices (no live orderbook data)
+                // For active markets, try to get live prices first
+                let price = if market.closed {
+                    // Closed markets: use stored outcome_prices only
+                    market
+                        .outcome_prices
+                        .get(idx)
+                        .and_then(|p| p.parse::<f64>().ok())
+                } else if let Some(ref token_ids) = market.clob_token_ids {
+                    // Active markets: try live prices first, fallback to outcome_prices
                     token_ids
                         .get(idx)
                         .and_then(|asset_id| app.market_prices.get(asset_id).copied())
                         .or_else(|| {
-                            // Fallback to outcome_prices if API price not available
                             market
                                 .outcome_prices
                                 .get(idx)
                                 .and_then(|p| p.parse::<f64>().ok())
                         })
                 } else {
-                    // Fallback to outcome_prices if no token IDs
+                    // No token IDs: use outcome_prices
                     market
                         .outcome_prices
                         .get(idx)
@@ -854,9 +870,9 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
             }
 
             let outcomes_str = if !outcome_strings.is_empty() {
-                outcome_strings.join(" | ")
+                format!("{}{}", status_str, outcome_strings.join(" | "))
             } else {
-                String::new()
+                status_str.to_string()
             };
 
             // Calculate widths for right alignment

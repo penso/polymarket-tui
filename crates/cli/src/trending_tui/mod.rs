@@ -184,46 +184,61 @@ pub async fn run_trending_tui(
                         && app.navigation.focused_panel == FocusedPanel::Markets
                         && let Some(event) = app.selected_event()
                     {
-                        log_info!("Refreshing market prices for event: {}", event.slug);
-                        let app_state_clone = Arc::clone(&app_state);
-                        let clob_client = ClobClient::new();
-                        let markets_clone: Vec<_> = event
+                        // Only fetch prices for active (non-closed) markets
+                        let active_markets: Vec<_> = event
                             .markets
                             .iter()
-                            .map(|m| m.clob_token_ids.clone())
+                            .filter(|m| !m.closed)
+                            .filter_map(|m| m.clob_token_ids.clone())
                             .collect();
 
-                        tokio::spawn(async move {
-                            let mut prices: HashMap<String, f64> = HashMap::new();
-                            for token_ids in markets_clone.into_iter().flatten() {
-                                for asset_id in token_ids {
-                                    match clob_client.get_orderbook_by_asset(&asset_id).await {
-                                        Ok(orderbook) => {
-                                            // Find the best (lowest) ask price
-                                            let best_price = orderbook
-                                                .asks
-                                                .iter()
-                                                .filter_map(|ask| ask.price.parse::<f64>().ok())
-                                                .min_by(|a, b| a.partial_cmp(b).unwrap());
-                                            if let Some(price) = best_price {
-                                                prices.insert(asset_id.clone(), price);
-                                            }
-                                        },
-                                        Err(_e) => {
-                                            log_debug!(
-                                                "Failed to fetch orderbook for asset {}: {}",
-                                                asset_id,
-                                                _e
-                                            );
-                                        },
+                        let _active_count = active_markets.len();
+                        let _closed_count = event.markets.iter().filter(|m| m.closed).count();
+                        log_info!(
+                            "Refreshing market prices for event: {} ({} active, {} resolved)",
+                            event.slug,
+                            _active_count,
+                            _closed_count
+                        );
+
+                        if active_markets.is_empty() {
+                            log_info!("No active markets to refresh");
+                        } else {
+                            let app_state_clone = Arc::clone(&app_state);
+                            let clob_client = ClobClient::new();
+
+                            tokio::spawn(async move {
+                                let mut prices: HashMap<String, f64> = HashMap::new();
+                                for token_ids in active_markets {
+                                    for asset_id in token_ids {
+                                        match clob_client.get_orderbook_by_asset(&asset_id).await {
+                                            Ok(orderbook) => {
+                                                // Find the best (lowest) ask price
+                                                let best_price = orderbook
+                                                    .asks
+                                                    .iter()
+                                                    .filter_map(|ask| ask.price.parse::<f64>().ok())
+                                                    .min_by(|a, b| a.partial_cmp(b).unwrap());
+                                                if let Some(price) = best_price {
+                                                    prices.insert(asset_id.clone(), price);
+                                                }
+                                            },
+                                            Err(_e) => {
+                                                log_debug!(
+                                                    "Failed to fetch orderbook for asset {}: {}",
+                                                    asset_id,
+                                                    _e
+                                                );
+                                            },
+                                        }
                                     }
                                 }
-                            }
 
-                            let mut app = app_state_clone.lock().await;
-                            app.market_prices.extend(prices);
-                            log_info!("Market prices refreshed");
-                        });
+                                let mut app = app_state_clone.lock().await;
+                                app.market_prices.extend(prices);
+                                log_info!("Market prices refreshed");
+                            });
+                        }
                     }
                 },
                 KeyCode::Tab => {
@@ -370,60 +385,67 @@ pub async fn run_trending_tui(
                                     let current_slug = event.slug.clone();
                                     if last_selected_event_slug.as_ref() != Some(&current_slug) {
                                         last_selected_event_slug = Some(current_slug);
-                                        let app_state_clone = Arc::clone(&app_state);
-                                        let clob_client = ClobClient::new();
-                                        let markets_clone: Vec<_> = event
+                                        // Only fetch prices for active (non-closed) markets
+                                        let active_markets: Vec<_> = event
                                             .markets
                                             .iter()
-                                            .map(|m| m.clob_token_ids.clone())
+                                            .filter(|m| !m.closed)
+                                            .filter_map(|m| m.clob_token_ids.clone())
                                             .collect();
 
-                                        tokio::spawn(async move {
-                                            let mut prices = HashMap::new();
-                                            for token_ids in markets_clone.into_iter().flatten() {
-                                                for asset_id in token_ids {
-                                                    match clob_client
-                                                        .get_orderbook_by_asset(&asset_id)
-                                                        .await
-                                                    {
-                                                        Ok(orderbook) => {
-                                                            // Find the best (lowest) ask price
-                                                            let best_price = orderbook
-                                                                .asks
-                                                                .iter()
-                                                                .filter_map(|ask| {
-                                                                    ask.price.parse::<f64>().ok()
-                                                                })
-                                                                .min_by(|a, b| {
-                                                                    a.partial_cmp(b).unwrap()
-                                                                });
-                                                            if let Some(price) = best_price {
-                                                                prices.insert(
-                                                                    asset_id.clone(),
-                                                                    price,
-                                                                );
+                                        if !active_markets.is_empty() {
+                                            let app_state_clone = Arc::clone(&app_state);
+                                            let clob_client = ClobClient::new();
+
+                                            tokio::spawn(async move {
+                                                let mut prices = HashMap::new();
+                                                for token_ids in active_markets {
+                                                    for asset_id in token_ids {
+                                                        match clob_client
+                                                            .get_orderbook_by_asset(&asset_id)
+                                                            .await
+                                                        {
+                                                            Ok(orderbook) => {
+                                                                // Find the best (lowest) ask price
+                                                                let best_price = orderbook
+                                                                    .asks
+                                                                    .iter()
+                                                                    .filter_map(|ask| {
+                                                                        ask.price
+                                                                            .parse::<f64>()
+                                                                            .ok()
+                                                                    })
+                                                                    .min_by(|a, b| {
+                                                                        a.partial_cmp(b).unwrap()
+                                                                    });
+                                                                if let Some(price) = best_price {
+                                                                    prices.insert(
+                                                                        asset_id.clone(),
+                                                                        price,
+                                                                    );
+                                                                    log_debug!(
+                                                                        "Fetched price for asset {}: ${:.3}",
+                                                                        asset_id,
+                                                                        price
+                                                                    );
+                                                                }
+                                                            },
+                                                            Err(_e) => {
+                                                                // Only log as debug to reduce noise - empty orderbooks are common
                                                                 log_debug!(
-                                                                    "Fetched price for asset {}: ${:.3}",
+                                                                    "Failed to fetch orderbook for asset {}: {}",
                                                                     asset_id,
-                                                                    price
+                                                                    _e
                                                                 );
-                                                            }
-                                                        },
-                                                        Err(_e) => {
-                                                            // Only log as debug to reduce noise - empty orderbooks are common
-                                                            log_debug!(
-                                                                "Failed to fetch orderbook for asset {}: {}",
-                                                                asset_id,
-                                                                _e
-                                                            );
-                                                        },
+                                                            },
+                                                        }
                                                     }
                                                 }
-                                            }
 
-                                            let mut app = app_state_clone.lock().await;
-                                            app.market_prices.extend(prices);
-                                        });
+                                                let mut app = app_state_clone.lock().await;
+                                                app.market_prices.extend(prices);
+                                            });
+                                        }
                                     }
                                 }
                             },
@@ -463,60 +485,67 @@ pub async fn run_trending_tui(
                                     let current_slug = event.slug.clone();
                                     if last_selected_event_slug.as_ref() != Some(&current_slug) {
                                         last_selected_event_slug = Some(current_slug);
-                                        let app_state_clone = Arc::clone(&app_state);
-                                        let clob_client = ClobClient::new();
-                                        let markets_clone: Vec<_> = event
+                                        // Only fetch prices for active (non-closed) markets
+                                        let active_markets: Vec<_> = event
                                             .markets
                                             .iter()
-                                            .map(|m| m.clob_token_ids.clone())
+                                            .filter(|m| !m.closed)
+                                            .filter_map(|m| m.clob_token_ids.clone())
                                             .collect();
 
-                                        tokio::spawn(async move {
-                                            let mut prices = HashMap::new();
-                                            for token_ids in markets_clone.into_iter().flatten() {
-                                                for asset_id in token_ids {
-                                                    match clob_client
-                                                        .get_orderbook_by_asset(&asset_id)
-                                                        .await
-                                                    {
-                                                        Ok(orderbook) => {
-                                                            // Find the best (lowest) ask price
-                                                            let best_price = orderbook
-                                                                .asks
-                                                                .iter()
-                                                                .filter_map(|ask| {
-                                                                    ask.price.parse::<f64>().ok()
-                                                                })
-                                                                .min_by(|a, b| {
-                                                                    a.partial_cmp(b).unwrap()
-                                                                });
-                                                            if let Some(price) = best_price {
-                                                                prices.insert(
-                                                                    asset_id.clone(),
-                                                                    price,
-                                                                );
+                                        if !active_markets.is_empty() {
+                                            let app_state_clone = Arc::clone(&app_state);
+                                            let clob_client = ClobClient::new();
+
+                                            tokio::spawn(async move {
+                                                let mut prices = HashMap::new();
+                                                for token_ids in active_markets {
+                                                    for asset_id in token_ids {
+                                                        match clob_client
+                                                            .get_orderbook_by_asset(&asset_id)
+                                                            .await
+                                                        {
+                                                            Ok(orderbook) => {
+                                                                // Find the best (lowest) ask price
+                                                                let best_price = orderbook
+                                                                    .asks
+                                                                    .iter()
+                                                                    .filter_map(|ask| {
+                                                                        ask.price
+                                                                            .parse::<f64>()
+                                                                            .ok()
+                                                                    })
+                                                                    .min_by(|a, b| {
+                                                                        a.partial_cmp(b).unwrap()
+                                                                    });
+                                                                if let Some(price) = best_price {
+                                                                    prices.insert(
+                                                                        asset_id.clone(),
+                                                                        price,
+                                                                    );
+                                                                    log_debug!(
+                                                                        "Fetched price for asset {}: ${:.3}",
+                                                                        asset_id,
+                                                                        price
+                                                                    );
+                                                                }
+                                                            },
+                                                            Err(_e) => {
+                                                                // Only log as debug to reduce noise - empty orderbooks are common
                                                                 log_debug!(
-                                                                    "Fetched price for asset {}: ${:.3}",
+                                                                    "Failed to fetch orderbook for asset {}: {}",
                                                                     asset_id,
-                                                                    price
+                                                                    _e
                                                                 );
-                                                            }
-                                                        },
-                                                        Err(_e) => {
-                                                            // Only log as debug to reduce noise - empty orderbooks are common
-                                                            log_debug!(
-                                                                "Failed to fetch orderbook for asset {}: {}",
-                                                                asset_id,
-                                                                _e
-                                                            );
-                                                        },
+                                                            },
+                                                        }
                                                     }
                                                 }
-                                            }
 
-                                            let mut app = app_state_clone.lock().await;
-                                            app.market_prices.extend(prices);
-                                        });
+                                                let mut app = app_state_clone.lock().await;
+                                                app.market_prices.extend(prices);
+                                            });
+                                        }
                                     }
                                 }
                                 // Check if we need to fetch more events (infinite scroll)

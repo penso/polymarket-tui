@@ -102,45 +102,42 @@ impl PolymarketWebSocket {
                         on_update(WebSocketMessage::Error(err));
                     } else {
                         // Try to parse by checking for type field
-                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                            if let Some(msg_type) = json.get("type").and_then(|v| v.as_str()) {
-                                match msg_type {
-                                    "orderbook" => {
-                                        if let Ok(update) =
-                                            serde_json::from_value::<OrderbookUpdate>(json)
-                                        {
-                                            on_update(WebSocketMessage::Orderbook(update));
-                                        }
-                                    },
-                                    "trade" => {
-                                        if let Ok(update) =
-                                            serde_json::from_value::<TradeUpdate>(json)
-                                        {
-                                            on_update(WebSocketMessage::Trade(update));
-                                        }
-                                    },
-                                    "order" => {
-                                        if let Ok(update) =
-                                            serde_json::from_value::<OrderUpdate>(json)
-                                        {
-                                            on_update(WebSocketMessage::Order(update));
-                                        }
-                                    },
-                                    "price" => {
-                                        if let Ok(update) =
-                                            serde_json::from_value::<PriceUpdate>(json)
-                                        {
-                                            on_update(WebSocketMessage::Price(update));
-                                        }
-                                    },
-                                    _ => {
-                                        // Unknown message type, log for debugging
-                                        #[cfg(feature = "tracing")]
-                                        warn!("Unknown message type: {}", text);
-                                        #[cfg(not(feature = "tracing"))]
-                                        eprintln!("Unknown message type: {}", text);
-                                    },
-                                }
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text)
+                            && let Some(msg_type) = json.get("type").and_then(|v| v.as_str())
+                        {
+                            match msg_type {
+                                "orderbook" => {
+                                    if let Ok(update) =
+                                        serde_json::from_value::<OrderbookUpdate>(json)
+                                    {
+                                        on_update(WebSocketMessage::Orderbook(update));
+                                    }
+                                },
+                                "trade" => {
+                                    if let Ok(update) = serde_json::from_value::<TradeUpdate>(json)
+                                    {
+                                        on_update(WebSocketMessage::Trade(update));
+                                    }
+                                },
+                                "order" => {
+                                    if let Ok(update) = serde_json::from_value::<OrderUpdate>(json)
+                                    {
+                                        on_update(WebSocketMessage::Order(update));
+                                    }
+                                },
+                                "price" => {
+                                    if let Ok(update) = serde_json::from_value::<PriceUpdate>(json)
+                                    {
+                                        on_update(WebSocketMessage::Price(update));
+                                    }
+                                },
+                                _ => {
+                                    // Unknown message type, log for debugging
+                                    #[cfg(feature = "tracing")]
+                                    warn!("Unknown message type: {}", text);
+                                    #[cfg(not(feature = "tracing"))]
+                                    eprintln!("Unknown message type: {}", text);
+                                },
                             }
                         }
                     }

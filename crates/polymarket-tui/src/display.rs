@@ -67,19 +67,18 @@ impl MarketUpdateFormatter {
         }
 
         // Spread
-        if let (Some(bid), Some(ask)) = (update.bids.first(), update.asks.first()) {
-            if let (Ok(bid_price), Ok(ask_price)) =
+        if let (Some(bid), Some(ask)) = (update.bids.first(), update.asks.first())
+            && let (Ok(bid_price), Ok(ask_price)) =
                 (bid.price.parse::<f64>(), ask.price.parse::<f64>())
-            {
-                let spread = ask_price - bid_price;
-                let spread_pct = (spread / bid_price) * 100.0;
-                output.push_str(&format!(
-                    "  {} {:.4} ({:.2}%)\n",
-                    "SPREAD".yellow(),
-                    spread,
-                    spread_pct
-                ));
-            }
+        {
+            let spread = ask_price - bid_price;
+            let spread_pct = (spread / bid_price) * 100.0;
+            output.push_str(&format!(
+                "  {} {:.4} ({:.2}%)\n",
+                "SPREAD".yellow(),
+                spread,
+                spread_pct
+            ));
         }
 
         output

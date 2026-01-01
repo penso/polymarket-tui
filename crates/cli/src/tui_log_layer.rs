@@ -58,14 +58,14 @@ where
                 let mut formatted = msg_template.to_string();
                 for field_str in &field_visitor.fields {
                     // Extract value from field (format: "name=value")
-                    if let Some((name, value)) = field_str.split_once('=') {
-                        if name != "message" {
-                            // Extract value, removing quotes if present
-                            let clean_value = value.trim_matches('"').trim();
-                            // Replace first {} with the value
-                            if let Some(pos) = formatted.find("{}") {
-                                formatted.replace_range(pos..pos + 2, clean_value);
-                            }
+                    if let Some((name, value)) = field_str.split_once('=')
+                        && name != "message"
+                    {
+                        // Extract value, removing quotes if present
+                        let clean_value = value.trim_matches('"').trim();
+                        // Replace first {} with the value
+                        if let Some(pos) = formatted.find("{}") {
+                            formatted.replace_range(pos..pos + 2, clean_value);
                         }
                     }
                 }

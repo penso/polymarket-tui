@@ -413,29 +413,29 @@ impl GammaClient {
 
         for event in events {
             for market in event.markets {
-                if let Some(ref token_ids) = market.clob_token_ids {
-                    if token_ids.contains(&asset_id.to_string()) {
-                        let outcomes = market.outcomes.clone();
-                        let prices = market.outcome_prices.clone();
+                if let Some(ref token_ids) = market.clob_token_ids
+                    && token_ids.contains(&asset_id.to_string())
+                {
+                    let outcomes = market.outcomes.clone();
+                    let prices = market.outcome_prices.clone();
 
-                        let market_info = MarketInfo {
-                            event_title: event.title,
-                            event_slug: event.slug,
-                            market_question: market.question,
-                            market_id: market.id.clone().unwrap_or_default(),
-                            asset_id: asset_id.to_string(),
-                            outcomes,
-                            prices,
-                        };
+                    let market_info = MarketInfo {
+                        event_title: event.title,
+                        event_slug: event.slug,
+                        market_question: market.question,
+                        market_id: market.id.clone().unwrap_or_default(),
+                        asset_id: asset_id.to_string(),
+                        outcomes,
+                        prices,
+                    };
 
-                        // Cache the result
-                        if let Some(ref cache) = self.cache {
-                            let cache_key = format!("market_info_{}", asset_id);
-                            let _ = cache.set(&cache_key, &market_info);
-                        }
-
-                        return Ok(Some(market_info));
+                    // Cache the result
+                    if let Some(ref cache) = self.cache {
+                        let cache_key = format!("market_info_{}", asset_id);
+                        let _ = cache.set(&cache_key, &market_info);
                     }
+
+                    return Ok(Some(market_info));
                 }
             }
         }

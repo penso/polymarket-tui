@@ -292,25 +292,23 @@ impl RTDSClient {
                         continue;
                     } else {
                         // Try to parse as error message
-                        if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&text) {
-                            if let Some(body) = error_json.get("body") {
-                                if let Some(message) = body.get("message").and_then(|m| m.as_str())
-                                {
-                                    #[cfg(feature = "tracing")]
-                                    {
-                                        error!("RTDS error: {}", message);
-                                    }
-                                    #[cfg(not(feature = "tracing"))]
-                                    {
-                                        eprintln!("RTDS error: {}", message);
-                                    }
-                                    // If it's an authentication error, break the connection
-                                    if message.contains("validation") || message.contains("auth") {
-                                        break;
-                                    }
-                                    continue;
-                                }
+                        if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&text)
+                            && let Some(body) = error_json.get("body")
+                            && let Some(message) = body.get("message").and_then(|m| m.as_str())
+                        {
+                            #[cfg(feature = "tracing")]
+                            {
+                                error!("RTDS error: {}", message);
                             }
+                            #[cfg(not(feature = "tracing"))]
+                            {
+                                eprintln!("RTDS error: {}", message);
+                            }
+                            // If it's an authentication error, break the connection
+                            if message.contains("validation") || message.contains("auth") {
+                                break;
+                            }
+                            continue;
                         }
 
                         // If we get here, it's a truly unknown message format

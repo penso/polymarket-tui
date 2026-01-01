@@ -384,33 +384,30 @@ pub async fn run_tui(
 
         if crossterm::event::poll(std::time::Duration::from_millis(100))
             .map_err(|e| anyhow::anyhow!("Event poll error: {}", e))?
-        {
-            if let Event::Key(key) =
+            && let Event::Key(key) =
                 event::read().map_err(|e| anyhow::anyhow!("Event read error: {}", e))?
-            {
-                if key.kind == KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => {
-                            let mut app = app_state.lock().await;
-                            app.should_quit = true;
-                            break;
-                        },
-                        KeyCode::Char('r') => {
-                            // Check if not already loading
-                            let is_loading = {
-                                let app = app_state.lock().await;
-                                app.is_loading
-                            };
-                            if !is_loading {
-                                let app_state_clone = Arc::clone(&app_state);
-                                tokio::spawn(async move {
-                                    refresh_market_data(app_state_clone).await;
-                                });
-                            }
-                        },
-                        _ => {},
+            && key.kind == KeyEventKind::Press
+        {
+            match key.code {
+                KeyCode::Char('q') | KeyCode::Esc => {
+                    let mut app = app_state.lock().await;
+                    app.should_quit = true;
+                    break;
+                },
+                KeyCode::Char('r') => {
+                    // Check if not already loading
+                    let is_loading = {
+                        let app = app_state.lock().await;
+                        app.is_loading
+                    };
+                    if !is_loading {
+                        let app_state_clone = Arc::clone(&app_state);
+                        tokio::spawn(async move {
+                            refresh_market_data(app_state_clone).await;
+                        });
                     }
-                }
+                },
+                _ => {},
             }
         }
 

@@ -448,20 +448,17 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
     let logs = Arc::new(TokioMutex::new(Vec::<String>::new()));
     let log_layer = tui_log_layer::TuiLogLayer::new(Arc::clone(&logs));
 
-    // Replace the default subscriber with one that includes our custom layer
-    // IMPORTANT: Keep the guard alive - it must not be dropped!
+    // Setup tracing subscriber with our custom layer
+    // Use init() instead of set_default() to set it globally
+    // This ensures spawned tasks can also use the dispatcher
     use tracing_subscriber::prelude::*;
-    let _subscriber_guard = tracing_subscriber::registry()
+    tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .with(log_layer)
-        .set_default();
-    
-    // Store the guard in a way that keeps it alive for the duration of the function
-    // The guard ensures the dispatcher remains active
-    let _ = _subscriber_guard;
+        .init();
 
     // Now that tracing is set up, we can log
     info!("🔥 Fetching trending events...");
@@ -500,38 +497,38 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
                 last_log_count = logs.len();
                 drop(logs);
 
-                       let mut app = app_state_for_logs.lock().await;
-                       for log in new_logs {
-                           // The log already has the [LEVEL] prefix from TuiLogLayer
-                           // So we just pass it directly - add_log will format it
-                           // Extract level for color coding
-                           let level = if log.starts_with("[ERROR]") {
-                               "ERROR"
-                           } else if log.starts_with("[WARN]") {
-                               "WARN"
-                           } else if log.starts_with("[INFO]") {
-                               "INFO"
-                           } else if log.starts_with("[DEBUG]") {
-                               "DEBUG"
-                           } else {
-                               "TRACE"
-                           };
-                           // Pass the log as-is (it already has [LEVEL] prefix)
-                           // add_log will add another prefix, so we need to strip the existing one
-                           let log_without_prefix = log
-                               .trim_start_matches("[ERROR] ")
-                               .trim_start_matches("[WARN] ")
-                               .trim_start_matches("[INFO] ")
-                               .trim_start_matches("[DEBUG] ")
-                               .trim_start_matches("[TRACE] ")
-                               .trim_start_matches("[ERROR]")
-                               .trim_start_matches("[WARN]")
-                               .trim_start_matches("[INFO]")
-                               .trim_start_matches("[DEBUG]")
-                               .trim_start_matches("[TRACE]")
-                               .trim();
-                           app.add_log(level, log_without_prefix.to_string());
-                       }
+                let mut app = app_state_for_logs.lock().await;
+                for log in new_logs {
+                    // The log already has the [LEVEL] prefix from TuiLogLayer
+                    // So we just pass it directly - add_log will format it
+                    // Extract level for color coding
+                    let level = if log.starts_with("[ERROR]") {
+                        "ERROR"
+                    } else if log.starts_with("[WARN]") {
+                        "WARN"
+                    } else if log.starts_with("[INFO]") {
+                        "INFO"
+                    } else if log.starts_with("[DEBUG]") {
+                        "DEBUG"
+                    } else {
+                        "TRACE"
+                    };
+                    // Pass the log as-is (it already has [LEVEL] prefix)
+                    // add_log will add another prefix, so we need to strip the existing one
+                    let log_without_prefix = log
+                        .trim_start_matches("[ERROR] ")
+                        .trim_start_matches("[WARN] ")
+                        .trim_start_matches("[INFO] ")
+                        .trim_start_matches("[DEBUG] ")
+                        .trim_start_matches("[TRACE] ")
+                        .trim_start_matches("[ERROR]")
+                        .trim_start_matches("[WARN]")
+                        .trim_start_matches("[INFO]")
+                        .trim_start_matches("[DEBUG]")
+                        .trim_start_matches("[TRACE]")
+                        .trim();
+                    app.add_log(level, log_without_prefix.to_string());
+                }
             }
         }
     });

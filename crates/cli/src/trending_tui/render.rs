@@ -520,10 +520,7 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 ));
                 line_spans.push(Span::styled(" ", Style::default()));
             }
-            line_spans.push(Span::styled(
-                markets_str,
-                Style::default().fg(Color::Cyan),
-            ));
+            line_spans.push(Span::styled(markets_str, Style::default().fg(Color::Cyan)));
 
             // Alternating row colors (zebra striping) for better readability
             let bg_color = if idx % 2 == 0 {

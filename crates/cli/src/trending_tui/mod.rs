@@ -846,8 +846,7 @@ pub async fn run_trending_tui(
                         if !app.is_in_filter_mode() {
                             app.show_logs = !app.show_logs;
                             // If hiding logs and logs panel was focused, switch to another panel
-                            if !app.show_logs
-                                && app.navigation.focused_panel == FocusedPanel::Logs
+                            if !app.show_logs && app.navigation.focused_panel == FocusedPanel::Logs
                             {
                                 app.navigation.focused_panel = FocusedPanel::EventsList;
                             }

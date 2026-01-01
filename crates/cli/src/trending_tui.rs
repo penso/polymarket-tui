@@ -1096,10 +1096,26 @@ fn render_logs(f: &mut Frame, app: &mut TrendingAppState, area: Rect) {
         })
         .collect();
 
+    let total_log_lines = app.logs.len();
     let logs_list = List::new(log_items)
         .block(Block::default().borders(Borders::ALL).title("Logs"))
         .style(Style::default().fg(Color::White));
     f.render_widget(logs_list, area);
+
+    // Render scrollbar for logs if needed
+    if total_log_lines > visible_height {
+        let mut scrollbar_state = ScrollbarState::new(total_log_lines)
+            .position(app.log_scroll)
+            .content_length(visible_height);
+        f.render_stateful_widget(
+            Scrollbar::default()
+                .orientation(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(Some("↑"))
+                .end_symbol(Some("↓")),
+            area,
+            &mut scrollbar_state,
+        );
+    }
 }
 
 pub async fn run_trending_tui(

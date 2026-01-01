@@ -31,7 +31,7 @@ jobs:
           cache-on-failure: true
 
       - name: Run release-plz
-        uses: release-plz/release-plz-action@v0.5
+        uses: MarcoIeni/release-plz-action@v0.5
         with:
           command: release
         env:
@@ -60,7 +60,7 @@ jobs:
           cache-on-failure: true
 
       - name: Run release-plz
-        uses: release-plz/release-plz-action@v0.5
+        uses: MarcoIeni/release-plz-action@v0.5
         with:
           command: release-pr
         env:

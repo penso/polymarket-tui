@@ -211,6 +211,7 @@ pub async fn run_trending_tui(
 
     let mut search_debounce: Option<tokio::time::Instant> = None;
     let mut last_selected_event_slug: Option<String> = None;
+    let mut last_click: Option<(tokio::time::Instant, u16, u16)> = None; // (time, column, row)
 
     loop {
         // Handle search debouncing and API calls
@@ -294,8 +295,18 @@ pub async fn run_trending_tui(
                         app.navigation.focused_panel = panel;
                     }
                 }
-                // Click to select event in events list
+                // Click to select event in events list, double-click to toggle watching
                 if let MouseEventKind::Down(MouseButton::Left) = mouse.kind {
+                    let now = tokio::time::Instant::now();
+                    let is_double_click = if let Some((last_time, last_col, last_row)) = last_click {
+                        now.duration_since(last_time) < tokio::time::Duration::from_millis(500)
+                            && (mouse.column as i16 - last_col as i16).abs() <= 2
+                            && mouse.row == last_row
+                    } else {
+                        false
+                    };
+                    last_click = Some((now, mouse.column, mouse.row));
+
                     let mut app = app_state.lock().await;
                     let size = terminal.size()?;
                     let (_, events_list_area, _, _, _, _) = calculate_panel_areas(size, app.is_in_filter_mode());
@@ -313,6 +324,64 @@ pub async fn run_trending_tui(
                                 app.navigation.selected_index = clicked_index;
                                 // Reset markets scroll when changing events
                                 app.scroll.markets = 0;
+
+                                // Double-click toggles watching (same as Enter)
+                                if is_double_click {
+                                    if let Some(event_slug) = app.selected_event_slug() {
+                                        if app.is_watching(&event_slug) {
+                                            // Stop watching
+                                            app.stop_watching(&event_slug);
+                                        } else {
+                                            // Start watching
+                                            let event_slug_clone = event_slug.clone();
+
+                                            app.trades
+                                                .event_trades
+                                                .entry(event_slug_clone.clone())
+                                                .or_insert_with(EventTrades::new);
+
+                                            let app_state_ws = Arc::clone(&app_state);
+                                            let event_slug_for_closure = event_slug_clone.clone();
+
+                                            let rtds_client =
+                                                RTDSClient::new().with_event_slug(event_slug_clone.clone());
+
+                                            log_info!(
+                                                "Starting RTDS WebSocket for event: {}",
+                                                event_slug_clone
+                                            );
+
+                                            let ws_handle = tokio::spawn(async move {
+                                                match rtds_client
+                                                    .connect_and_listen(move |msg| {
+                                                        let app_state = Arc::clone(&app_state_ws);
+                                                        let event_slug = event_slug_for_closure.clone();
+
+                                                        Box::pin(async move {
+                                                            let mut app = app_state.lock().await;
+                                                            if let Some(event_trades) =
+                                                                app.trades.event_trades.get_mut(&event_slug)
+                                                            {
+                                                                event_trades.add_trade(&msg);
+                                                            }
+                                                        })
+                                                    })
+                                                    .await
+                                                {
+                                                    Ok(()) => {},
+                                                    Err(_e) => {
+                                                        log_error!(
+                                                            "RTDS WebSocket error: {}",
+                                                            _e
+                                                        );
+                                                    },
+                                                }
+                                            });
+
+                                            app.start_watching(event_slug_clone, ws_handle);
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

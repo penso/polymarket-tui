@@ -275,7 +275,6 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         .map(|(idx, event)| {
             let is_selected = idx == app.navigation.selected_index;
             let is_watching = app.is_watching(&event.slug);
-            let trade_count = app.get_trades(&event.slug).len();
 
             // Check if event is closed/inactive (not accepting trades)
             let is_closed = event.closed || !event.active;
@@ -308,21 +307,16 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 String::new()
             };
 
-            // Format: "title ...spaces... volume markets" (right-aligned)
+            // Format: "title ...spaces... [👁] volume markets" (right-aligned)
             // Account for List widget borders (2 chars) and some padding
             let usable_width = area.width.saturating_sub(2) as usize; // -2 for borders
 
-            // Build the right-aligned text: "volume trades/markets" or "volume markets"
-            let right_text = if is_watching {
-                if volume_str.is_empty() {
-                    format!("{}/{}", trade_count, markets_count)
-                } else {
-                    format!("{} {}/{}", volume_str, trade_count, markets_count)
-                }
-            } else if volume_str.is_empty() {
-                markets_count.to_string()
+            // Build the right-aligned text: "[👁] volume markets"
+            let watching_indicator = if is_watching { "👁 " } else { "" };
+            let right_text = if volume_str.is_empty() {
+                format!("{}{}", watching_indicator, markets_count)
             } else {
-                format!("{} {}", volume_str, markets_count)
+                format!("{}{} {}", watching_indicator, volume_str, markets_count)
             };
             let right_text_width = right_text.width();
 
@@ -357,7 +351,10 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             }
 
             // Add the right-aligned text with appropriate styling
-            // Volume in green, trades in green, markets in cyan
+            // Watching indicator in yellow, volume in green, markets in cyan
+            if is_watching {
+                line_spans.push(Span::styled("👁 ", Style::default().fg(Color::Yellow)));
+            }
             if !volume_str.is_empty() {
                 line_spans.push(Span::styled(
                     volume_str.clone(),
@@ -365,24 +362,10 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 ));
                 line_spans.push(Span::styled(" ", Style::default()));
             }
-            if is_watching {
-                // Show "trades/markets" with trades in green and markets in cyan
-                line_spans.push(Span::styled(
-                    trade_count.to_string(),
-                    Style::default().fg(Color::Green),
-                ));
-                line_spans.push(Span::styled("/", Style::default().fg(Color::Gray)));
-                line_spans.push(Span::styled(
-                    markets_count.to_string(),
-                    Style::default().fg(Color::Cyan),
-                ));
-            } else {
-                // Just show markets count
-                line_spans.push(Span::styled(
-                    markets_count.to_string(),
-                    Style::default().fg(Color::Cyan),
-                ));
-            }
+            line_spans.push(Span::styled(
+                markets_count.to_string(),
+                Style::default().fg(Color::Cyan),
+            ));
 
             ListItem::new(Line::from(line_spans))
         })

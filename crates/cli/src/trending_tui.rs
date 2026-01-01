@@ -756,7 +756,7 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
             focused_panel_text
         )
     } else {
-        format!("Press '/' to search | Tab to switch panels | Focused: {} | ↑↓ to scroll | Enter to watch/unwatch | 'q' to quit", focused_panel_text)
+        format!("Press '/' to search | 'r' to refresh prices | Tab to switch panels | Focused: {} | ↑↓ to scroll | Enter to watch/unwatch | 'q' to quit", focused_panel_text)
     };
     let footer = Paragraph::new(footer_text)
         .block(Block::default().borders(Borders::ALL))
@@ -1706,6 +1706,62 @@ pub async fn run_trending_tui(
                         KeyCode::Char('f') => {
                             if !app.is_in_filter_mode() {
                                 app.enter_local_filter_mode();
+                            }
+                        }
+                        KeyCode::Char('r') => {
+                            // Refresh market prices for currently selected event
+                            if !app.is_in_filter_mode() {
+                                if let Some(event) = app.selected_event() {
+                                    tracing::info!(
+                                        "Refreshing market prices for event: {}",
+                                        event.slug
+                                    );
+                                    let app_state_clone = Arc::clone(&app_state);
+                                    let clob_client = ClobClient::new();
+                                    let markets_clone: Vec<_> = event
+                                        .markets
+                                        .iter()
+                                        .map(|m| m.clob_token_ids.clone())
+                                        .collect();
+
+                                    tokio::spawn(async move {
+                                        let mut prices: HashMap<String, f64> = HashMap::new();
+                                        for token_ids in markets_clone.into_iter().flatten() {
+                                            for asset_id in token_ids {
+                                                match clob_client
+                                                    .get_orderbook_by_asset(&asset_id)
+                                                    .await
+                                                {
+                                                    Ok(orderbook) => {
+                                                        if let Some(best_ask) =
+                                                            orderbook.asks.first()
+                                                        {
+                                                            if let Ok(price) =
+                                                                best_ask.price.parse::<f64>()
+                                                            {
+                                                                prices.insert(
+                                                                    asset_id.clone(),
+                                                                    price,
+                                                                );
+                                                            }
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::debug!(
+                                                            "Failed to fetch orderbook for asset {}: {}",
+                                                            asset_id,
+                                                            e
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        let mut app = app_state_clone.lock().await;
+                                        app.market_prices.extend(prices);
+                                        tracing::info!("Market prices refreshed");
+                                    });
+                                }
                             }
                         }
                         KeyCode::Tab => {

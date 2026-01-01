@@ -475,6 +475,8 @@ impl TrendingAppState {
             if self.navigation.selected_index < self.scroll.events_list {
                 self.scroll.events_list = self.navigation.selected_index;
             }
+            // Reset markets scroll when changing events
+            self.scroll.markets = 0;
         }
     }
 
@@ -486,6 +488,8 @@ impl TrendingAppState {
             if self.navigation.selected_index >= self.scroll.events_list + visible_height {
                 self.scroll.events_list = self.navigation.selected_index - visible_height + 1;
             }
+            // Reset markets scroll when changing events
+            self.scroll.markets = 0;
         }
     }
 

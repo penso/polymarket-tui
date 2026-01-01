@@ -182,6 +182,12 @@ pub struct Market {
     /// Market slug for URL construction
     #[serde(default)]
     pub slug: Option<String>,
+    /// Whether the market is accepting orders
+    #[serde(rename = "acceptingOrders", default)]
+    pub accepting_orders: bool,
+    /// UMA oracle resolution statuses (JSON string like "[\"proposed\", \"disputed\"]")
+    #[serde(rename = "umaResolutionStatuses", default)]
+    pub uma_resolution_statuses: Option<String>,
     /// Events this market belongs to (always 0 or 1 element)
     #[serde(default)]
     pub events: Vec<MarketEventRef>,
@@ -193,10 +199,21 @@ impl Market {
         self.events.first()
     }
 
+    /// Check if market is in resolution/review process
+    pub fn is_in_review(&self) -> bool {
+        if let Some(ref statuses) = self.uma_resolution_statuses {
+            statuses.contains("proposed") || statuses.contains("disputed")
+        } else {
+            false
+        }
+    }
+
     /// Get human-readable status string
     pub fn status(&self) -> &'static str {
         if self.closed {
             "closed"
+        } else if self.is_in_review() {
+            "in-review"
         } else if self.active {
             "open"
         } else {

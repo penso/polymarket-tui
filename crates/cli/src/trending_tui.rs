@@ -901,21 +901,17 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         let trades = app.get_trades(event_slug);
         let is_watching = app.is_watching(event_slug);
 
-        // Calculate dynamic height for event details based on content
-        // Base lines: Title, Slug, Event ID, Status, Estimated End, Total Volume, Tags (if present)
-        let mut event_details_lines = 6; // Base lines: Title, Slug, Event ID, Status, Estimated End, Total Volume
-        if !event.tags.is_empty() {
-            event_details_lines += 1; // Tags line
-        }
-        let event_details_height = event_details_lines + 2; // +2 for borders
+        // Use a fixed minimum height for event details panel
+        // Content will scroll if it exceeds this height
+        let min_event_details_height = 8; // Minimum height (6 base lines + 2 for borders)
         
         // Split area into event details, markets, and trades
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(event_details_height as u16), // Event details (dynamic height)
-                Constraint::Length(7),  // Markets panel (5 lines + 2 for borders)
-                Constraint::Min(0),     // Trades table
+                Constraint::Length(min_event_details_height as u16), // Event details (minimum height, scrollable)
+                Constraint::Length(7), // Markets panel (5 lines + 2 for borders)
+                Constraint::Min(0),    // Trades table
             ])
             .split(area);
 
@@ -1189,18 +1185,80 @@ fn render_event_details(
         ),
     ]));
 
-    // Add tags on same line if available
+    // Add tags - may wrap to multiple lines
     if !event.tags.is_empty() {
         let tag_labels: Vec<String> = event
             .tags
             .iter()
             .map(|tag| truncate(&tag.label, 20))
             .collect();
-        lines.push(Line::from(vec![
-            Span::styled("Tags: ", Style::default().fg(Color::Yellow).bold()),
-            Span::styled(tag_labels.join(", "), Style::default().fg(Color::Cyan)),
-        ]));
+        let tags_text = tag_labels.join(", ");
+        
+        // Calculate available width for tags (accounting for "Tags: " prefix and borders)
+        let available_width = (area.width as usize).saturating_sub(8); // "Tags: " (6) + borders (2)
+        
+        // If tags text fits on one line, add it normally
+        if tags_text.len() <= available_width {
+            lines.push(Line::from(vec![
+                Span::styled("Tags: ", Style::default().fg(Color::Yellow).bold()),
+                Span::styled(tags_text, Style::default().fg(Color::Cyan)),
+            ]));
+        } else {
+            // Tags need to wrap - split into multiple lines
+            let tags_prefix = "Tags: ";
+            let tags_content = &tags_text;
+            let content_width = available_width.saturating_sub(tags_prefix.len());
+            
+            // First line with prefix
+            let first_line_content = if tags_content.len() > content_width {
+                truncate(tags_content, content_width)
+            } else {
+                tags_content.clone()
+            };
+            lines.push(Line::from(vec![
+                Span::styled(tags_prefix, Style::default().fg(Color::Yellow).bold()),
+                Span::styled(first_line_content, Style::default().fg(Color::Cyan)),
+            ]));
+            
+            // Additional wrapped lines (without prefix, indented)
+            let remaining_content = if tags_content.len() > content_width {
+                &tags_content[content_width..]
+            } else {
+                ""
+            };
+            
+            // Split remaining content into chunks that fit
+            let indent = "      "; // 6 spaces to align with content after "Tags: "
+            let indent_width = indent.len();
+            let wrapped_width = available_width.saturating_sub(indent_width);
+            
+            for chunk in remaining_content.chars().collect::<Vec<_>>().chunks(wrapped_width) {
+                let chunk_str: String = chunk.iter().collect();
+                if !chunk_str.trim().is_empty() {
+                    lines.push(Line::from(vec![
+                        Span::styled(indent, Style::default()),
+                        Span::styled(chunk_str, Style::default().fg(Color::Cyan)),
+                    ]));
+                }
+            }
+        }
     }
+
+    // Calculate visible height and apply scroll
+    let visible_height = (area.height as usize).saturating_sub(2); // -2 for borders
+    let total_lines = lines.len();
+    let scroll = app
+        .scroll
+        .event_details
+        .min(total_lines.saturating_sub(visible_height.max(1)));
+
+    // Apply scroll offset - show only visible lines
+    let visible_lines: Vec<Line> = lines
+        .iter()
+        .skip(scroll)
+        .take(visible_height)
+        .cloned()
+        .collect();
 
     let is_focused = app.navigation.focused_panel == FocusedPanel::EventDetails;
     let block_style = if is_focused {
@@ -1209,7 +1267,7 @@ fn render_event_details(
         Style::default()
     };
 
-    let paragraph = Paragraph::new(lines)
+    let paragraph = Paragraph::new(visible_lines)
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -1222,6 +1280,21 @@ fn render_event_details(
         )
         .wrap(Wrap { trim: true });
     f.render_widget(paragraph, area);
+
+    // Render scrollbar if content exceeds visible height
+    if total_lines > visible_height {
+        let mut scrollbar_state = ScrollbarState::new(total_lines)
+            .position(scroll)
+            .viewport_content_length(visible_height);
+        f.render_stateful_widget(
+            Scrollbar::default()
+                .orientation(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(Some("↑"))
+                .end_symbol(Some("↓")),
+            area,
+            &mut scrollbar_state,
+        );
+    }
 }
 
 fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Rect) {
@@ -1254,13 +1327,13 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
             let volume_str = market
                 .volume_total
                 .map(|v| format!(" ${:.2}", v))
-                .unwrap_or_else(|| String::new());
+                .unwrap_or_default();
 
             let outcomes_str = if market.outcomes.len() >= 2 {
                 format!(
                     "{} / {}",
-                    market.outcomes.get(0).unwrap_or(&String::new()),
-                    market.outcomes.get(1).unwrap_or(&String::new())
+                    market.outcomes.first().map(|s| s.as_str()).unwrap_or(""),
+                    market.outcomes.get(1).map(|s| s.as_str()).unwrap_or("")
                 )
             } else {
                 String::new()
@@ -1838,16 +1911,35 @@ pub async fn run_trending_tui(
                                         }
                                     }
                                     FocusedPanel::EventDetails => {
-                                        // Get total lines to know max scroll
+                                        // Calculate actual content height for event details
                                         if let Some(event) = app.selected_event() {
-                                            // Estimate total lines (rough calculation)
-                                            let estimated_lines: usize = 8
-                                                + if event.image.is_some() { 1 } else { 0 }
-                                                + if !event.tags.is_empty() { 1 } else { 0 };
-                                            let visible_height: usize = 10; // Approximate
-                                            if app.scroll.event_details
-                                                < estimated_lines.saturating_sub(visible_height)
-                                            {
+                                            // Base lines: Title, Slug, Event ID, Status, Estimated End, Total Volume
+                                            let mut total_lines = 6;
+                                            
+                                            // Calculate wrapped tags lines
+                                            if !event.tags.is_empty() {
+                                                let tag_labels: Vec<String> = event
+                                                    .tags
+                                                    .iter()
+                                                    .map(|tag| truncate(&tag.label, 20))
+                                                    .collect();
+                                                let tags_text = tag_labels.join(", ");
+                                                // Approximate available width (will be calculated more accurately in render)
+                                                // Assume ~60 chars available for tags content
+                                                let tags_content_width = 60;
+                                                if tags_text.len() > tags_content_width {
+                                                // Tags wrap - calculate how many lines
+                                                let wrapped_lines = tags_text.len().div_ceil(tags_content_width);
+                                                    total_lines += wrapped_lines;
+                                                } else {
+                                                    total_lines += 1; // Single line for tags
+                                                }
+                                            }
+                                            
+                                            // Get visible height from the actual area (approximate)
+                                            let visible_height: usize = 6; // Minimum height minus borders
+                                            let max_scroll = total_lines.saturating_sub(visible_height.max(1));
+                                            if app.scroll.event_details < max_scroll {
                                                 app.scroll.event_details += 1;
                                             }
                                         }

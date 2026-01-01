@@ -463,7 +463,24 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                         Style::default().fg(Color::Red)
                     };
 
-                    let title_truncated = truncate(&trade.title, 30);
+                    // Find the market by asset_id and use short name if available
+                    let market_name = event
+                        .markets
+                        .iter()
+                        .find(|m| {
+                            m.clob_token_ids
+                                .as_ref()
+                                .is_some_and(|ids| ids.contains(&trade.asset_id))
+                        })
+                        .and_then(|m| {
+                            m.group_item_title
+                                .as_deref()
+                                .filter(|s| !s.is_empty())
+                                .or(Some(m.question.as_str()))
+                        })
+                        .unwrap_or(&trade.title);
+
+                    let title_truncated = truncate(market_name, 30);
                     let user_truncated = truncate(&trade.user, 15);
                     let side_text = trade.side.clone();
                     let outcome_text = trade.outcome.clone();

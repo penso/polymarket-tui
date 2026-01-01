@@ -15,6 +15,7 @@ pub struct Trade {
     pub shares: f64,
     pub total_value: f64,
     pub title: String,
+    pub asset_id: String,
     pub user: String,
     #[allow(dead_code)]
     pub pseudonym: String,
@@ -46,6 +47,7 @@ impl EventTrades {
             shares: rounded_shares,
             total_value,
             title: msg.payload.title.clone(),
+            asset_id: msg.payload.asset.clone(),
             user: msg.payload.name.clone(),
             pseudonym: msg.payload.pseudonym.clone(),
         };

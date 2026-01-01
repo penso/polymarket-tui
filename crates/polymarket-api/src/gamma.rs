@@ -179,6 +179,9 @@ pub struct Market {
     /// Whether the market has been closed/resolved
     #[serde(default)]
     pub closed: bool,
+    /// Market slug for URL construction
+    #[serde(default)]
+    pub slug: Option<String>,
 }
 
 pub struct GammaClient {

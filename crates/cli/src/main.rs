@@ -769,6 +769,7 @@ async fn run_yield(min_prob: f64, limit: usize, min_volume: f64) -> Result<()> {
         price: f64,
         est_return: f64,
         volume: f64,
+        slug: Option<String>,
     }
 
     let mut opportunities: Vec<YieldOpportunity> = Vec::new();
@@ -808,6 +809,7 @@ async fn run_yield(min_prob: f64, limit: usize, min_volume: f64) -> Result<()> {
                     price,
                     est_return,
                     volume,
+                    slug: market.slug.clone(),
                 });
             }
         }
@@ -832,29 +834,35 @@ async fn run_yield(min_prob: f64, limit: usize, min_volume: f64) -> Result<()> {
 
     // Print header
     println!(
-        "{:<55} {:>6} {:>8} {:>8} {:>12}",
+        "{:<40} {:>6} {:>8} {:>8} {:>10}   URL",
         "Market", "Out", "Price", "Return", "Volume"
     );
-    println!("{}", "─".repeat(95));
+    println!("{}", "─".repeat(120));
 
     for opp in &opportunities {
         // Use short name if available, otherwise truncate question
         let display_name = opp.short_name.as_deref().unwrap_or(&opp.question);
-        let truncated_name: String = if display_name.len() > 53 {
-            format!("{}…", &display_name[..52])
+        let truncated_name: String = if display_name.len() > 38 {
+            format!("{}…", &display_name[..37])
         } else {
             display_name.to_string()
         };
 
         let return_str = format!("{:.2}%", opp.est_return);
+        let url = opp
+            .slug
+            .as_ref()
+            .map(|s| format!("https://polymarket.com/event/{}", s))
+            .unwrap_or_default();
 
         println!(
-            "{:<55} {:>6} {:>7.1}¢ {:>8} {:>11.0}$",
+            "{:<40} {:>6} {:>7.1}¢ {:>8} {:>9.0}$   {}",
             truncated_name,
             opp.outcome,
             opp.price * 100.0,
             return_str,
             opp.volume,
+            url,
         );
     }
 

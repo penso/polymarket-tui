@@ -382,7 +382,8 @@ fn render_loading_gauge(f: &mut Frame, app: &TrendingAppState) {
     let gauge = LineGauge::default()
         .filled_style(Style::default().fg(Color::Cyan))
         .unfilled_style(Style::default().fg(Color::DarkGray))
-        .line_set(ratatui::symbols::line::THICK)
+        .filled_symbol("━")
+        .unfilled_symbol("━")
         .ratio(app.loading_progress)
         .label(label);
 
@@ -747,8 +748,8 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             // Use TableState for proper row selection (when Trades panel is focused)
             let is_focused = app.navigation.focused_panel == FocusedPanel::Trades;
             if is_focused && !trades.is_empty() {
-                // Clone the state to avoid borrow issues
-                let mut table_state = app.trades_table_state.clone();
+                // Copy the state (TableState implements Copy in ratatui 0.30)
+                let mut table_state = app.trades_table_state;
                 // Set selection if not already set
                 if table_state.selected().is_none() {
                     table_state.select(Some(0));

@@ -578,17 +578,21 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         let trades = app.get_trades(event_slug);
         let is_watching = app.is_watching(event_slug);
 
-        // Split area into event details and trades
+        // Split area into event details, markets, and trades
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(18), // Event details (increased to fit new fields)
+                Constraint::Length(12), // Event details (compact)
+                Constraint::Length(7),  // Markets panel (5 lines + 2 for borders)
                 Constraint::Min(0),     // Trades table
             ])
             .split(area);
 
         // Render event details
         render_event_details(f, event, is_watching, trades.len(), chunks[0]);
+        
+        // Render markets panel
+        render_markets(f, event, chunks[1]);
 
         // Render trades table
         if trades.is_empty() {
@@ -735,6 +739,7 @@ fn render_event_details(
         })
         .unwrap_or_else(|| "N/A".to_string());
 
+    // Build compact lines without blank lines
     let mut lines = vec![
         Line::from(vec![
             Span::styled("Title: ", Style::default().fg(Color::Yellow).bold()),
@@ -743,31 +748,24 @@ fn render_event_details(
                 Style::default().fg(Color::White),
             ),
         ]),
-        Line::from(""),
     ];
 
-    // Add image thumbnail if available (show URL for now, terminal image rendering requires additional setup)
+    // Add image thumbnail if available
     if let Some(ref image_url) = event.image {
         lines.push(Line::from(vec![
             Span::styled("Image: ", Style::default().fg(Color::Yellow).bold()),
-            Span::styled(
-                truncate(image_url, 50),
-                Style::default().fg(Color::Blue),
-            ),
+            Span::styled(truncate(image_url, 50), Style::default().fg(Color::Blue)),
         ]));
-        lines.push(Line::from(""));
     }
 
     lines.push(Line::from(vec![
         Span::styled("Slug: ", Style::default().fg(Color::Yellow).bold()),
         Span::styled(truncate(&event.slug, 60), Style::default().fg(Color::Blue)),
     ]));
-    lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::styled("Event ID: ", Style::default().fg(Color::Yellow).bold()),
         Span::styled(truncate(&event.id, 50), Style::default().fg(Color::White)),
     ]));
-    lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::styled("Status: ", Style::default().fg(Color::Yellow).bold()),
         Span::styled(
@@ -797,23 +795,17 @@ fn render_event_details(
             Style::default().fg(if is_watching { Color::Red } else { Color::Gray }),
         ),
     ]));
-    lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::styled("Estimated End: ", Style::default().fg(Color::Yellow).bold()),
         Span::styled(end_date_str, Style::default().fg(Color::Magenta)),
     ]));
-    lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::styled("Total Volume: ", Style::default().fg(Color::Yellow).bold()),
         Span::styled(
             format!("${:.2}", total_volume),
-            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" | ", Style::default().fg(Color::Gray)),
-        Span::styled("Markets: ", Style::default().fg(Color::Yellow).bold()),
-        Span::styled(
-            event.markets.len().to_string(),
-            Style::default().fg(Color::Cyan),
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::styled(" | ", Style::default().fg(Color::Gray)),
         Span::styled("Trades: ", Style::default().fg(Color::Yellow).bold()),
@@ -827,18 +819,20 @@ fn render_event_details(
         ),
     ]));
 
+    // Add tags on same line if available
     if !event.tags.is_empty() {
-        lines.push(Line::from(""));
-        lines.push(Line::from(vec![Span::styled(
-            "Tags: ",
-            Style::default().fg(Color::Yellow).bold(),
-        )]));
-        for tag in &event.tags {
-            lines.push(Line::from(vec![
-                Span::styled("  • ", Style::default().fg(Color::Gray)),
-                Span::styled(truncate(&tag.label, 50), Style::default().fg(Color::Cyan)),
-            ]));
-        }
+        let tag_labels: Vec<String> = event
+            .tags
+            .iter()
+            .map(|tag| truncate(&tag.label, 20))
+            .collect();
+        lines.push(Line::from(vec![
+            Span::styled("Tags: ", Style::default().fg(Color::Yellow).bold()),
+            Span::styled(
+                tag_labels.join(", "),
+                Style::default().fg(Color::Cyan),
+            ),
+        ]));
     }
 
     let paragraph = Paragraph::new(lines)
@@ -849,6 +843,65 @@ fn render_event_details(
         )
         .wrap(Wrap { trim: true });
     f.render_widget(paragraph, area);
+}
+
+fn render_markets(f: &mut Frame, event: &Event, area: Rect) {
+    if event.markets.is_empty() {
+        let paragraph = Paragraph::new("No markets available")
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Markets"),
+            )
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::Gray));
+        f.render_widget(paragraph, area);
+        return;
+    }
+
+    // Calculate visible height (accounting for borders)
+    let visible_height = (area.height as usize).saturating_sub(2);
+    
+    // Create list items for markets (show all, List widget handles scrolling)
+    let items: Vec<ListItem> = event
+        .markets
+        .iter()
+        .map(|market| {
+            let volume_str = market
+                .volume_total
+                .map(|v| format!(" ${:.2}", v))
+                .unwrap_or_else(|| String::new());
+            
+            let outcomes_str = if market.outcomes.len() >= 2 {
+                format!(
+                    " {} / {}",
+                    market.outcomes.get(0).unwrap_or(&String::new()),
+                    market.outcomes.get(1).unwrap_or(&String::new())
+                )
+            } else {
+                String::new()
+            };
+
+            let line = Line::from(vec![
+                Span::styled(
+                    truncate(&market.question, 50),
+                    Style::default().fg(Color::White),
+                ),
+                Span::styled(outcomes_str, Style::default().fg(Color::Cyan)),
+                Span::styled(volume_str, Style::default().fg(Color::Green)),
+            ]);
+            ListItem::new(line)
+        })
+        .collect();
+
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!("Markets ({})", event.markets.len())),
+        );
+
+    f.render_widget(list, area);
 }
 
 fn truncate(s: &str, max_len: usize) -> String {

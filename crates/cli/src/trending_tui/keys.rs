@@ -7,7 +7,7 @@
 //! - **Header**: ←/→ to switch filters
 //! - **EventsList**: / for API search, f for local filter, r to refresh, Enter to watch/unwatch
 //! - **Markets**: r to refresh prices
-//! - **All panels**: ↑/↓ to scroll, Tab to switch panels, q to quit
+//! - **All panels**: ↑/↓ to scroll, Tab to switch panels, l to toggle logs, q to quit
 
 use super::state::FocusedPanel;
 

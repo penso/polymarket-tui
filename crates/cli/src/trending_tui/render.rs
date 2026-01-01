@@ -66,15 +66,25 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
         4
     };
     // Use Spacing::Overlap(1) to collapse borders between vertical sections
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .spacing(Spacing::Overlap(1))
-        .constraints([
+    // Conditionally include logs area based on show_logs
+    let constraints: Vec<Constraint> = if app.show_logs {
+        vec![
             Constraint::Length(header_height), // Header (with search if active)
             Constraint::Min(0),                // Main content
             Constraint::Length(8),             // Logs area
             Constraint::Length(3),             // Footer
-        ])
+        ]
+    } else {
+        vec![
+            Constraint::Length(header_height), // Header (with search if active)
+            Constraint::Min(0),                // Main content
+            Constraint::Length(3),             // Footer
+        ]
+    };
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .spacing(Spacing::Overlap(1))
+        .constraints(constraints)
         .split(f.area());
 
     // Header
@@ -136,35 +146,31 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
         // Search input field - show full query with proper spacing
         let search_line = if app.search.query.is_empty() {
             let prompt_text = match app.search.mode {
-                SearchMode::ApiSearch => "🔍 API Search: (type to search via API)",
-                SearchMode::LocalFilter => "🔍 Filter: (type to filter current list)",
-                SearchMode::None => "🔍 Search: (type to search)",
+                SearchMode::ApiSearch => "Type to search via API...",
+                SearchMode::LocalFilter => "Type to filter current list...",
+                SearchMode::None => "Type to search...",
             };
             Line::from(prompt_text.fg(Color::DarkGray))
         } else if app.search.is_searching {
             Line::from(vec![
-                Span::styled("🔍 Search: ", Style::default().fg(Color::White)),
                 Span::styled(
                     app.search.query.clone(),
                     Style::default()
                         .fg(Color::Cyan)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(" ⏳", Style::default().fg(Color::Yellow)),
+                Span::styled(" (searching...)", Style::default().fg(Color::Yellow)),
             ])
         } else {
-            Line::from(vec![
-                Span::styled("🔍 Search: ", Style::default().fg(Color::White)),
-                Span::styled(
-                    app.search.query.clone(),
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ])
+            Line::from(Span::styled(
+                app.search.query.clone(),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ))
         };
         let search_title = if app.search.is_searching {
-            "Search ⏳ Searching..."
+            "Search (loading...)"
         } else {
             "Search"
         };
@@ -226,15 +232,21 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
         .spacing(Spacing::Overlap(1))
         .constraints([
             Constraint::Percentage(40), // Events list
-            Constraint::Percentage(60), // Trades view
+            Constraint::Fill(1),        // Right side takes remaining space
         ])
         .split(chunks[1]);
 
     render_events_list(f, app, main_chunks[0]);
     render_trades(f, app, main_chunks[1]);
 
-    // Logs area
-    render_logs(f, app, chunks[2]);
+    // Logs area (only if shown)
+    // Footer index depends on whether logs are shown
+    let footer_idx = if app.show_logs {
+        render_logs(f, app, chunks[2]);
+        3
+    } else {
+        2
+    };
 
     // Footer - show focused panel info with context-sensitive help
     let panel_name = app.navigation.focused_panel.name();
@@ -244,13 +256,16 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
     } else if app.search.mode == SearchMode::LocalFilter {
         format!("Type to filter | Esc: Cancel | [{}]", panel_name)
     } else {
-        format!("{} | Tab: Switch | q: Quit | [{}]", panel_help, panel_name)
+        format!(
+            "{} | l: Logs | Tab: Switch | q: Quit | [{}]",
+            panel_help, panel_name
+        )
     };
     let footer = Paragraph::new(footer_text)
         .block(Block::default().borders(Borders::ALL))
         .alignment(Alignment::Center)
         .style(Style::default().fg(Color::Gray));
-    f.render_widget(footer, chunks[3]);
+    f.render_widget(footer, chunks[footer_idx]);
 
     // Render popup if active (on top of everything)
     if let Some(ref popup) = app.popup {
@@ -389,11 +404,22 @@ fn render_loading_gauge(f: &mut Frame, app: &TrendingAppState) {
 
 fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
     let filtered_events = app.filtered_events();
-    let items: Vec<ListItem> = filtered_events
+    let visible_events: Vec<_> = filtered_events
         .iter()
         .enumerate()
         .skip(app.scroll.events_list)
         .take(area.height as usize - 2)
+        .collect();
+
+    // First pass: calculate max width of market count for alignment
+    let max_markets_width = visible_events
+        .iter()
+        .map(|(_, event)| event.markets.len().to_string().len())
+        .max()
+        .unwrap_or(1);
+
+    let items: Vec<ListItem> = visible_events
+        .into_iter()
         .map(|(idx, event)| {
             let is_selected = idx == app.navigation.selected_index;
 
@@ -411,6 +437,7 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             };
 
             let markets_count = event.markets.len();
+            let markets_str = format!("{:>width$}", markets_count, width = max_markets_width);
 
             // Calculate total volume from all markets
             let total_volume: f64 = event
@@ -442,9 +469,9 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
 
             // Build the right-aligned text: "[trades] volume markets"
             let right_text = if volume_str.is_empty() {
-                format!("{}{}", trade_count_str, markets_count)
+                format!("{}{}", trade_count_str, markets_str)
             } else {
-                format!("{}{} {}", trade_count_str, volume_str, markets_count)
+                format!("{}{} {}", trade_count_str, volume_str, markets_str)
             };
             let right_text_width = right_text.width();
 
@@ -494,7 +521,7 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 line_spans.push(Span::styled(" ", Style::default()));
             }
             line_spans.push(Span::styled(
-                markets_count.to_string(),
+                markets_str,
                 Style::default().fg(Color::Cyan),
             ));
 
@@ -516,13 +543,9 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         Style::default()
     };
 
-    // Build title with loading indicator
-    let title = if app.search.is_searching {
-        "Trending Events ⏳ Searching..."
-    } else if app.pagination.is_fetching_more {
-        "Trending Events ⏳ Loading..."
-    } else if is_focused {
-        "Trending Events (Focused)"
+    // Build title
+    let title = if app.pagination.is_fetching_more {
+        "Trending Events (loading...)"
     } else {
         "Trending Events"
     };

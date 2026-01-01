@@ -268,6 +268,7 @@ pub struct TrendingAppState {
     pub trades_table_state: TableState, // State for trades table selection
     pub loading_progress: f64,     // Loading progress (0.0 to 1.0) for LineGauge
     pub events_cache: HashMap<EventFilter, Vec<Event>>, // Cache for each filter tab
+    pub show_logs: bool,           // Whether to show the logs panel (toggle with 'l')
 }
 
 impl TrendingAppState {
@@ -301,6 +302,7 @@ impl TrendingAppState {
             trades_table_state: TableState::default(),
             loading_progress: 0.0,
             events_cache,
+            show_logs: false, // Hidden by default
         }
     }
 

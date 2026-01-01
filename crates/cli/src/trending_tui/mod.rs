@@ -68,6 +68,7 @@ use {
 fn calculate_panel_areas(
     size: Rect,
     is_in_filter_mode: bool,
+    show_logs: bool,
 ) -> (Rect, Rect, Rect, Rect, Rect, Rect) {
     let header_height = if is_in_filter_mode {
         6
@@ -75,25 +76,39 @@ fn calculate_panel_areas(
         4
     };
     // Use Spacing::Overlap(1) to match render function's collapsed borders
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .spacing(Spacing::Overlap(1))
-        .constraints([
+    // Conditionally include logs area
+    let constraints: Vec<Constraint> = if show_logs {
+        vec![
             Constraint::Length(header_height),
             Constraint::Min(0),
             Constraint::Length(8),
             Constraint::Length(3),
-        ])
+        ]
+    } else {
+        vec![
+            Constraint::Length(header_height),
+            Constraint::Min(0),
+            Constraint::Length(3),
+        ]
+    };
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .spacing(Spacing::Overlap(1))
+        .constraints(constraints)
         .split(size);
 
     let header_area = chunks[0];
-    let logs_area = chunks[2];
+    let logs_area = if show_logs {
+        chunks[2]
+    } else {
+        Rect::default() // Empty rect when logs hidden
+    };
 
     // Main content split - also with collapsed borders
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .spacing(Spacing::Overlap(1))
-        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+        .constraints([Constraint::Percentage(40), Constraint::Fill(1)])
         .split(chunks[1]);
 
     let events_list_area = main_chunks[0];
@@ -129,9 +144,10 @@ fn get_panel_at_position(
     y: u16,
     size: Rect,
     is_in_filter_mode: bool,
+    show_logs: bool,
 ) -> Option<FocusedPanel> {
     let (header, events_list, event_details, markets, trades, logs) =
-        calculate_panel_areas(size, is_in_filter_mode);
+        calculate_panel_areas(size, is_in_filter_mode, show_logs);
 
     if y >= header.y && y < header.y + header.height && x >= header.x && x < header.x + header.width
     {
@@ -160,7 +176,12 @@ fn get_panel_at_position(
         && x < trades.x + trades.width
     {
         Some(FocusedPanel::Trades)
-    } else if y >= logs.y && y < logs.y + logs.height && x >= logs.x && x < logs.x + logs.width {
+    } else if show_logs
+        && y >= logs.y
+        && y < logs.y + logs.height
+        && x >= logs.x
+        && x < logs.x + logs.width
+    {
         Some(FocusedPanel::Logs)
     } else {
         None
@@ -201,7 +222,10 @@ fn switch_filter_tab(
             "Switching to {} filter, fetching events...",
             new_filter.label()
         );
-        Some((new_filter.order_by().to_string(), app.pagination.current_limit))
+        Some((
+            new_filter.order_by().to_string(),
+            app.pagination.current_limit,
+        ))
     }
 }
 
@@ -512,6 +536,7 @@ pub async fn run_trending_tui(
                         mouse.row,
                         size,
                         app.is_in_filter_mode(),
+                        app.show_logs,
                     ) {
                         app.navigation.focused_panel = panel;
                     }
@@ -543,13 +568,14 @@ pub async fn run_trending_tui(
                     }
 
                     let (_, events_list_area, ..) =
-                        calculate_panel_areas(size, app.is_in_filter_mode());
+                        calculate_panel_areas(size, app.is_in_filter_mode(), app.show_logs);
 
                     if let Some(panel) = get_panel_at_position(
                         mouse.column,
                         mouse.row,
                         size,
                         app.is_in_filter_mode(),
+                        app.show_logs,
                     ) {
                         // If clicking in events list, select the clicked event
                         if panel == FocusedPanel::EventsList {
@@ -634,6 +660,7 @@ pub async fn run_trending_tui(
                         mouse.row,
                         size,
                         app.is_in_filter_mode(),
+                        app.show_logs,
                     ) {
                         match panel {
                             FocusedPanel::EventsList => app.move_up(),
@@ -670,6 +697,7 @@ pub async fn run_trending_tui(
                         mouse.row,
                         size,
                         app.is_in_filter_mode(),
+                        app.show_logs,
                     ) {
                         match panel {
                             FocusedPanel::EventsList => {
@@ -813,6 +841,24 @@ pub async fn run_trending_tui(
                             app.show_popup(state::PopupType::Help);
                         }
                     },
+                    KeyCode::Char('l') => {
+                        // Toggle logs panel visibility (disabled in filter mode)
+                        if !app.is_in_filter_mode() {
+                            app.show_logs = !app.show_logs;
+                            // If hiding logs and logs panel was focused, switch to another panel
+                            if !app.show_logs
+                                && app.navigation.focused_panel == FocusedPanel::Logs
+                            {
+                                app.navigation.focused_panel = FocusedPanel::EventsList;
+                            }
+                        } else {
+                            // In filter mode, add 'l' to search query
+                            app.add_search_char('l');
+                            if app.search.mode == SearchMode::ApiSearch {
+                                search_debounce = Some(tokio::time::Instant::now());
+                            }
+                        }
+                    },
                     KeyCode::Char('/') => {
                         // Search is only available when EventsList panel is focused
                         if !app.is_in_filter_mode()
@@ -878,8 +924,7 @@ pub async fn run_trending_tui(
                                     Ok(new_events) => {
                                         let mut app = app_state_clone.lock().await;
                                         // Update cache for current filter
-                                        app.events_cache
-                                            .insert(current_filter, new_events.clone());
+                                        app.events_cache.insert(current_filter, new_events.clone());
                                         app.events = new_events;
                                         log_info!("Events refreshed ({} events)", app.events.len());
                                     },
@@ -928,13 +973,19 @@ pub async fn run_trending_tui(
                     },
                     KeyCode::Tab => {
                         if !app.is_in_filter_mode() {
-                            // Cycle through panels: Header -> EventsList -> EventDetails -> Markets -> Trades -> Logs -> Header
+                            // Cycle through panels, skipping Logs if hidden
                             app.navigation.focused_panel = match app.navigation.focused_panel {
                                 FocusedPanel::Header => FocusedPanel::EventsList,
                                 FocusedPanel::EventsList => FocusedPanel::EventDetails,
                                 FocusedPanel::EventDetails => FocusedPanel::Markets,
                                 FocusedPanel::Markets => FocusedPanel::Trades,
-                                FocusedPanel::Trades => FocusedPanel::Logs,
+                                FocusedPanel::Trades => {
+                                    if app.show_logs {
+                                        FocusedPanel::Logs
+                                    } else {
+                                        FocusedPanel::Header
+                                    }
+                                },
                                 FocusedPanel::Logs => FocusedPanel::Header,
                             };
                         }

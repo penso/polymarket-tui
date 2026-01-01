@@ -1,11 +1,17 @@
 [package]
-name = "polymarket-cli"
+name = "polymarket-tui"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+description = "Terminal UI for browsing Polymarket events and watching live trades"
+repository = "https://github.com/penso/polymarket-tui"
+homepage = "https://github.com/penso/polymarket-tui"
+readme = "../../README.md"
+keywords = ["polymarket", "tui", "terminal", "trading", "prediction-markets"]
+categories = ["command-line-utilities"]
 
 [[bin]]
-name = "polymarket-cli"
+name = "polymarket-tui"
 path = "src/main.rs"
 
 [features]

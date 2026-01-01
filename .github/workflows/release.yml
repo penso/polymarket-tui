@@ -9,7 +9,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  BINARY_NAME: polymarket-cli
+  BINARY_NAME: polymarket-tui
 
 jobs:
   build:
@@ -22,23 +22,23 @@ jobs:
           # Linux x86_64
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact_name: polymarket-cli-linux-amd64
+            artifact_name: polymarket-tui-linux-amd64
 
           # Linux ARM64
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact_name: polymarket-cli-linux-arm64
+            artifact_name: polymarket-tui-linux-arm64
             cross: true
 
           # macOS x86_64 (cross-compile from ARM)
           - target: x86_64-apple-darwin
             os: macos-latest
-            artifact_name: polymarket-cli-darwin-amd64
+            artifact_name: polymarket-tui-darwin-amd64
 
           # macOS ARM64 (Apple Silicon)
           - target: aarch64-apple-darwin
             os: macos-latest
-            artifact_name: polymarket-cli-darwin-arm64
+            artifact_name: polymarket-tui-darwin-arm64
 
     steps:
       - name: Checkout
@@ -63,12 +63,12 @@ jobs:
       # Build with cross for ARM64 Linux
       - name: Build (cross)
         if: matrix.cross
-        run: cross build --release --target ${{ matrix.target }} --features tui -p polymarket-cli
+        run: cross build --release --target ${{ matrix.target }} --features tui -p polymarket-tui
 
       # Build natively for other targets
       - name: Build (native)
         if: ${{ !matrix.cross }}
-        run: cargo build --release --target ${{ matrix.target }} --features tui -p polymarket-cli
+        run: cargo build --release --target ${{ matrix.target }} --features tui -p polymarket-tui
 
       - name: Prepare artifact
         run: |
@@ -130,16 +130,16 @@ jobs:
             --notes "Automated build from commit ${{ github.sha }}
 
           ## Downloads
-          - **Linux AMD64**: \`polymarket-cli-linux-amd64\`
-          - **Linux ARM64**: \`polymarket-cli-linux-arm64\`
-          - **macOS AMD64**: \`polymarket-cli-darwin-amd64\`
-          - **macOS ARM64 (Apple Silicon)**: \`polymarket-cli-darwin-arm64\`
+          - **Linux AMD64**: \`polymarket-tui-linux-amd64\`
+          - **Linux ARM64**: \`polymarket-tui-linux-arm64\`
+          - **macOS AMD64**: \`polymarket-tui-darwin-amd64\`
+          - **macOS ARM64 (Apple Silicon)**: \`polymarket-tui-darwin-arm64\`
 
           ## Installation
           \`\`\`bash
           # Download the appropriate binary for your system
-          chmod +x polymarket-cli-*
-          ./polymarket-cli-* --help
+          chmod +x polymarket-tui-*
+          ./polymarket-tui-* --help
           \`\`\`
 
           ## Checksums

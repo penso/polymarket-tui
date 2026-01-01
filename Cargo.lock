@@ -1013,7 +1013,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "polymarket-cli"
+name = "polymarket-tui"
 version = "0.1.0"
 dependencies = [
  "anyhow",

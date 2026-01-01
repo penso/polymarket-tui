@@ -3,6 +3,12 @@ name = "polymarket-api"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+description = "Rust client library for Polymarket REST and WebSocket APIs"
+repository = "https://github.com/penso/polymarket-tui"
+homepage = "https://github.com/penso/polymarket-tui"
+readme = "../../README.md"
+keywords = ["polymarket", "api", "trading", "prediction-markets", "websocket"]
+categories = ["api-bindings", "web-programming"]
 
 [features]
 default = []

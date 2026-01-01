@@ -484,7 +484,11 @@ async fn run_trending(order_by: String, ascending: bool, limit: usize) -> Result
     let backend = CrosstermBackend::new(stdout);
     let terminal = Terminal::new(backend)?;
 
-    let app_state = Arc::new(TokioMutex::new(trending_tui::TrendingAppState::new(events, order_by.clone(), ascending)));
+    let app_state = Arc::new(TokioMutex::new(trending_tui::TrendingAppState::new(
+        events,
+        order_by.clone(),
+        ascending,
+    )));
 
     // Connect logs to app state
     let logs_for_app = Arc::clone(&logs);

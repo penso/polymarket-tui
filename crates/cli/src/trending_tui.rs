@@ -86,10 +86,10 @@ pub struct TrendingAppState {
     pub logs: Vec<String>,
     pub log_scroll: usize,
     // Infinite scrolling state
-    pub current_limit: usize,       // Current number of events fetched
-    pub is_fetching_more: bool,     // Whether we're currently fetching more events
-    pub order_by: String,           // Order by parameter for API calls
-    pub ascending: bool,            // Ascending parameter for API calls
+    pub current_limit: usize,   // Current number of events fetched
+    pub is_fetching_more: bool, // Whether we're currently fetching more events
+    pub order_by: String,       // Order by parameter for API calls
+    pub ascending: bool,        // Ascending parameter for API calls
 }
 
 impl TrendingAppState {
@@ -115,14 +115,14 @@ impl TrendingAppState {
             ascending,
         }
     }
-    
+
     /// Check if we need to fetch more events (when user is near the end)
     pub fn should_fetch_more(&self) -> bool {
         // Only fetch more if not in search mode and not already fetching
         if self.search_mode || !self.search_query.is_empty() || self.is_fetching_more {
             return false;
         }
-        
+
         let filtered_len = self.filtered_events().len();
         // Fetch more when user is within 5 items of the end
         self.selected_index >= filtered_len.saturating_sub(5) && filtered_len >= self.current_limit
@@ -894,7 +894,7 @@ pub async fn run_trending_tui(
                         KeyCode::Down => {
                             if !app.search_mode {
                                 app.move_down();
-                                
+
                                 // Check if we need to fetch more events (infinite scroll)
                                 if app.should_fetch_more() {
                                     let app_state_clone = Arc::clone(&app_state);
@@ -902,42 +902,59 @@ pub async fn run_trending_tui(
                                     let order_by = app.order_by.clone();
                                     let ascending = app.ascending;
                                     let current_limit = app.current_limit;
-                                    
+
                                     // Set fetching flag to prevent duplicate requests
                                     app.is_fetching_more = true;
-                                    
+
                                     // Fetch 50 more events
                                     let new_limit = current_limit + 50;
-                                    tracing::info!("Fetching more trending events (limit: {})", new_limit);
-                                    
+                                    tracing::info!(
+                                        "Fetching more trending events (limit: {})",
+                                        new_limit
+                                    );
+
                                     tokio::spawn(async move {
                                         match gamma_client_clone
-                                            .get_trending_events(Some(&order_by), Some(ascending), Some(new_limit))
+                                            .get_trending_events(
+                                                Some(&order_by),
+                                                Some(ascending),
+                                                Some(new_limit),
+                                            )
                                             .await
                                         {
                                             Ok(mut new_events) => {
                                                 // Remove duplicates by comparing slugs
                                                 let existing_slugs: std::collections::HashSet<_> = {
                                                     let app = app_state_clone.lock().await;
-                                                    app.events.iter().map(|e| e.slug.clone()).collect()
+                                                    app.events
+                                                        .iter()
+                                                        .map(|e| e.slug.clone())
+                                                        .collect()
                                                 };
-                                                
-                                                new_events.retain(|e| !existing_slugs.contains(&e.slug));
-                                                
+
+                                                new_events
+                                                    .retain(|e| !existing_slugs.contains(&e.slug));
+
                                                 if !new_events.is_empty() {
-                                                    tracing::info!("Fetched {} new trending events", new_events.len());
+                                                    tracing::info!(
+                                                        "Fetched {} new trending events",
+                                                        new_events.len()
+                                                    );
                                                     let mut app = app_state_clone.lock().await;
                                                     app.events.append(&mut new_events);
                                                     app.current_limit = new_limit;
                                                 } else {
                                                     tracing::info!("No new events to add (already have all events)");
                                                 }
-                                                
+
                                                 let mut app = app_state_clone.lock().await;
                                                 app.is_fetching_more = false;
                                             }
                                             Err(e) => {
-                                                tracing::error!("Failed to fetch more events: {}", e);
+                                                tracing::error!(
+                                                    "Failed to fetch more events: {}",
+                                                    e
+                                                );
                                                 let mut app = app_state_clone.lock().await;
                                                 app.is_fetching_more = false;
                                             }

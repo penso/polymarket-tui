@@ -455,11 +455,7 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
 
                     let title_truncated = truncate(&trade.title, 30);
                     let user_truncated = truncate(&trade.user, 15);
-                    let side_text = if trade.side == "BUY" {
-                        "🟢 BUY".to_string()
-                    } else {
-                        "🔴 SELL".to_string()
-                    };
+                    let side_text = trade.side.clone();
                     let outcome_text = trade.outcome.clone();
 
                     Row::new(vec![

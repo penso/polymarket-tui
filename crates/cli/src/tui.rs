@@ -145,12 +145,7 @@ pub fn render(f: &mut Frame, app: &AppState) {
 
                 Row::new(vec![
                     Cell::from(time).style(Style::default().fg(Color::Gray)),
-                    Cell::from(if trade.side == "BUY" {
-                        "🟢 BUY"
-                    } else {
-                        "🔴 SELL"
-                    })
-                    .style(side_style),
+                    Cell::from(trade.side.clone()).style(side_style),
                     Cell::from(trade.outcome.clone()).style(outcome_style),
                     Cell::from(format!("${:.4}", trade.price)),
                     Cell::from(format!("{:.2}", trade.shares)),

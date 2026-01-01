@@ -759,30 +759,29 @@ pub async fn run_trending_tui(
                     }
 
                     // Spawn the search task
-                    // The tracing subscriber is set as default, so logs should be captured
-                    // even from spawned tasks (no need for .instrument() if dispatcher is default)
+                    // The tracing context should be inherited automatically since we're using set_default()
                     tokio::spawn(async move {
-                            // Test log to verify tracing works in spawned task
-                            tracing::info!("[TASK] Starting search for: '{}'", query_clone);
+                        // Test log to verify tracing works in spawned task
+                        tracing::info!("[TASK] Starting search for: '{}'", query_clone);
 
-                            let result = gamma_client_for_task
-                                .search_events(&query_clone, Some(50))
-                                .await;
+                        let result = gamma_client_for_task
+                            .search_events(&query_clone, Some(50))
+                            .await;
 
-                            match result {
-                                Ok(results) => {
-                                    tracing::info!("Search found {} results", results.len());
-                                    let mut app = app_state_clone.lock().await;
-                                    app.set_search_results(results, query_clone);
-                                }
-                                Err(e) => {
-                                    tracing::error!("Search failed: {}", e);
-                                    let mut app = app_state_clone.lock().await;
-                                    app.set_searching(false);
-                                    app.search_results.clear();
-                                }
+                        match result {
+                            Ok(results) => {
+                                tracing::info!("Search found {} results", results.len());
+                                let mut app = app_state_clone.lock().await;
+                                app.set_search_results(results, query_clone);
                             }
-                        });
+                            Err(e) => {
+                                tracing::error!("Search failed: {}", e);
+                                let mut app = app_state_clone.lock().await;
+                                app.set_searching(false);
+                                app.search_results.clear();
+                            }
+                        }
+                    });
                 } else {
                     // Query is empty, clear search results
                     let mut app = app_state.lock().await;

@@ -1,0 +1,3 @@
+export api_key=""
+export secret=""
+export passphrase=""

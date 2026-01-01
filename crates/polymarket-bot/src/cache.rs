@@ -22,8 +22,9 @@ impl FileCache {
     /// Create a new FileCache with the given cache directory
     pub fn new<P: AsRef<Path>>(cache_dir: P) -> Result<Self> {
         let cache_dir = cache_dir.as_ref().to_path_buf();
-        fs::create_dir_all(&cache_dir)
-            .map_err(|e| PolymarketError::InvalidData(format!("Failed to create cache directory: {}", e)))?;
+        fs::create_dir_all(&cache_dir).map_err(|e| {
+            PolymarketError::InvalidData(format!("Failed to create cache directory: {}", e))
+        })?;
 
         Ok(Self {
             cache_dir,
@@ -48,11 +49,12 @@ impl FileCache {
             return Ok(None);
         }
 
-        let content = fs::read_to_string(&cache_file)
-            .map_err(|e| PolymarketError::InvalidData(format!("Failed to read cache file: {}", e)))?;
+        let content = fs::read_to_string(&cache_file).map_err(|e| {
+            PolymarketError::InvalidData(format!("Failed to read cache file: {}", e))
+        })?;
 
-        let entry: CacheEntry<T> = serde_json::from_str(&content)
-            .map_err(PolymarketError::Serialization)?;
+        let entry: CacheEntry<T> =
+            serde_json::from_str(&content).map_err(PolymarketError::Serialization)?;
 
         // Check if entry has expired
         if let Some(ttl) = entry.ttl_seconds {
@@ -89,16 +91,17 @@ impl FileCache {
             ttl_seconds: self.default_ttl_seconds,
         };
 
-        let json = serde_json::to_string_pretty(&entry)
-            .map_err(PolymarketError::Serialization)?;
+        let json = serde_json::to_string_pretty(&entry).map_err(PolymarketError::Serialization)?;
 
         // Write to temp file first, then rename (atomic operation)
         let temp_file = cache_file.with_extension("tmp");
-        fs::write(&temp_file, json)
-            .map_err(|e| PolymarketError::InvalidData(format!("Failed to write cache file: {}", e)))?;
+        fs::write(&temp_file, json).map_err(|e| {
+            PolymarketError::InvalidData(format!("Failed to write cache file: {}", e))
+        })?;
 
-        fs::rename(&temp_file, &cache_file)
-            .map_err(|e| PolymarketError::InvalidData(format!("Failed to rename cache file: {}", e)))?;
+        fs::rename(&temp_file, &cache_file).map_err(|e| {
+            PolymarketError::InvalidData(format!("Failed to rename cache file: {}", e))
+        })?;
 
         Ok(())
     }
@@ -107,8 +110,9 @@ impl FileCache {
     pub fn remove(&self, key: &str) -> Result<()> {
         let cache_file = self.cache_file_path(key);
         if cache_file.exists() {
-            fs::remove_file(&cache_file)
-                .map_err(|e| PolymarketError::InvalidData(format!("Failed to remove cache file: {}", e)))?;
+            fs::remove_file(&cache_file).map_err(|e| {
+                PolymarketError::InvalidData(format!("Failed to remove cache file: {}", e))
+            })?;
         }
         Ok(())
     }
@@ -116,15 +120,17 @@ impl FileCache {
     /// Clear all cached entries
     pub fn clear(&self) -> Result<()> {
         if self.cache_dir.exists() {
-            for entry in fs::read_dir(&self.cache_dir)
-                .map_err(|e| PolymarketError::InvalidData(format!("Failed to read cache directory: {}", e)))?
-            {
-                let entry = entry
-                    .map_err(|e| PolymarketError::InvalidData(format!("Failed to read directory entry: {}", e)))?;
+            for entry in fs::read_dir(&self.cache_dir).map_err(|e| {
+                PolymarketError::InvalidData(format!("Failed to read cache directory: {}", e))
+            })? {
+                let entry = entry.map_err(|e| {
+                    PolymarketError::InvalidData(format!("Failed to read directory entry: {}", e))
+                })?;
                 let path = entry.path();
                 if path.is_file() && path.extension().map(|e| e == "json").unwrap_or(false) {
-                    fs::remove_file(&path)
-                        .map_err(|e| PolymarketError::InvalidData(format!("Failed to remove cache file: {}", e)))?;
+                    fs::remove_file(&path).map_err(|e| {
+                        PolymarketError::InvalidData(format!("Failed to remove cache file: {}", e))
+                    })?;
                 }
             }
         }
@@ -140,7 +146,13 @@ impl FileCache {
         // Sanitize key to be filesystem-safe
         let sanitized = key
             .chars()
-            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect::<String>();
         self.cache_dir.join(format!("{}.json", sanitized))
     }
@@ -152,4 +164,3 @@ pub fn default_cache_dir() -> PathBuf {
         .map(|d| d.join("polymarket-bot"))
         .unwrap_or_else(|| PathBuf::from(".cache"))
 }
-

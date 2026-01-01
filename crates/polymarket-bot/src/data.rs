@@ -187,4 +187,3 @@ impl Default for DataClient {
         Self::new()
     }
 }
-

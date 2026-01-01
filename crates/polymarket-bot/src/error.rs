@@ -22,6 +22,7 @@ pub type Result<T> = std::result::Result<T, PolymarketError>;
 
 /// Helper function to lock a Mutex and convert poison errors
 pub fn lock_mutex<T>(mutex: &std::sync::Mutex<T>) -> Result<std::sync::MutexGuard<'_, T>> {
-    mutex.lock().map_err(|e| PolymarketError::PoisonedLock(format!("{}", e)))
+    mutex
+        .lock()
+        .map_err(|e| PolymarketError::PoisonedLock(format!("{}", e)))
 }
-

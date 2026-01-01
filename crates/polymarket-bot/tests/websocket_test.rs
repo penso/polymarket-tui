@@ -22,10 +22,7 @@ fn test_subscription_message_serialization() {
 
 #[test]
 fn test_websocket_client_creation() {
-    let asset_ids = vec![
-        "token1".to_string(),
-        "token2".to_string(),
-    ];
+    let asset_ids = vec!["token1".to_string(), "token2".to_string()];
 
     let _client = PolymarketWebSocket::new(asset_ids.clone());
 
@@ -36,19 +33,20 @@ fn test_websocket_client_creation() {
 #[tokio::test]
 async fn test_websocket_connection_with_subscription() {
     // Test that we can connect and send a subscription message
-    use tokio_tungstenite::{connect_async, tungstenite::Message};
     use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::{connect_async, tungstenite::Message};
 
     // Connect to WebSocket
-    let (ws_stream, _) = match connect_async("wss://ws-subscriptions-clob.polymarket.com/ws/market").await {
-        Ok(stream) => stream,
-        Err(e) => {
-            // If connection fails, that's okay for a test - we just verify the URL format
-            // The actual connection test happens when running the CLI
-            eprintln!("WebSocket connection test skipped: {}", e);
-            return;
-        }
-    };
+    let (ws_stream, _) =
+        match connect_async("wss://ws-subscriptions-clob.polymarket.com/ws/market").await {
+            Ok(stream) => stream,
+            Err(e) => {
+                // If connection fails, that's okay for a test - we just verify the URL format
+                // The actual connection test happens when running the CLI
+                eprintln!("WebSocket connection test skipped: {}", e);
+                return;
+            }
+        };
 
     let (mut write, mut read) = ws_stream.split();
 
@@ -59,7 +57,11 @@ async fn test_websocket_connection_with_subscription() {
     });
 
     // Send subscription
-    if write.send(Message::Text(subscribe_msg.to_string())).await.is_ok() {
+    if write
+        .send(Message::Text(subscribe_msg.to_string()))
+        .await
+        .is_ok()
+    {
         // Try to read a response (with timeout)
         use tokio::time::{timeout, Duration};
         if let Ok(Some(Ok(Message::Text(_)))) = timeout(Duration::from_secs(2), read.next()).await {
@@ -69,4 +71,3 @@ async fn test_websocket_connection_with_subscription() {
 
     // Test passes if we got this far without panicking
 }
-

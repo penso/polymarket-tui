@@ -307,7 +307,7 @@ async fn run_watch_event(event: String, use_tui: bool) -> Result<()> {
     if use_tui {
         #[cfg(feature = "tui")]
         {
-            return run_watch_event_tui(event_slug).await;
+            run_watch_event_tui(event_slug).await
         }
         #[cfg(not(feature = "tui"))]
         {

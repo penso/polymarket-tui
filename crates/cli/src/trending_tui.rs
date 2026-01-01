@@ -32,6 +32,7 @@ pub struct Trade {
     pub total_value: f64,
     pub title: String,
     pub user: String,
+    #[allow(dead_code)]
     pub pseudonym: String,
 }
 
@@ -166,7 +167,8 @@ pub struct ScrollState {
     pub markets: usize,       // Scroll position for markets panel
     pub trades: usize,        // Scroll position for trades table
     pub event_details: usize, // Scroll position for event details
-    pub logs: usize,          // Scroll position for logs panel
+    #[allow(dead_code)]
+    pub logs: usize, // Scroll position for logs panel
 }
 
 impl ScrollState {
@@ -1862,38 +1864,34 @@ pub async fn run_trending_tui(
 
                                                 tokio::spawn(async move {
                                                     let mut prices = HashMap::new();
-                                                    for token_ids in markets_clone {
-                                                        if let Some(ref token_ids) = token_ids {
-                                                            for asset_id in token_ids {
-                                                                match clob_client
-                                                                    .get_orderbook_by_asset(
-                                                                        asset_id,
-                                                                    )
-                                                                    .await
-                                                                {
-                                                                    Ok(orderbook) => {
-                                                                        // Get best ask price (price to buy)
-                                                                        if let Some(best_ask) =
-                                                                            orderbook.asks.first()
+                                                    for token_ids in
+                                                        markets_clone.into_iter().flatten()
+                                                    {
+                                                        for asset_id in token_ids {
+                                                            match clob_client
+                                                                .get_orderbook_by_asset(&asset_id)
+                                                                .await
+                                                            {
+                                                                Ok(orderbook) => {
+                                                                    // Get best ask price (price to buy)
+                                                                    if let Some(best_ask) =
+                                                                        orderbook.asks.first()
+                                                                    {
+                                                                        if let Ok(price) = best_ask
+                                                                            .price
+                                                                            .parse::<f64>()
                                                                         {
-                                                                            if let Ok(price) =
-                                                                                best_ask
-                                                                                    .price
-                                                                                    .parse::<f64>()
-                                                                            {
-                                                                                prices.insert(
-                                                                                    asset_id
-                                                                                        .clone(),
-                                                                                    price,
-                                                                                );
-                                                                                tracing::debug!("Fetched price for asset {}: ${:.3}", asset_id, price);
-                                                                            }
+                                                                            prices.insert(
+                                                                                asset_id.clone(),
+                                                                                price,
+                                                                            );
+                                                                            tracing::debug!("Fetched price for asset {}: ${:.3}", asset_id, price);
                                                                         }
                                                                     }
-                                                                    Err(e) => {
-                                                                        // Only log as debug to reduce noise - empty orderbooks are common
-                                                                        tracing::debug!("Failed to fetch orderbook for asset {}: {}", asset_id, e);
-                                                                    }
+                                                                }
+                                                                Err(e) => {
+                                                                    // Only log as debug to reduce noise - empty orderbooks are common
+                                                                    tracing::debug!("Failed to fetch orderbook for asset {}: {}", asset_id, e);
                                                                 }
                                                             }
                                                         }
@@ -1953,38 +1951,34 @@ pub async fn run_trending_tui(
 
                                                 tokio::spawn(async move {
                                                     let mut prices = HashMap::new();
-                                                    for token_ids in markets_clone {
-                                                        if let Some(ref token_ids) = token_ids {
-                                                            for asset_id in token_ids {
-                                                                match clob_client
-                                                                    .get_orderbook_by_asset(
-                                                                        asset_id,
-                                                                    )
-                                                                    .await
-                                                                {
-                                                                    Ok(orderbook) => {
-                                                                        // Get best ask price (price to buy)
-                                                                        if let Some(best_ask) =
-                                                                            orderbook.asks.first()
+                                                    for token_ids in
+                                                        markets_clone.into_iter().flatten()
+                                                    {
+                                                        for asset_id in token_ids {
+                                                            match clob_client
+                                                                .get_orderbook_by_asset(&asset_id)
+                                                                .await
+                                                            {
+                                                                Ok(orderbook) => {
+                                                                    // Get best ask price (price to buy)
+                                                                    if let Some(best_ask) =
+                                                                        orderbook.asks.first()
+                                                                    {
+                                                                        if let Ok(price) = best_ask
+                                                                            .price
+                                                                            .parse::<f64>()
                                                                         {
-                                                                            if let Ok(price) =
-                                                                                best_ask
-                                                                                    .price
-                                                                                    .parse::<f64>()
-                                                                            {
-                                                                                prices.insert(
-                                                                                    asset_id
-                                                                                        .clone(),
-                                                                                    price,
-                                                                                );
-                                                                                tracing::debug!("Fetched price for asset {}: ${:.3}", asset_id, price);
-                                                                            }
+                                                                            prices.insert(
+                                                                                asset_id.clone(),
+                                                                                price,
+                                                                            );
+                                                                            tracing::debug!("Fetched price for asset {}: ${:.3}", asset_id, price);
                                                                         }
                                                                     }
-                                                                    Err(e) => {
-                                                                        // Only log as debug to reduce noise - empty orderbooks are common
-                                                                        tracing::debug!("Failed to fetch orderbook for asset {}: {}", asset_id, e);
-                                                                    }
+                                                                }
+                                                                Err(e) => {
+                                                                    // Only log as debug to reduce noise - empty orderbooks are common
+                                                                    tracing::debug!("Failed to fetch orderbook for asset {}: {}", asset_id, e);
                                                                 }
                                                             }
                                                         }

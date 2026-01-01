@@ -16,9 +16,15 @@ fn test_market_deserialization_with_json_string() {
     let market: Market = serde_json::from_str(json).expect("Should deserialize");
     assert_eq!(market.id, Some("123".to_string()));
     assert_eq!(market.question, "Test market?");
-    assert_eq!(market.clob_token_ids, Some(vec!["token1".to_string(), "token2".to_string()]));
+    assert_eq!(
+        market.clob_token_ids,
+        Some(vec!["token1".to_string(), "token2".to_string()])
+    );
     assert_eq!(market.outcomes, vec!["Yes".to_string(), "No".to_string()]);
-    assert_eq!(market.outcome_prices, vec!["0.5".to_string(), "0.5".to_string()]);
+    assert_eq!(
+        market.outcome_prices,
+        vec!["0.5".to_string(), "0.5".to_string()]
+    );
 }
 
 #[test]
@@ -37,7 +43,10 @@ fn test_market_deserialization_with_array() {
 
     let market: Market = serde_json::from_str(json).expect("Should deserialize");
     assert_eq!(market.id, Some("456".to_string()));
-    assert_eq!(market.clob_token_ids, Some(vec!["token3".to_string(), "token4".to_string()]));
+    assert_eq!(
+        market.clob_token_ids,
+        Some(vec!["token3".to_string(), "token4".to_string()])
+    );
 }
 
 #[test]
@@ -167,4 +176,3 @@ async fn test_get_categories() {
         assert!(!category.slug.is_empty());
     }
 }
-

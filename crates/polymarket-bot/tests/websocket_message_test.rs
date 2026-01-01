@@ -1,11 +1,8 @@
 //! Tests for WebSocketMessage enum
 
-use serde_json;
 use polymarket_bot::websocket::{
     messages::SubscribedMessage,
-    types::{
-        ErrorMessage, OrderUpdate, OrderbookUpdate, PriceLevel, PriceUpdate, TradeUpdate,
-    },
+    types::{ErrorMessage, OrderUpdate, OrderbookUpdate, PriceLevel, PriceUpdate, TradeUpdate},
     WebSocketMessage,
 };
 
@@ -231,7 +228,10 @@ fn test_websocket_message_deserialization_subscribed() {
     match msg {
         WebSocketMessage::Subscribed(sub) => {
             assert_eq!(sub.message, "Successfully subscribed");
-            assert_eq!(sub.assets_ids, Some(vec!["token1".to_string(), "token2".to_string()]));
+            assert_eq!(
+                sub.assets_ids,
+                Some(vec!["token1".to_string(), "token2".to_string()])
+            );
         }
         _ => panic!("Expected Subscribed variant"),
     }
@@ -260,7 +260,10 @@ fn test_websocket_message_no_type_field() {
     }"#;
 
     let result: Result<WebSocketMessage, _> = serde_json::from_str(json);
-    assert!(result.is_err(), "Deserialization should fail when type field is missing");
+    assert!(
+        result.is_err(),
+        "Deserialization should fail when type field is missing"
+    );
 }
 
 #[test]
@@ -290,4 +293,3 @@ fn test_round_trip_websocket_message_orderbook() {
         _ => panic!("Round trip failed"),
     }
 }
-

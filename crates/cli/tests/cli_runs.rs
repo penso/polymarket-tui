@@ -1,6 +1,6 @@
 use std::process::Command;
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
 
 #[test]
 fn cli_starts_and_connects() {

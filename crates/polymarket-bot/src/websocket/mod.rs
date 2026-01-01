@@ -16,12 +16,8 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 #[cfg(feature = "tracing")]
 use tracing::{error, warn};
 
-pub use messages::{
-    Auth, SubscribedMessage, SubscriptionMessage, UpdateSubscriptionMessage,
-};
-pub use types::{
-    ErrorMessage, OrderUpdate, OrderbookUpdate, PriceLevel, PriceUpdate, TradeUpdate,
-};
+pub use messages::{Auth, SubscribedMessage, SubscriptionMessage, UpdateSubscriptionMessage};
+pub use types::{ErrorMessage, OrderUpdate, OrderbookUpdate, PriceLevel, PriceUpdate, TradeUpdate};
 
 const WS_URL: &str = "wss://ws-subscriptions-clob.polymarket.com/ws/market";
 
@@ -95,8 +91,7 @@ impl PolymarketWebSocket {
                     // Try to parse as WebSocketMessage first
                     if let Ok(ws_msg) = serde_json::from_str::<WebSocketMessage>(&text) {
                         on_update(ws_msg);
-                    } else if let Ok(subscribed) =
-                        serde_json::from_str::<SubscribedMessage>(&text)
+                    } else if let Ok(subscribed) = serde_json::from_str::<SubscribedMessage>(&text)
                     {
                         on_update(WebSocketMessage::Subscribed(subscribed));
                     } else if let Ok(err) = serde_json::from_str::<ErrorMessage>(&text) {
@@ -183,4 +178,3 @@ impl PolymarketWebSocket {
         self.market_info_cache.get(asset_id)
     }
 }
-

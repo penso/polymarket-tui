@@ -161,9 +161,9 @@ impl RTDSClient {
         #[cfg(feature = "tracing")]
         info!("Connecting to RTDS WebSocket: {}", RTDS_WS_URL);
 
-        let (ws_stream, _) = connect_async(RTDS_WS_URL)
-            .await
-            .map_err(|e| PolymarketError::WebSocket(format!("Failed to connect to RTDS WebSocket: {}", e)))?;
+        let (ws_stream, _) = connect_async(RTDS_WS_URL).await.map_err(|e| {
+            PolymarketError::WebSocket(format!("Failed to connect to RTDS WebSocket: {}", e))
+        })?;
 
         #[cfg(feature = "tracing")]
         info!("Connected to RTDS WebSocket");
@@ -184,8 +184,7 @@ impl RTDSClient {
             subscriptions.push(SubscriptionTopic {
                 topic: "activity".to_string(),
                 topic_type: "orders_matched".to_string(),
-                filters: serde_json::to_string(&filters)
-                    .map_err(PolymarketError::Serialization)?,
+                filters: serde_json::to_string(&filters).map_err(PolymarketError::Serialization)?,
                 clob_auth: None, // Activity subscriptions don't require CLOB auth (public data)
                 gamma_auth: self.gamma_auth.clone(),
             });
@@ -200,9 +199,8 @@ impl RTDSClient {
             subscriptions.push(SubscriptionTopic {
                 topic: "comments".to_string(),
                 topic_type: "*".to_string(),
-                filters: serde_json::to_string(&filters)
-                    .map_err(PolymarketError::Serialization)?,
-                clob_auth: None, // Comments don't need CLOB auth
+                filters: serde_json::to_string(&filters).map_err(PolymarketError::Serialization)?,
+                clob_auth: None,                     // Comments don't need CLOB auth
                 gamma_auth: self.gamma_auth.clone(), // Comments might need gamma auth
             });
         }
@@ -218,8 +216,8 @@ impl RTDSClient {
             subscriptions,
         };
 
-        let subscribe_json = serde_json::to_string(&subscribe_msg)
-            .map_err(PolymarketError::Serialization)?;
+        let subscribe_json =
+            serde_json::to_string(&subscribe_msg).map_err(PolymarketError::Serialization)?;
 
         #[cfg(feature = "tracing")]
         info!("Sending RTDS subscription: {}", subscribe_json);
@@ -228,7 +226,12 @@ impl RTDSClient {
             let mut w = write.lock().await;
             w.send(Message::Text(subscribe_json.clone()))
                 .await
-                .map_err(|e| PolymarketError::WebSocket(format!("Failed to send RTDS subscription message: {}", e)))?;
+                .map_err(|e| {
+                    PolymarketError::WebSocket(format!(
+                        "Failed to send RTDS subscription message: {}",
+                        e
+                    ))
+                })?;
         }
 
         #[cfg(feature = "tracing")]
@@ -263,7 +266,10 @@ impl RTDSClient {
                     // Try to parse as RTDS message
                     if let Ok(rtds_msg) = serde_json::from_str::<RTDSMessage>(&text) {
                         #[cfg(feature = "tracing")]
-                        info!("Received RTDS message: topic={}, type={}", rtds_msg.topic, rtds_msg.message_type);
+                        info!(
+                            "Received RTDS message: topic={}, type={}",
+                            rtds_msg.topic, rtds_msg.message_type
+                        );
                         on_update(rtds_msg);
                         continue; // Successfully handled, move to next message
                     }
@@ -286,7 +292,8 @@ impl RTDSClient {
                         // Try to parse as error message
                         if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&text) {
                             if let Some(body) = error_json.get("body") {
-                                if let Some(message) = body.get("message").and_then(|m| m.as_str()) {
+                                if let Some(message) = body.get("message").and_then(|m| m.as_str())
+                                {
                                     #[cfg(feature = "tracing")]
                                     {
                                         error!("RTDS error: {}", message);
@@ -307,11 +314,25 @@ impl RTDSClient {
                         // If we get here, it's a truly unknown message format
                         #[cfg(feature = "tracing")]
                         {
-                            warn!("Unknown RTDS message format: {}", if text.len() > 200 { &text[..200] } else { &text });
+                            warn!(
+                                "Unknown RTDS message format: {}",
+                                if text.len() > 200 {
+                                    &text[..200]
+                                } else {
+                                    &text
+                                }
+                            );
                         }
                         #[cfg(not(feature = "tracing"))]
                         {
-                            eprintln!("Unknown RTDS message format: {}", if text.len() > 200 { &text[..200] } else { &text });
+                            eprintln!(
+                                "Unknown RTDS message format: {}",
+                                if text.len() > 200 {
+                                    &text[..200]
+                                } else {
+                                    &text
+                                }
+                            );
                         }
                     }
                 }
@@ -347,3 +368,8 @@ impl RTDSClient {
     }
 }
 
+impl Default for RTDSClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}

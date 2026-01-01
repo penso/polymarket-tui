@@ -58,12 +58,10 @@ fn test_orderbook_update_with_timestamp() {
                 size: "100".to_string(),
             },
         ],
-        asks: vec![
-            PriceLevel {
-                price: "0.6".to_string(),
-                size: "75".to_string(),
-            },
-        ],
+        asks: vec![PriceLevel {
+            price: "0.6".to_string(),
+            size: "75".to_string(),
+        }],
         timestamp: Some(1234567890),
     };
 
@@ -354,4 +352,3 @@ fn test_round_trip_trade_update() {
     assert_eq!(original.side, deserialized.side);
     assert_eq!(original.timestamp, deserialized.timestamp);
 }
-

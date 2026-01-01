@@ -79,7 +79,8 @@ pub fn render(f: &mut Frame, app: &AppState) {
         Line::from("💸 Polymarket Trade Monitor".fg(Color::Yellow).bold()),
         Line::from(format!(
             "Event: {} | Trades: {}",
-            app.event_slug, app.trades.len()
+            app.event_slug,
+            app.trades.len()
         )),
     ])
     .block(Block::default().borders(Borders::ALL).title("Status"))
@@ -122,8 +123,12 @@ pub fn render(f: &mut Frame, app: &AppState) {
 
                 Row::new(vec![
                     Cell::from(time).style(Style::default().fg(Color::Gray)),
-                    Cell::from(if trade.side == "BUY" { "🟢 BUY" } else { "🔴 SELL" })
-                        .style(side_style),
+                    Cell::from(if trade.side == "BUY" {
+                        "🟢 BUY"
+                    } else {
+                        "🔴 SELL"
+                    })
+                    .style(side_style),
                     Cell::from(trade.outcome.clone()).style(outcome_style),
                     Cell::from(format!("${:.4}", trade.price)),
                     Cell::from(format!("{:.2}", trade.shares)),
@@ -138,24 +143,40 @@ pub fn render(f: &mut Frame, app: &AppState) {
         let table = Table::new(
             rows,
             [
-                Constraint::Length(10), // Time
-                Constraint::Length(8),  // Side
-                Constraint::Length(5),  // Outcome
-                Constraint::Length(10), // Price
-                Constraint::Length(10), // Shares
-                Constraint::Length(10), // Value
+                Constraint::Length(10),     // Time
+                Constraint::Length(8),      // Side
+                Constraint::Length(5),      // Outcome
+                Constraint::Length(10),     // Price
+                Constraint::Length(10),     // Shares
+                Constraint::Length(10),     // Value
                 Constraint::Percentage(25), // Title
-                Constraint::Length(20), // User
-                Constraint::Length(20), // Pseudonym
+                Constraint::Length(20),     // User
+                Constraint::Length(20),     // Pseudonym
             ],
         )
         .header(
             Row::new(vec![
-                "Time", "Side", "Out", "Price", "Shares", "Value", "Market", "User", "Pseudonym",
+                "Time",
+                "Side",
+                "Out",
+                "Price",
+                "Shares",
+                "Value",
+                "Market",
+                "User",
+                "Pseudonym",
             ])
-            .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            .style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
         )
-        .block(Block::default().borders(Borders::ALL).title("Recent Trades"))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Recent Trades"),
+        )
         .column_spacing(1);
 
         f.render_widget(table, chunks[1]);
@@ -185,17 +206,18 @@ pub async fn run_tui(
     loop {
         // Use lock().await to properly handle async context
         let app = app_state.lock().await;
-        terminal.draw(|f| {
-            render(f, &app);
-        })
-        .map_err(|e| anyhow::anyhow!("Terminal draw error: {}", e))?;
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .map_err(|e| anyhow::anyhow!("Terminal draw error: {}", e))?;
         drop(app); // Release lock before polling events
 
         if crossterm::event::poll(std::time::Duration::from_millis(100))
             .map_err(|e| anyhow::anyhow!("Event poll error: {}", e))?
         {
-            if let Event::Key(key) = event::read()
-                .map_err(|e| anyhow::anyhow!("Event read error: {}", e))?
+            if let Event::Key(key) =
+                event::read().map_err(|e| anyhow::anyhow!("Event read error: {}", e))?
             {
                 if key.kind == KeyEventKind::Press {
                     match key.code {

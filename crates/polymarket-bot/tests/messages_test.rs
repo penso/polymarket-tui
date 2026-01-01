@@ -62,7 +62,10 @@ fn test_subscription_message_deserialization() {
 
     let msg: SubscriptionMessage = serde_json::from_str(json).expect("Should deserialize");
     assert_eq!(msg.channel_type, "market");
-    assert_eq!(msg.assets_ids, Some(vec!["token1".to_string(), "token2".to_string()]));
+    assert_eq!(
+        msg.assets_ids,
+        Some(vec!["token1".to_string(), "token2".to_string()])
+    );
     assert_eq!(msg.markets, Some(vec!["market1".to_string()]));
     assert_eq!(msg.custom_feature_enabled, Some(true));
     assert!(msg.auth.is_none());
@@ -184,7 +187,10 @@ fn test_subscribed_message_deserialization() {
 
     let msg: SubscribedMessage = serde_json::from_str(json).expect("Should deserialize");
     assert_eq!(msg.message, "Subscribed successfully");
-    assert_eq!(msg.assets_ids, Some(vec!["token1".to_string(), "token2".to_string()]));
+    assert_eq!(
+        msg.assets_ids,
+        Some(vec!["token1".to_string(), "token2".to_string()])
+    );
     assert_eq!(msg.markets, Some(vec!["market1".to_string()]));
 }
 
@@ -217,6 +223,8 @@ fn test_round_trip_subscription_message() {
     assert_eq!(original.channel_type, deserialized.channel_type);
     assert_eq!(original.markets, deserialized.markets);
     assert_eq!(original.assets_ids, deserialized.assets_ids);
-    assert_eq!(original.custom_feature_enabled, deserialized.custom_feature_enabled);
+    assert_eq!(
+        original.custom_feature_enabled,
+        deserialized.custom_feature_enabled
+    );
 }
-

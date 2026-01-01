@@ -18,4 +18,3 @@ impl TradeDisplay for SimpleDisplay {
         Ok(())
     }
 }
-

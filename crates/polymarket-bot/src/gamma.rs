@@ -366,8 +366,7 @@ impl GammaClient {
             return Err(crate::error::PolymarketError::InvalidData(format!(
                 "Search API returned status {}: {}",
                 status, response_text
-            ))
-            .into());
+            )));
         }
 
         #[derive(Deserialize)]

@@ -45,7 +45,11 @@ async fn test_get_trades_by_market() {
     let client = DataClient::new();
     // Use a known market ID
     let trades = client
-        .get_trades_by_market("will-mike-wheeler-die-in-stranger-things-season-5", Some(10), None)
+        .get_trades_by_market(
+            "will-mike-wheeler-die-in-stranger-things-season-5",
+            Some(10),
+            None,
+        )
         .await;
 
     // Trades might be empty, but should not error
@@ -53,4 +57,3 @@ async fn test_get_trades_by_market() {
         assert!(trades.len() <= 10, "Should respect limit");
     }
 }
-

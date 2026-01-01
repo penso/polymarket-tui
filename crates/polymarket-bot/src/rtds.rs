@@ -265,19 +265,10 @@ impl RTDSClient {
                         #[cfg(feature = "tracing")]
                         info!("Received RTDS message: topic={}, type={}", rtds_msg.topic, rtds_msg.message_type);
                         on_update(rtds_msg);
-                    } else if let Err(e) = serde_json::from_str::<RTDSMessage>(&text) {
-                        // Log parsing errors to help debug
-                        #[cfg(feature = "tracing")]
-                        {
-                            if text.len() < 200 {
-                                warn!("Failed to parse RTDS message (first 200 chars): {} - Error: {}", &text[..text.len().min(200)], e);
-                            } else {
-                                warn!("Failed to parse RTDS message (first 200 chars): {}... - Error: {}", &text[..200], e);
-                            }
-                        }
-                        // Fall through to check for PING/PONG
+                        continue; // Successfully handled, move to next message
                     }
 
+                    // Handle PING/PONG
                     if text.as_str() == "PING" {
                         // Respond to ping (though we're the ones sending PING, server might send it too)
                         let mut w = write.lock().await;
@@ -308,35 +299,19 @@ impl RTDSClient {
                                     if message.contains("validation") || message.contains("auth") {
                                         break;
                                     }
-                                } else {
-                                    #[cfg(feature = "tracing")]
-                                    {
-                                        warn!("Unknown RTDS message: {}", text);
-                                    }
-                                    #[cfg(not(feature = "tracing"))]
-                                    {
-                                        eprintln!("Unknown RTDS message: {}", text);
-                                    }
-                                }
-                            } else {
-                                #[cfg(feature = "tracing")]
-                                {
-                                    warn!("Unknown RTDS message: {}", text);
-                                }
-                                #[cfg(not(feature = "tracing"))]
-                                {
-                                    eprintln!("Unknown RTDS message: {}", text);
+                                    continue;
                                 }
                             }
-                        } else {
-                            #[cfg(feature = "tracing")]
-                            {
-                                warn!("Unknown RTDS message: {}", text);
-                            }
-                            #[cfg(not(feature = "tracing"))]
-                            {
-                                eprintln!("Unknown RTDS message: {}", text);
-                            }
+                        }
+                        
+                        // If we get here, it's a truly unknown message format
+                        #[cfg(feature = "tracing")]
+                        {
+                            warn!("Unknown RTDS message format: {}", if text.len() > 200 { &text[..200] } else { &text });
+                        }
+                        #[cfg(not(feature = "tracing"))]
+                        {
+                            eprintln!("Unknown RTDS message format: {}", if text.len() > 200 { &text[..200] } else { &text });
                         }
                     }
                 }

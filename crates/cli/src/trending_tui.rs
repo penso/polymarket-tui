@@ -408,7 +408,7 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             let usable_width = area.width.saturating_sub(2) as usize; // -2 for borders
             let markets_text = markets_count.to_string();
             let markets_width = markets_text.len();
-            
+
             // Reserve space for markets count + 1 space padding
             let reserved_width = markets_width + 1;
             let available_width = usable_width.saturating_sub(reserved_width);
@@ -429,7 +429,7 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
 
             let title_with_watching = format!("{}{}", title, watching_text);
             let title_width = title_with_watching.len();
-            
+
             // Calculate remaining width for padding (ensure markets count is right-aligned)
             let remaining_width = usable_width
                 .saturating_sub(title_width)
@@ -714,11 +714,30 @@ fn render_logs(f: &mut Frame, app: &mut TrendingAppState, area: Rect) {
         app.log_scroll = 0;
     }
 
-    let log_items: Vec<ListItem> = app
+    // First, flatten logs by wrapping long lines
+    let max_width = (area.width as usize).saturating_sub(2); // Account for borders
+    let wrapped_logs: Vec<String> = app
         .logs
         .iter()
         .skip(app.log_scroll)
+        .flat_map(|log| {
+            // Split long lines by wrapping them to fit the available width
+            if log.len() > max_width {
+                // Split into multiple lines
+                log.chars()
+                    .collect::<Vec<_>>()
+                    .chunks(max_width)
+                    .map(|chunk| chunk.iter().collect::<String>())
+                    .collect::<Vec<_>>()
+            } else {
+                vec![log.clone()]
+            }
+        })
         .take(visible_height)
+        .collect();
+
+    let log_items: Vec<ListItem> = wrapped_logs
+        .iter()
         .map(|log| {
             let color = if log.starts_with("[WARN]") {
                 Color::Yellow

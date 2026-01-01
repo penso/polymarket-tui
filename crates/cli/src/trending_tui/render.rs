@@ -811,9 +811,12 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
     // Clamp scroll position to valid range
     let scroll = app.scroll.markets.min(max_scroll);
 
+    // Sort markets: non-closed (active) first, then closed (resolved)
+    let mut sorted_markets: Vec<_> = event.markets.iter().collect();
+    sorted_markets.sort_by_key(|m| m.closed);
+
     // Create list items for markets with scroll
-    let items: Vec<ListItem> = event
-        .markets
+    let items: Vec<ListItem> = sorted_markets
         .iter()
         .skip(scroll)
         .take(visible_height)
@@ -823,13 +826,11 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
                 .map(|v| format!(" ${:.2}", v))
                 .unwrap_or_default();
 
-            // Determine market status
-            let status_str = if market.closed {
-                "[Resolved] "
-            } else if market.active {
-                ""
+            // Status emoji: ✅ for active/non-closed, ❌ for closed/resolved
+            let status_emoji = if market.closed {
+                "❌ "
             } else {
-                "[Inactive] "
+                "✅ "
             };
 
             // Build outcome strings with prices and percentages from API
@@ -869,17 +870,14 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
                 outcome_strings.push(format!("{}: {}", outcome, price_str));
             }
 
-            let outcomes_str = if !outcome_strings.is_empty() {
-                format!("{}{}", status_str, outcome_strings.join(" | "))
-            } else {
-                status_str.to_string()
-            };
+            let outcomes_str = outcome_strings.join(" | ");
 
             // Calculate widths for right alignment
             let usable_width = (area.width as usize).saturating_sub(2); // -2 for borders
 
             // Calculate space needed for outcomes and volume (right-aligned)
-            let outcomes_width = outcomes_str.len();
+            // Use .width() for proper Unicode width calculation
+            let outcomes_width = outcomes_str.width();
             let volume_width = volume_str.len();
             let has_outcomes = !outcomes_str.is_empty();
             let has_volume = !volume_str.is_empty();
@@ -893,21 +891,33 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
                 0
             };
 
-            // Calculate available width for question (reserve space for right content + 1 space padding)
+            // Calculate available width for question (reserve space for emoji + right content + 1 space padding)
+            let emoji_width = status_emoji.width();
             let available_width = usable_width
                 .saturating_sub(right_content_width)
+                .saturating_sub(emoji_width)
                 .saturating_sub(1); // 1 space padding between question and right content
 
             // Truncate question to fit available width
-            let question = truncate(&market.question, available_width);
-            let question_width = question.len();
+            let question = truncate_to_width(&market.question, available_width);
+            let question_width = question.width();
 
             // Calculate remaining width for spacing
             let remaining_width = usable_width
+                .saturating_sub(emoji_width)
                 .saturating_sub(question_width)
                 .saturating_sub(right_content_width);
 
-            let mut line_spans = vec![Span::styled(question, Style::default().fg(Color::White))];
+            // Start with status emoji
+            let emoji_color = if market.closed {
+                Color::Red
+            } else {
+                Color::Green
+            };
+            let mut line_spans = vec![
+                Span::styled(status_emoji, Style::default().fg(emoji_color)),
+                Span::styled(question, Style::default().fg(Color::White)),
+            ];
 
             // Add spaces to push outcomes and volume to the right
             if remaining_width > 0 {

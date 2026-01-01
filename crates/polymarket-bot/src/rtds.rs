@@ -262,8 +262,23 @@ impl RTDSClient {
 
                     // Try to parse as RTDS message
                     if let Ok(rtds_msg) = serde_json::from_str::<RTDSMessage>(&text) {
+                        #[cfg(feature = "tracing")]
+                        info!("Received RTDS message: topic={}, type={}", rtds_msg.topic, rtds_msg.message_type);
                         on_update(rtds_msg);
-                    } else if text.as_str() == "PING" {
+                    } else if let Err(e) = serde_json::from_str::<RTDSMessage>(&text) {
+                        // Log parsing errors to help debug
+                        #[cfg(feature = "tracing")]
+                        {
+                            if text.len() < 200 {
+                                warn!("Failed to parse RTDS message (first 200 chars): {} - Error: {}", &text[..text.len().min(200)], e);
+                            } else {
+                                warn!("Failed to parse RTDS message (first 200 chars): {}... - Error: {}", &text[..200], e);
+                            }
+                        }
+                        // Fall through to check for PING/PONG
+                    }
+                    
+                    if text.as_str() == "PING" {
                         // Respond to ping (though we're the ones sending PING, server might send it too)
                         let mut w = write.lock().await;
                         if let Err(e) = w.send(Message::Text("PONG".to_string())).await {

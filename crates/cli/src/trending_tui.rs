@@ -401,37 +401,39 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 Style::default().fg(Color::White)
             };
 
-            let title = truncate(&event.title, 45);
+            let title = truncate(&event.title, 50);
             let markets_count = event.markets.len();
 
-            // Add watching indicator
-            let watch_indicator = if is_watching {
-                "🔴 ".to_string()
-            } else {
-                "   ".to_string()
-            };
+            // Format: "line_number<tab>title<tab>markets amount"
+            // Use spaces to simulate tabs (ratatui doesn't have native tab support)
+            let line_text = format!(
+                "{}\t{}\t{}",
+                idx + 1,
+                title,
+                markets_count
+            );
 
-            ListItem::new(vec![
-                Line::from(vec![
+            ListItem::new(Line::from(vec![
+                Span::styled(
+                    format!("{}", idx + 1),
+                    Style::default().fg(Color::Gray),
+                ),
+                Span::styled("\t", Style::default()),
+                Span::styled(title, style),
+                Span::styled("\t", Style::default()),
+                Span::styled(
+                    markets_count.to_string(),
+                    Style::default().fg(Color::Cyan),
+                ),
+                if is_watching {
                     Span::styled(
-                        format!("{}.{}", idx + 1, watch_indicator),
-                        Style::default().fg(Color::Gray),
-                    ),
-                    Span::styled(title, style),
-                ]),
-                Line::from(vec![
-                    Span::styled("  Markets: ", Style::default().fg(Color::Gray)),
-                    Span::styled(markets_count.to_string(), Style::default().fg(Color::Cyan)),
-                    if is_watching {
-                        Span::styled(
-                            format!(" | Trades: {}", trade_count),
-                            Style::default().fg(Color::Green),
-                        )
-                    } else {
-                        Span::styled("", Style::default())
-                    },
-                ]),
-            ])
+                        format!(" (🔴 {} trades)", trade_count),
+                        Style::default().fg(Color::Green),
+                    )
+                } else {
+                    Span::styled("", Style::default())
+                },
+            ]))
         })
         .collect();
 
@@ -885,9 +887,9 @@ pub async fn run_trending_tui(
                                                 .connect_and_listen(move |msg| {
                                                     let app_state = Arc::clone(&app_state_ws);
                                                     let event_slug = event_slug_for_closure.clone();
-                                                    
+
                                                     tracing::info!("Received RTDS trade for event: {}", event_slug);
-                                                    
+
                                                     tokio::spawn(async move {
                                                         let mut app = app_state.lock().await;
                                                         if let Some(event_trades) =

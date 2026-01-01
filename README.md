@@ -1,10 +1,10 @@
-# polymarket-bot
+# polymarket-tui
 
-[![CI](https://github.com/penso/polymarket-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/penso/polymarket-bot/actions/workflows/ci.yml)
+[![CI](https://github.com/penso/polymarket-tui/actions/workflows/ci.yml/badge.svg)](https://github.com/penso/polymarket-tui/actions/workflows/ci.yml)
 
 Real-time Polymarket monitoring tool built in Rust. Monitor live market updates, trades, orderbook changes, and prices with beautiful colored console output.
 
-Badge targets `penso/polymarket-bot` based on the configured origin.
+Badge targets `penso/polymarket-tui` based on the configured origin.
 
 ## Features
 
@@ -16,7 +16,7 @@ Badge targets `penso/polymarket-bot` based on the configured origin.
 
 ## Workspace
 
-- `crates/polymarket-bot`: Core library with WebSocket client, Gamma API client, and display formatters
+- `crates/polymarket-tui`: Core library with WebSocket client, Gamma API client, and display formatters
 - `crates/cli`: Binary application for real-time monitoring
 
 ## Usage
@@ -36,7 +36,7 @@ The CLI will:
 ### Use the Library
 
 ```rust
-use polymarket_bot::{GammaClient, PolymarketWebSocket, MarketUpdateFormatter};
+use polymarket_tui::{GammaClient, PolymarketWebSocket, MarketUpdateFormatter};
 
 // Fetch active markets
 let gamma = GammaClient::new();

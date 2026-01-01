@@ -58,10 +58,10 @@ When starting work on a new feature:
 
 ```bash
 # Create a new branch and worktree for the feature
-git worktree add ../polymarket-bot-feature-name -b feature/feature-name
+git worktree add ../polymarket-tui-feature-name -b feature/feature-name
 
 # Navigate to the worktree
-cd ../polymarket-bot-feature-name
+cd ../polymarket-tui-feature-name
 ```
 
 ### Worktree Workflow
@@ -75,8 +75,8 @@ cd ../polymarket-bot-feature-name
 
 ```bash
 # Remove a worktree when feature is complete
-cd /Users/penso/tmp/polymarket-bot
-git worktree remove ../polymarket-bot-feature-name
+cd /Users/penso/tmp/polymarket-tui
+git worktree remove ../polymarket-tui-feature-name
 ```
 
 ## Code Quality Checklist

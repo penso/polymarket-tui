@@ -1,6 +1,6 @@
 //! Tests for WebSocketMessage enum
 
-use polymarket_bot::websocket::{
+use polymarket_tui::websocket::{
     messages::SubscribedMessage,
     types::{ErrorMessage, OrderUpdate, OrderbookUpdate, PriceLevel, PriceUpdate, TradeUpdate},
     WebSocketMessage,

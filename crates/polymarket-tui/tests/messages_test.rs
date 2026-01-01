@@ -1,6 +1,6 @@
 //! Tests for WebSocket message types (subscription, auth, etc.)
 
-use polymarket_bot::websocket::messages::{
+use polymarket_tui::websocket::messages::{
     Auth, SubscribedMessage, SubscriptionMessage, UpdateSubscriptionMessage,
 };
 

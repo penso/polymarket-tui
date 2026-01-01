@@ -1,5 +1,5 @@
 use chrono::DateTime;
-use polymarket_bot::rtds::RTDSMessage;
+use polymarket_tui::rtds::RTDSMessage;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout},

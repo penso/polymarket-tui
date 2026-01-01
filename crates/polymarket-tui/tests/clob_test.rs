@@ -1,4 +1,4 @@
-use polymarket_bot::clob::ClobClient;
+use polymarket_tui::clob::ClobClient;
 
 #[tokio::test]
 async fn test_clob_client_creation() {

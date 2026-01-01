@@ -489,8 +489,10 @@ pub async fn run_trending_tui(
                     }
                 },
                 KeyCode::Char('o') => {
-                    // Open event URL in browser
-                    if !app.is_in_filter_mode() {
+                    // Open event URL in browser (only when EventDetails is focused)
+                    if !app.is_in_filter_mode()
+                        && app.navigation.focused_panel == FocusedPanel::EventDetails
+                    {
                         if let Some(event) = app.selected_event() {
                             let url = format!("https://polymarket.com/event/{}", event.slug);
                             #[cfg(target_os = "macos")]
@@ -499,6 +501,11 @@ pub async fn run_trending_tui(
                             let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
                             #[cfg(target_os = "windows")]
                             let _ = std::process::Command::new("cmd").args(["/C", "start", &url]).spawn();
+                        }
+                    } else if app.is_in_filter_mode() {
+                        app.add_search_char('o');
+                        if app.search.mode == SearchMode::ApiSearch {
+                            search_debounce = Some(tokio::time::Instant::now());
                         }
                     }
                 },

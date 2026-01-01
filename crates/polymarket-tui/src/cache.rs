@@ -161,6 +161,6 @@ impl FileCache {
 /// Helper function to get default cache directory
 pub fn default_cache_dir() -> PathBuf {
     dirs::cache_dir()
-        .map(|d| d.join("polymarket-bot"))
+        .map(|d| d.join("polymarket-tui"))
         .unwrap_or_else(|| PathBuf::from(".cache"))
 }

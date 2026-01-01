@@ -13,7 +13,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use display_trait::TradeDisplay;
-use polymarket_bot::{
+use polymarket_tui::{
     default_cache_dir, lock_mutex, ClobClient, DataClient, GammaClient, MarketUpdateFormatter,
     PolymarketWebSocket, RTDSClient,
 };
@@ -167,7 +167,7 @@ async fn run_monitor(use_rtds: bool, event_slug: Option<String>) -> Result<()> {
 
     // Build market info cache
     info!("🔍 Building market info cache...");
-    let market_info_cache: Arc<Mutex<HashMap<String, polymarket_bot::gamma::MarketInfo>>> =
+    let market_info_cache: Arc<Mutex<HashMap<String, polymarket_tui::gamma::MarketInfo>>> =
         Arc::new(std::sync::Mutex::new(HashMap::new()));
 
     // Fetch market info for a subset (to avoid too many API calls)
@@ -211,16 +211,16 @@ async fn run_monitor(use_rtds: bool, event_slug: Option<String>) -> Result<()> {
         .connect_and_listen(move |msg| {
             // Get market info for this message from cache
             let asset_id = match &msg {
-                polymarket_bot::websocket::WebSocketMessage::Orderbook(update) => {
+                polymarket_tui::websocket::WebSocketMessage::Orderbook(update) => {
                     Some(update.asset_id.clone())
                 }
-                polymarket_bot::websocket::WebSocketMessage::Trade(update) => {
+                polymarket_tui::websocket::WebSocketMessage::Trade(update) => {
                     Some(update.asset_id.clone())
                 }
-                polymarket_bot::websocket::WebSocketMessage::Order(update) => {
+                polymarket_tui::websocket::WebSocketMessage::Order(update) => {
                     Some(update.asset_id.clone())
                 }
-                polymarket_bot::websocket::WebSocketMessage::Price(update) => {
+                polymarket_tui::websocket::WebSocketMessage::Price(update) => {
                     Some(update.asset_id.clone())
                 }
                 _ => None,
@@ -687,7 +687,7 @@ async fn run_market(market: String, use_id: bool) -> Result<()> {
     Ok(())
 }
 
-fn display_trades(trades: &[polymarket_bot::data::DataTrade]) {
+fn display_trades(trades: &[polymarket_tui::data::DataTrade]) {
     use chrono::DateTime;
     for trade in trades {
         let time = DateTime::from_timestamp(trade.timestamp, 0)
@@ -710,7 +710,7 @@ fn display_trades(trades: &[polymarket_bot::data::DataTrade]) {
     }
 }
 
-fn display_clob_trades(trades: &[polymarket_bot::clob::Trade]) {
+fn display_clob_trades(trades: &[polymarket_tui::clob::Trade]) {
     use chrono::DateTime;
     for trade in trades {
         let time = DateTime::from_timestamp(trade.timestamp, 0)

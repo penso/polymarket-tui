@@ -1,4 +1,4 @@
-use polymarket_bot::websocket::{PolymarketWebSocket, SubscriptionMessage};
+use polymarket_tui::websocket::{PolymarketWebSocket, SubscriptionMessage};
 
 #[test]
 fn test_subscription_message_serialization() {

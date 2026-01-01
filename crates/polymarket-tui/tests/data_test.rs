@@ -1,4 +1,4 @@
-use polymarket_bot::data::DataClient;
+use polymarket_tui::data::DataClient;
 
 #[tokio::test]
 async fn test_data_client_creation() {

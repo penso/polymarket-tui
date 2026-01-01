@@ -1,9 +1,9 @@
 //! TUI for browsing trending events with live trade monitoring
 
 use chrono::{DateTime, Utc};
-use polymarket_bot::clob::ClobClient;
-use polymarket_bot::gamma::Event;
-use polymarket_bot::rtds::RTDSMessage;
+use polymarket_tui::clob::ClobClient;
+use polymarket_tui::gamma::Event;
+use polymarket_tui::rtds::RTDSMessage;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -1603,7 +1603,7 @@ pub async fn run_trending_tui(
     app_state: Arc<TokioMutex<TrendingAppState>>,
 ) -> anyhow::Result<Option<String>> {
     use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-    use polymarket_bot::{GammaClient, RTDSClient};
+    use polymarket_tui::{GammaClient, RTDSClient};
 
     let mut search_debounce: Option<tokio::time::Instant> = None;
     let mut last_selected_event_slug: Option<String> = None;

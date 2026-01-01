@@ -40,7 +40,10 @@ fn test_orderbook_deserialization_full() {
     let orderbook: Orderbook = serde_json::from_str(json).expect("Should deserialize");
     assert_eq!(orderbook.market, Some("0x123abc".to_string()));
     assert_eq!(orderbook.asset_id, Some("456".to_string()));
-    assert_eq!(orderbook.timestamp, Some("2023-10-01T12:00:00Z".to_string()));
+    assert_eq!(
+        orderbook.timestamp,
+        Some("2023-10-01T12:00:00Z".to_string())
+    );
     assert_eq!(orderbook.hash, Some("0xdef789".to_string()));
     assert_eq!(orderbook.bids.len(), 1);
     assert_eq!(orderbook.asks.len(), 1);
@@ -340,13 +343,11 @@ async fn test_get_spreads() {
 #[tokio::test]
 async fn test_get_orderbooks_batch() {
     let client = ClobClient::new();
-    let requests = vec![
-        BatchTokenRequest {
-            token_id: "50229529616777085027502492682800195748509080624860515924115435116786910229377"
-                .to_string(),
-            side: Side::Buy,
-        },
-    ];
+    let requests = vec![BatchTokenRequest {
+        token_id: "50229529616777085027502492682800195748509080624860515924115435116786910229377"
+            .to_string(),
+        side: Side::Buy,
+    }];
 
     let result = client.get_orderbooks(requests).await;
 
@@ -364,13 +365,11 @@ async fn test_get_orderbooks_batch() {
 #[tokio::test]
 async fn test_get_prices_batch() {
     let client = ClobClient::new();
-    let requests = vec![
-        BatchTokenRequest {
-            token_id: "50229529616777085027502492682800195748509080624860515924115435116786910229377"
-                .to_string(),
-            side: Side::Buy,
-        },
-    ];
+    let requests = vec![BatchTokenRequest {
+        token_id: "50229529616777085027502492682800195748509080624860515924115435116786910229377"
+            .to_string(),
+        side: Side::Buy,
+    }];
 
     let result = client.get_prices_batch(requests).await;
 

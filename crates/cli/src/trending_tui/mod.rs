@@ -109,22 +109,22 @@ async fn fetch_market_prices_batch(
             prices
         },
         Err(_e) => {
-            log_debug!("Batch orderbooks failed: {}, falling back to individual calls", _e);
+            log_debug!(
+                "Batch orderbooks failed: {}, falling back to individual calls",
+                _e
+            );
             // Fallback to individual calls if batch fails
             let mut prices = HashMap::new();
             for asset_id in all_asset_ids {
-                match clob_client.get_orderbook_by_asset(&asset_id).await {
-                    Ok(orderbook) => {
-                        let best_price = orderbook
-                            .asks
-                            .iter()
-                            .filter_map(|ask| ask.price.parse::<f64>().ok())
-                            .min_by(|a, b| a.partial_cmp(b).unwrap());
-                        if let Some(price) = best_price {
-                            prices.insert(asset_id.clone(), price);
-                        }
-                    },
-                    Err(_) => {},
+                if let Ok(orderbook) = clob_client.get_orderbook_by_asset(&asset_id).await {
+                    let best_price = orderbook
+                        .asks
+                        .iter()
+                        .filter_map(|ask| ask.price.parse::<f64>().ok())
+                        .min_by(|a, b| a.partial_cmp(b).unwrap());
+                    if let Some(price) = best_price {
+                        prices.insert(asset_id.clone(), price);
+                    }
                 }
             }
             prices
@@ -281,7 +281,8 @@ pub async fn run_trending_tui(
                             let clob_client = ClobClient::new();
 
                             tokio::spawn(async move {
-                                let prices = fetch_market_prices_batch(&clob_client, active_markets).await;
+                                let prices =
+                                    fetch_market_prices_batch(&clob_client, active_markets).await;
                                 let mut app = app_state_clone.lock().await;
                                 app.market_prices.extend(prices);
                                 log_info!("Market prices refreshed via batch API");
@@ -446,7 +447,11 @@ pub async fn run_trending_tui(
                                             let clob_client = ClobClient::new();
 
                                             tokio::spawn(async move {
-                                                let prices = fetch_market_prices_batch(&clob_client, active_markets).await;
+                                                let prices = fetch_market_prices_batch(
+                                                    &clob_client,
+                                                    active_markets,
+                                                )
+                                                .await;
                                                 let mut app = app_state_clone.lock().await;
                                                 app.market_prices.extend(prices);
                                             });
@@ -503,7 +508,11 @@ pub async fn run_trending_tui(
                                             let clob_client = ClobClient::new();
 
                                             tokio::spawn(async move {
-                                                let prices = fetch_market_prices_batch(&clob_client, active_markets).await;
+                                                let prices = fetch_market_prices_batch(
+                                                    &clob_client,
+                                                    active_markets,
+                                                )
+                                                .await;
                                                 let mut app = app_state_clone.lock().await;
                                                 app.market_prices.extend(prices);
                                             });

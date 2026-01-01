@@ -1,5 +1,5 @@
 use polymarket_api::data::{
-    Activity, ActivitySortBy, ActivityType, DataClient, DataTrade, Position, Portfolio,
+    Activity, ActivitySortBy, ActivityType, DataClient, DataTrade, Portfolio, Position,
     SortDirection, TradeSide,
 };
 
@@ -269,13 +269,13 @@ async fn test_get_positions_filtered() {
     let result = client
         .get_positions_filtered(
             "0x0000000000000000000000000000000000000000",
-            None,       // market
-            None,       // event_id
-            Some(0.0),  // size_threshold
-            None,       // redeemable
-            None,       // mergeable
-            Some(10),   // limit
-            None,       // offset
+            None,      // market
+            None,      // event_id
+            Some(0.0), // size_threshold
+            None,      // redeemable
+            None,      // mergeable
+            Some(10),  // limit
+            None,      // offset
         )
         .await;
 
@@ -291,16 +291,16 @@ async fn test_get_activity() {
     let result = client
         .get_activity(
             "0x0000000000000000000000000000000000000000",
-            Some(10),                     // limit
-            None,                         // offset
-            None,                         // market
-            None,                         // event_id
+            Some(10),                        // limit
+            None,                            // offset
+            None,                            // market
+            None,                            // event_id
             Some(vec![ActivityType::Trade]), // activity_types
-            None,                         // start
-            None,                         // end
+            None,                            // start
+            None,                            // end
             Some(ActivitySortBy::Timestamp), // sort_by
-            Some(SortDirection::Desc),    // sort_direction
-            None,                         // side
+            Some(SortDirection::Desc),       // sort_direction
+            None,                            // side
         )
         .await;
 

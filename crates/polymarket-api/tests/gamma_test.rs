@@ -27,7 +27,10 @@ fn test_series_deserialization() {
     assert_eq!(series.id, "456");
     assert_eq!(series.title, Some("US Elections".to_string()));
     assert_eq!(series.slug, Some("us-elections".to_string()));
-    assert_eq!(series.description, Some("All US election markets".to_string()));
+    assert_eq!(
+        series.description,
+        Some("All US election markets".to_string())
+    );
 }
 
 #[test]
@@ -291,14 +294,14 @@ async fn test_get_event_tags() {
         .get_trending_events(Some("volume24hr"), Some(false), Some(1))
         .await;
 
-    if let Ok(events) = events {
-        if let Some(event) = events.first() {
-            let tags = client.get_event_tags(&event.id).await;
-            // Tags might be empty, but should not error
-            if let Ok(tags) = tags {
-                for tag in &tags {
-                    assert!(!tag.id.is_empty());
-                }
+    if let Ok(events) = events
+        && let Some(event) = events.first()
+    {
+        let tags = client.get_event_tags(&event.id).await;
+        // Tags might be empty, but should not error
+        if let Ok(tags) = tags {
+            for tag in &tags {
+                assert!(!tag.id.is_empty());
             }
         }
     }
@@ -328,13 +331,13 @@ async fn test_get_event_by_id() {
         .get_trending_events(Some("volume24hr"), Some(false), Some(1))
         .await;
 
-    if let Ok(events) = events {
-        if let Some(event) = events.first() {
-            let result = client.get_event_by_id(&event.id).await;
-            assert!(result.is_ok(), "Should not error");
-            if let Ok(Some(fetched_event)) = result {
-                assert_eq!(fetched_event.id, event.id);
-            }
+    if let Ok(events) = events
+        && let Some(event) = events.first()
+    {
+        let result = client.get_event_by_id(&event.id).await;
+        assert!(result.is_ok(), "Should not error");
+        if let Ok(Some(fetched_event)) = result {
+            assert_eq!(fetched_event.id, event.id);
         }
     }
 }

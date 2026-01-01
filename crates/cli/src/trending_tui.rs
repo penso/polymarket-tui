@@ -9,7 +9,10 @@ use ratatui::{
     prelude::Stylize,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, Wrap},
+    widgets::{
+        Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Scrollbar,
+        ScrollbarOrientation, ScrollbarState, Table, Wrap,
+    },
     Frame, Terminal,
 };
 use std::collections::{HashMap, HashSet};
@@ -91,6 +94,19 @@ pub struct TrendingAppState {
     pub is_fetching_more: bool, // Whether we're currently fetching more events
     pub order_by: String,       // Order by parameter for API calls
     pub ascending: bool,        // Ascending parameter for API calls
+    // Panel focus and scrolling
+    pub focused_panel: FocusedPanel, // Which panel is currently focused
+    pub markets_scroll: usize,       // Scroll position for markets panel
+    pub trades_scroll: usize,       // Scroll position for trades table
+    pub event_details_scroll: usize, // Scroll position for event details
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FocusedPanel {
+    EventsList,    // Left panel with events
+    EventDetails,  // Right panel - event details
+    Markets,       // Right panel - markets
+    Trades,        // Right panel - trades
 }
 
 impl TrendingAppState {
@@ -115,6 +131,10 @@ impl TrendingAppState {
             is_fetching_more: false,
             order_by,
             ascending,
+            focused_panel: FocusedPanel::EventsList,
+            markets_scroll: 0,
+            trades_scroll: 0,
+            event_details_scroll: 0,
         }
     }
 
@@ -589,10 +609,10 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             .split(area);
 
         // Render event details
-        render_event_details(f, event, is_watching, trades.len(), chunks[0]);
+        render_event_details(f, app, event, is_watching, trades.len(), chunks[0]);
 
         // Render markets panel
-        render_markets(f, event, chunks[1]);
+        render_markets(f, app, event, chunks[1]);
 
         // Render trades table
         if trades.is_empty() {
@@ -605,11 +625,17 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 .block(Block::default().borders(Borders::ALL).title("Trades"))
                 .alignment(Alignment::Center)
                 .style(Style::default().fg(Color::Gray));
-            f.render_widget(paragraph, chunks[1]);
+            f.render_widget(paragraph, chunks[2]);
         } else {
+            // Calculate visible rows and apply scroll
+            let visible_height = (chunks[2].height as usize).saturating_sub(3); // -3 for header
+            let total_rows = trades.len();
+            let scroll = app.trades_scroll.min(total_rows.saturating_sub(visible_height.max(1)));
+            
             let rows: Vec<Row> = trades
                 .iter()
-                .take((chunks[1].height as usize).saturating_sub(3))
+                .skip(scroll)
+                .take(visible_height)
                 .map(|trade| {
                     let time = DateTime::from_timestamp(trade.timestamp, 0)
                         .map(|dt| dt.format("%H:%M:%S").to_string())
@@ -682,7 +708,22 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             )))
             .column_spacing(1);
 
-            f.render_widget(table, chunks[1]);
+            f.render_widget(table, chunks[2]);
+            
+            // Render scrollbar for trades if needed
+            if total_rows > visible_height {
+                let mut scrollbar_state = ScrollbarState::new(total_rows)
+                    .position(scroll)
+                    .content_length(visible_height);
+                f.render_stateful_widget(
+                    Scrollbar::default()
+                        .orientation(ScrollbarOrientation::VerticalRight)
+                        .begin_symbol(Some("↑"))
+                        .end_symbol(Some("↓")),
+                    chunks[2],
+                    &mut scrollbar_state,
+                );
+            }
         }
     } else {
         let paragraph = Paragraph::new("No event selected")
@@ -699,6 +740,7 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
 
 fn render_event_details(
     f: &mut Frame,
+    app: &TrendingAppState,
     event: &Event,
     is_watching: bool,
     trade_count: usize,
@@ -840,7 +882,7 @@ fn render_event_details(
     f.render_widget(paragraph, area);
 }
 
-fn render_markets(f: &mut Frame, event: &Event, area: Rect) {
+fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Rect) {
     if event.markets.is_empty() {
         let paragraph = Paragraph::new("No markets available")
             .block(Block::default().borders(Borders::ALL).title("Markets"))
@@ -850,10 +892,17 @@ fn render_markets(f: &mut Frame, event: &Event, area: Rect) {
         return;
     }
 
-    // Create list items for markets (show all, List widget handles scrolling)
+    // Calculate visible height and apply scroll
+    let visible_height = (area.height as usize).saturating_sub(2);
+    let total_markets = event.markets.len();
+    let scroll = app.markets_scroll.min(total_markets.saturating_sub(visible_height.max(1)));
+    
+    // Create list items for markets with scroll
     let items: Vec<ListItem> = event
         .markets
         .iter()
+        .skip(scroll)
+        .take(visible_height)
         .map(|market| {
             let volume_str = market
                 .volume_total
@@ -882,13 +931,40 @@ fn render_markets(f: &mut Frame, event: &Event, area: Rect) {
         })
         .collect();
 
+    let is_focused = app.focused_panel == FocusedPanel::Markets;
+    let block_style = if is_focused {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default()
+    };
+    
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
-            .title(format!("Markets ({})", event.markets.len())),
+            .title(if is_focused {
+                format!("Markets ({}) (Focused)", event.markets.len())
+            } else {
+                format!("Markets ({})", event.markets.len())
+            })
+            .border_style(block_style),
     );
 
     f.render_widget(list, area);
+    
+    // Render scrollbar if needed
+    if total_markets > visible_height {
+        let mut scrollbar_state = ScrollbarState::new(total_markets)
+            .position(scroll)
+            .content_length(visible_height);
+        f.render_stateful_widget(
+            Scrollbar::default()
+                .orientation(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(Some("↑"))
+                .end_symbol(Some("↓")),
+            area,
+            &mut scrollbar_state,
+        );
+    }
 }
 
 fn truncate(s: &str, max_len: usize) -> String {
@@ -1068,17 +1144,48 @@ pub async fn run_trending_tui(
                                 app.enter_local_filter_mode();
                             }
                         }
+                        KeyCode::Tab => {
+                            if !app.is_in_filter_mode() {
+                                // Cycle through panels: EventsList -> EventDetails -> Markets -> Trades -> EventsList
+                                app.focused_panel = match app.focused_panel {
+                                    FocusedPanel::EventsList => FocusedPanel::EventDetails,
+                                    FocusedPanel::EventDetails => FocusedPanel::Markets,
+                                    FocusedPanel::Markets => FocusedPanel::Trades,
+                                    FocusedPanel::Trades => FocusedPanel::EventsList,
+                                };
+                            }
+                        }
                         KeyCode::Up => {
                             if !app.is_in_filter_mode() {
-                                app.move_up();
+                                match app.focused_panel {
+                                    FocusedPanel::EventsList => {
+                                        app.move_up();
+                                    }
+                                    FocusedPanel::EventDetails => {
+                                        if app.event_details_scroll > 0 {
+                                            app.event_details_scroll -= 1;
+                                        }
+                                    }
+                                    FocusedPanel::Markets => {
+                                        if app.markets_scroll > 0 {
+                                            app.markets_scroll -= 1;
+                                        }
+                                    }
+                                    FocusedPanel::Trades => {
+                                        if app.trades_scroll > 0 {
+                                            app.trades_scroll -= 1;
+                                        }
+                                    }
+                                }
                             }
                         }
                         KeyCode::Down => {
                             if !app.is_in_filter_mode() {
-                                app.move_down();
-
-                                // Check if we need to fetch more events (infinite scroll)
-                                if app.should_fetch_more() {
+                                match app.focused_panel {
+                                    FocusedPanel::EventsList => {
+                                        app.move_down();
+                                        // Check if we need to fetch more events (infinite scroll)
+                                        if app.should_fetch_more() {
                                     let app_state_clone = Arc::clone(&app_state);
                                     let gamma_client_clone = GammaClient::new();
                                     let order_by = app.order_by.clone();
@@ -1142,6 +1249,38 @@ pub async fn run_trending_tui(
                                             }
                                         }
                                     });
+                                        }
+                                    }
+                                    FocusedPanel::EventDetails => {
+                                        // Get total lines to know max scroll
+                                        if let Some(event) = app.selected_event() {
+                                            // Estimate total lines (rough calculation)
+                                            let estimated_lines: usize = 8 + if event.image.is_some() { 1 } else { 0 } + if !event.tags.is_empty() { 1 } else { 0 };
+                                            let visible_height: usize = 10; // Approximate
+                                            if app.event_details_scroll < estimated_lines.saturating_sub(visible_height) {
+                                                app.event_details_scroll += 1;
+                                            }
+                                        }
+                                    }
+                                    FocusedPanel::Markets => {
+                                        if let Some(event) = app.selected_event() {
+                                            let visible_height: usize = 5; // Markets panel height
+                                            if app.markets_scroll < event.markets.len().saturating_sub(visible_height) {
+                                                app.markets_scroll += 1;
+                                            }
+                                        }
+                                    }
+                                    FocusedPanel::Trades => {
+                                        let trades_len = if let Some(event) = app.selected_event() {
+                                            app.get_trades(&event.slug).len()
+                                        } else {
+                                            0
+                                        };
+                                        let visible_height: usize = 10; // Approximate
+                                        if app.trades_scroll < trades_len.saturating_sub(visible_height) {
+                                            app.trades_scroll += 1;
+                                        }
+                                    }
                                 }
                             }
                         }

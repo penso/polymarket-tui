@@ -5,7 +5,7 @@ mod render;
 mod state;
 
 use {
-    ratatui::layout::{Constraint, Direction, Layout, Rect},
+    ratatui::layout::{Constraint, Direction, Layout, Rect, Spacing},
     render::{render, truncate},
     state::{EventFilter, EventTrades, FocusedPanel, SearchMode},
 };
@@ -71,8 +71,10 @@ fn calculate_panel_areas(
     } else {
         4
     };
+    // Use Spacing::Overlap(1) to match render function's collapsed borders
     let chunks = Layout::default()
         .direction(Direction::Vertical)
+        .spacing(Spacing::Overlap(1))
         .constraints([
             Constraint::Length(header_height),
             Constraint::Min(0),
@@ -84,17 +86,19 @@ fn calculate_panel_areas(
     let header_area = chunks[0];
     let logs_area = chunks[2];
 
-    // Main content split
+    // Main content split - also with collapsed borders
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
+        .spacing(Spacing::Overlap(1))
         .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
         .split(chunks[1]);
 
     let events_list_area = main_chunks[0];
 
-    // Right side split (event details, markets, trades)
+    // Right side split (event details, markets, trades) - also with collapsed borders
     let right_chunks = Layout::default()
         .direction(Direction::Vertical)
+        .spacing(Spacing::Overlap(1))
         .constraints([
             Constraint::Length(10),
             Constraint::Length(7),

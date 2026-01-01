@@ -277,7 +277,7 @@ impl RTDSClient {
                         }
                         // Fall through to check for PING/PONG
                     }
-                    
+
                     if text.as_str() == "PING" {
                         // Respond to ping (though we're the ones sending PING, server might send it too)
                         let mut w = write.lock().await;

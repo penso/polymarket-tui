@@ -401,31 +401,47 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 Style::default().fg(Color::White)
             };
 
-            let title = truncate(&event.title, 50);
             let markets_count = event.markets.len();
-
-            // Format: "line_number<tab>title<tab>markets amount"
-            ListItem::new(Line::from(vec![
-                Span::styled(
-                    format!("{}", idx + 1),
-                    Style::default().fg(Color::Gray),
-                ),
-                Span::styled("\t", Style::default()),
-                Span::styled(title, style),
-                Span::styled("\t", Style::default()),
-                Span::styled(
-                    markets_count.to_string(),
-                    Style::default().fg(Color::Cyan),
-                ),
-                if is_watching {
-                    Span::styled(
-                        format!(" (🔴 {} trades)", trade_count),
-                        Style::default().fg(Color::Green),
-                    )
-                } else {
-                    Span::styled("", Style::default())
-                },
-            ]))
+            
+            // Format: "title<tab>markets amount" (right-aligned)
+            // Calculate available width for title (accounting for markets count width)
+            let markets_text = markets_count.to_string();
+            let markets_width = markets_text.len() + 2; // +2 for spacing
+            let available_width = (area.width as usize).saturating_sub(markets_width);
+            
+            // Truncate title to fit available space
+            let title = if event.title.len() > available_width {
+                truncate(&event.title, available_width.saturating_sub(3))
+            } else {
+                event.title.clone()
+            };
+            
+            // Build the line with title, optional watching indicator, and right-aligned markets count
+            let watching_text = if is_watching {
+                format!(" (🔴 {} trades)", trade_count)
+            } else {
+                String::new()
+            };
+            
+            let title_with_watching = format!("{}{}", title, watching_text);
+            let title_width = title_with_watching.len();
+            let remaining_width = (area.width as usize).saturating_sub(title_width).saturating_sub(markets_text.len());
+            
+            let mut line_spans = vec![
+                Span::styled(title_with_watching, style),
+            ];
+            
+            // Add spaces to right-align the markets count
+            if remaining_width > 0 {
+                line_spans.push(Span::styled(" ".repeat(remaining_width), Style::default()));
+            }
+            
+            line_spans.push(Span::styled(
+                markets_count.to_string(),
+                Style::default().fg(Color::Cyan),
+            ));
+            
+            ListItem::new(Line::from(line_spans))
         })
         .collect();
 

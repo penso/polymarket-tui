@@ -8,6 +8,17 @@ use {
     serde::{Deserialize, Serialize},
 };
 
+/// Macro for conditional debug logging based on tracing feature
+#[cfg(feature = "tracing")]
+macro_rules! log_debug {
+    ($($arg:tt)*) => { tracing::debug!($($arg)*) };
+}
+
+#[cfg(not(feature = "tracing"))]
+macro_rules! log_debug {
+    ($($arg:tt)*) => {};
+}
+
 const CLOB_API_BASE: &str = "https://clob.polymarket.com";
 
 /// Order side (buy or sell)
@@ -178,12 +189,12 @@ impl ClobClient {
         // Try to deserialize as Orderbook
         match serde_json::from_str::<Orderbook>(&response_text) {
             Ok(orderbook) => Ok(orderbook),
-            Err(e) => {
+            Err(_e) => {
                 // Log the actual response for debugging
-                tracing::debug!(
+                log_debug!(
                     "Failed to parse orderbook response for asset {}: {}. Response: {}",
                     asset_id,
-                    e,
+                    _e,
                     response_text
                 );
                 // Return an empty orderbook if deserialization fails (asset might not have orders)

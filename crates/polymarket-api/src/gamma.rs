@@ -3,6 +3,50 @@ use {
     serde::{Deserialize, Deserializer, Serialize},
 };
 
+/// Macro for conditional info logging based on tracing feature
+#[cfg(feature = "tracing")]
+macro_rules! log_info {
+    ($($arg:tt)*) => { tracing::info!($($arg)*) };
+}
+
+#[cfg(not(feature = "tracing"))]
+macro_rules! log_info {
+    ($($arg:tt)*) => {};
+}
+
+/// Macro for conditional debug logging based on tracing feature
+#[cfg(feature = "tracing")]
+macro_rules! log_debug {
+    ($($arg:tt)*) => { tracing::debug!($($arg)*) };
+}
+
+#[cfg(not(feature = "tracing"))]
+macro_rules! log_debug {
+    ($($arg:tt)*) => {};
+}
+
+/// Macro for conditional warn logging based on tracing feature
+#[cfg(feature = "tracing")]
+macro_rules! log_warn {
+    ($($arg:tt)*) => { tracing::warn!($($arg)*) };
+}
+
+#[cfg(not(feature = "tracing"))]
+macro_rules! log_warn {
+    ($($arg:tt)*) => {};
+}
+
+/// Macro for conditional error logging based on tracing feature
+#[cfg(feature = "tracing")]
+macro_rules! log_error {
+    ($($arg:tt)*) => { tracing::error!($($arg)*) };
+}
+
+#[cfg(not(feature = "tracing"))]
+macro_rules! log_error {
+    ($($arg:tt)*) => {};
+}
+
 const GAMMA_API_BASE: &str = "https://gamma-api.polymarket.com";
 
 // Helper function to deserialize clobTokenIds which can be either a JSON string or an array
@@ -194,12 +238,12 @@ impl GammaClient {
             GAMMA_API_BASE, order_by, ascending, limit
         );
 
-        tracing::info!("GET {}", url);
+        log_info!("GET {}", url);
 
         let response = self.client.get(&url).send().await?;
-        let status = response.status();
+        let _status = response.status();
 
-        tracing::info!("GET {} -> status: {}", url, status);
+        log_info!("GET {} -> status: {}", url, _status);
 
         let events: Vec<Event> = response.json().await?;
         Ok(events)
@@ -331,24 +375,22 @@ impl GammaClient {
         );
 
         // Log the API call
-        tracing::info!("GET {}", url);
+        log_info!("GET {}", url);
 
-        let response = self.client.get(&url).send().await.map_err(|e| {
-            tracing::error!("Failed to send search request: {}", e);
-            e
+        let response = self.client.get(&url).send().await.inspect_err(|_e| {
+            log_error!("Failed to send search request: {}", _e);
         })?;
 
         let status = response.status();
-        tracing::info!("GET {} -> status: {}", url, status);
+        log_info!("GET {} -> status: {}", url, status);
 
-        let response_text = response.text().await.map_err(|e| {
-            tracing::error!("Failed to read search response body: {}", e);
-            e
+        let response_text = response.text().await.inspect_err(|_e| {
+            log_error!("Failed to read search response body: {}", _e);
         })?;
 
         // Only log response body on error or in debug mode
         if !status.is_success() {
-            tracing::debug!(
+            log_debug!(
                 "Search API response body (first 500 chars): {}",
                 if response_text.len() > 500 {
                     &response_text[..500]
@@ -359,7 +401,7 @@ impl GammaClient {
         }
 
         if !status.is_success() {
-            tracing::warn!(
+            log_warn!(
                 "Search API error: status={}, body={}",
                 status,
                 response_text
@@ -383,7 +425,7 @@ impl GammaClient {
 
         let search_response: SearchResponse =
             serde_json::from_str(&response_text).map_err(|e| {
-                tracing::error!(
+                log_error!(
                     "Failed to parse search response: {}, body (first 1000 chars): {}",
                     e,
                     if response_text.len() > 1000 {
@@ -395,7 +437,7 @@ impl GammaClient {
                 crate::error::PolymarketError::Serialization(e)
             })?;
 
-        tracing::info!("Search returned {} events", search_response.events.len());
+        log_info!("Search returned {} events", search_response.events.len());
 
         Ok(search_response.events)
     }

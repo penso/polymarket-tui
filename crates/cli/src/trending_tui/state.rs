@@ -85,6 +85,7 @@ impl EventFilter {
         }
     }
 
+    #[allow(dead_code)]
     pub fn label(&self) -> &'static str {
         match self {
             EventFilter::Trending => "Trending",
@@ -292,6 +293,7 @@ impl TrendingAppState {
             && filtered_len >= self.pagination.current_limit
     }
 
+    #[allow(dead_code)]
     pub fn add_log(&mut self, level: &str, message: String) {
         // Format: [LEVEL] message
         let formatted = format!("[{}] {}", level, message);

@@ -5,9 +5,13 @@ mod render;
 mod state;
 
 use {
+    chrono::{DateTime, Utc},
     ratatui::layout::{Constraint, Direction, Layout, Rect, Spacing},
     render::{render, truncate},
-    state::{EventFilter, EventTrades, FocusedPanel, SearchMode},
+    state::{
+        EventFilter, EventTrades, FocusedPanel, MainTab, SearchMode, YieldOpportunity,
+        YieldSearchResult,
+    },
 };
 
 pub use state::TrendingAppState;
@@ -366,6 +370,277 @@ async fn fetch_market_prices_batch(
     }
 }
 
+/// Fetch yield opportunities from the Gamma API
+async fn fetch_yield_opportunities(
+    min_prob: f64,
+    limit: usize,
+    min_volume: f64,
+) -> Vec<YieldOpportunity> {
+    let gamma_client = GammaClient::new();
+
+    // Fetch active markets
+    let markets = match gamma_client
+        .get_markets(Some(true), Some(false), Some(limit))
+        .await
+    {
+        Ok(m) => m,
+        Err(e) => {
+            log_error!("Failed to fetch markets for yield: {}", e);
+            return Vec::new();
+        },
+    };
+
+    log_info!("Fetched {} markets, filtering for yield...", markets.len());
+
+    let mut opportunities: Vec<YieldOpportunity> = Vec::new();
+
+    for market in &markets {
+        // Skip closed markets
+        if market.closed {
+            continue;
+        }
+
+        // Skip markets without event info
+        let event = match market.event() {
+            Some(e) => e,
+            None => continue,
+        };
+
+        // Parse end date
+        let end_date = event
+            .end_date
+            .as_ref()
+            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&Utc));
+
+        // Check volume threshold
+        let volume = market.volume_24hr.unwrap_or(0.0);
+        if volume < min_volume {
+            continue;
+        }
+
+        // Check each outcome price
+        for (i, price_str) in market.outcome_prices.iter().enumerate() {
+            if let Ok(price) = price_str.parse::<f64>()
+                && price >= min_prob
+            {
+                let outcome = market
+                    .outcomes
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_else(|| format!("Outcome {}", i));
+                let est_return = (1.0 - price) * 100.0;
+
+                // Use short name if available
+                let market_name = market
+                    .group_item_title
+                    .as_ref()
+                    .filter(|s| !s.is_empty())
+                    .cloned()
+                    .unwrap_or_else(|| market.question.clone());
+
+                opportunities.push(YieldOpportunity {
+                    market_name,
+                    market_status: market.status(),
+                    outcome,
+                    price,
+                    est_return,
+                    volume,
+                    event_slug: event.slug.clone(),
+                    event_title: event.title.clone(),
+                    event_status: event.status(),
+                    end_date,
+                });
+            }
+        }
+    }
+
+    // Sort by estimated return (highest first)
+    opportunities.sort_by(|a, b| b.est_return.partial_cmp(&a.est_return).unwrap());
+
+    log_info!("Found {} yield opportunities", opportunities.len());
+    opportunities
+}
+
+/// Spawn async task to fetch yield opportunities
+fn spawn_yield_fetch(app_state: Arc<TokioMutex<TrendingAppState>>) {
+    tokio::spawn(async move {
+        let (min_prob, min_volume) = {
+            let mut app = app_state.lock().await;
+            app.yield_state.is_loading = true;
+            (app.yield_state.min_prob, app.yield_state.min_volume)
+        };
+
+        log_info!(
+            "Fetching yield opportunities (min_prob: {:.0}%)...",
+            min_prob * 100.0
+        );
+
+        let opportunities = fetch_yield_opportunities(min_prob, 500, min_volume).await;
+
+        let mut app = app_state.lock().await;
+        app.yield_state.opportunities = opportunities;
+        app.yield_state.is_loading = false;
+        app.yield_state.selected_index = 0;
+        app.yield_state.scroll = 0;
+        app.yield_state.sort_opportunities();
+
+        log_info!(
+            "Loaded {} yield opportunities",
+            app.yield_state.opportunities.len()
+        );
+    });
+}
+
+/// Spawn async task to search events and calculate yield for each
+fn spawn_yield_search(app_state: Arc<TokioMutex<TrendingAppState>>, query: String) {
+    use polymarket_api::GammaClient;
+
+    tokio::spawn(async move {
+        let min_prob = {
+            let mut app = app_state.lock().await;
+            app.yield_state.is_search_loading = true;
+            app.yield_state.min_prob
+        };
+
+        log_info!("Yield search for: '{}'", query);
+
+        let gamma_client = GammaClient::new();
+
+        // Search for events
+        let events = match gamma_client.search_events(&query, Some(50)).await {
+            Ok(e) => e,
+            Err(e) => {
+                log_error!("Yield search failed: {}", e);
+                let mut app = app_state.lock().await;
+                app.yield_state.is_search_loading = false;
+                return;
+            },
+        };
+
+        log_info!("Yield search found {} events", events.len());
+
+        // Helper to get event status string
+        fn event_status(active: bool, closed: bool) -> &'static str {
+            if closed {
+                "closed"
+            } else if active {
+                "active"
+            } else {
+                "inactive"
+            }
+        }
+
+        // Convert events to YieldSearchResults with yield info
+        let mut results: Vec<YieldSearchResult> = events
+            .iter()
+            .map(|event| {
+                // Calculate total volume
+                let total_volume: f64 = event
+                    .markets
+                    .iter()
+                    .map(|m| m.volume_24hr.or(m.volume_total).unwrap_or(0.0))
+                    .sum();
+
+                // Parse end date
+                let end_date = event
+                    .end_date
+                    .as_ref()
+                    .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                    .map(|dt| dt.with_timezone(&Utc));
+
+                // Find best yield opportunity across all markets
+                let mut best_yield: Option<YieldOpportunity> = None;
+
+                for market in &event.markets {
+                    if market.closed {
+                        continue;
+                    }
+
+                    for (i, price_str) in market.outcome_prices.iter().enumerate() {
+                        if let Ok(price) = price_str.parse::<f64>() {
+                            // Only consider high-probability outcomes (>= min_prob)
+                            if price >= min_prob {
+                                let outcome = market
+                                    .outcomes
+                                    .get(i)
+                                    .cloned()
+                                    .unwrap_or_else(|| format!("Outcome {}", i));
+                                let est_return = (1.0 - price) * 100.0;
+                                let volume = market.volume_24hr.unwrap_or(0.0);
+
+                                let market_name = market
+                                    .group_item_title
+                                    .as_ref()
+                                    .filter(|s| !s.is_empty())
+                                    .cloned()
+                                    .unwrap_or_else(|| market.question.clone());
+
+                                let opp = YieldOpportunity {
+                                    market_name,
+                                    market_status: market.status(),
+                                    outcome,
+                                    price,
+                                    est_return,
+                                    volume,
+                                    event_slug: event.slug.clone(),
+                                    event_title: event.title.clone(),
+                                    event_status: event_status(event.active, event.closed),
+                                    end_date,
+                                };
+
+                                // Keep the best (highest return) opportunity
+                                if best_yield
+                                    .as_ref()
+                                    .map(|b| opp.est_return > b.est_return)
+                                    .unwrap_or(true)
+                                {
+                                    best_yield = Some(opp);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                YieldSearchResult {
+                    event_slug: event.slug.clone(),
+                    event_title: event.title.clone(),
+                    event_status: event_status(event.active, event.closed),
+                    end_date,
+                    total_volume,
+                    markets_count: event.markets.len(),
+                    best_yield,
+                }
+            })
+            .collect();
+
+        // Sort: events with yield first (by return), then events without yield (by volume)
+        results.sort_by(|a, b| {
+            match (&a.best_yield, &b.best_yield) {
+                (Some(ya), Some(yb)) => yb
+                    .est_return
+                    .partial_cmp(&ya.est_return)
+                    .unwrap_or(std::cmp::Ordering::Equal),
+                (Some(_), None) => std::cmp::Ordering::Less, // a (with yield) comes first
+                (None, Some(_)) => std::cmp::Ordering::Greater, // b (with yield) comes first
+                (None, None) => b
+                    .total_volume
+                    .partial_cmp(&a.total_volume)
+                    .unwrap_or(std::cmp::Ordering::Equal),
+            }
+        });
+
+        let query_clone = query.clone();
+        let mut app = app_state.lock().await;
+        app.yield_state.set_search_results(results, query_clone);
+
+        log_info!(
+            "Yield search complete: {} results",
+            app.yield_state.search_results.len()
+        );
+    });
+}
+
 pub async fn run_trending_tui(
     mut terminal: Terminal<CrosstermBackend<io::Stdout>>,
     app_state: Arc<TokioMutex<TrendingAppState>>,
@@ -376,6 +651,7 @@ pub async fn run_trending_tui(
     };
 
     let mut search_debounce: Option<tokio::time::Instant> = None;
+    let mut yield_search_debounce: Option<tokio::time::Instant> = None;
     let mut last_selected_event_slug: Option<String> = None;
     let mut last_click: Option<(tokio::time::Instant, u16, u16)> = None; // (time, column, row)
 
@@ -514,6 +790,32 @@ pub async fn run_trending_tui(
             }
         }
 
+        // Handle yield search debouncing
+        if let Some(debounce_time) = yield_search_debounce {
+            let elapsed = debounce_time.elapsed();
+            if elapsed >= tokio::time::Duration::from_millis(500) {
+                let query = {
+                    let app = app_state.lock().await;
+                    app.yield_state.search_query.clone()
+                };
+
+                yield_search_debounce = None;
+
+                if !query.is_empty() {
+                    {
+                        let mut app = app_state.lock().await;
+                        app.yield_state.is_search_loading = true;
+                    }
+                    spawn_yield_search(Arc::clone(&app_state), query);
+                } else {
+                    let mut app = app_state.lock().await;
+                    app.yield_state.search_results.clear();
+                    app.yield_state.last_searched_query.clear();
+                    app.yield_state.is_search_loading = false;
+                }
+            }
+        }
+
         {
             let mut app = app_state.lock().await;
             terminal.draw(|f| {
@@ -558,13 +860,52 @@ pub async fn run_trending_tui(
                     let term_size = terminal.size()?;
                     let size = Rect::new(0, 0, term_size.width, term_size.height);
 
-                    // Check for tab clicks first (tabs are on the first line)
-                    if let Some(new_filter) = render::get_clicked_tab(mouse.column, mouse.row, size)
+                    // Check for main tab clicks first (first line)
+                    if let Some(new_main_tab) =
+                        render::get_clicked_main_tab(mouse.column, mouse.row, size)
                     {
-                        if let Some((order_by, limit)) = switch_filter_tab(&mut app, new_filter) {
-                            spawn_filter_fetch(Arc::clone(&app_state), order_by, limit);
+                        if app.main_tab != new_main_tab {
+                            app.main_tab = new_main_tab;
+                            // If switching to Yield tab and no data loaded, fetch it
+                            if new_main_tab == MainTab::Yield
+                                && app.yield_state.opportunities.is_empty()
+                                && !app.yield_state.is_loading
+                            {
+                                drop(app);
+                                spawn_yield_fetch(Arc::clone(&app_state));
+                            }
                         }
                         continue;
+                    }
+
+                    // Check for sub-tab clicks (second line) based on main tab
+                    match app.main_tab {
+                        MainTab::Trending => {
+                            if let Some(new_filter) =
+                                render::get_clicked_tab(mouse.column, mouse.row, size)
+                            {
+                                if let Some((order_by, limit)) =
+                                    switch_filter_tab(&mut app, new_filter)
+                                {
+                                    drop(app);
+                                    spawn_filter_fetch(Arc::clone(&app_state), order_by, limit);
+                                }
+                                continue;
+                            }
+                        },
+                        MainTab::Yield => {
+                            if let Some(new_sort) =
+                                render::get_clicked_yield_sort(mouse.column, mouse.row, size)
+                            {
+                                if app.yield_state.sort_by != new_sort {
+                                    app.yield_state.sort_by = new_sort;
+                                    app.yield_state.sort_opportunities();
+                                    app.yield_state.selected_index = 0;
+                                    app.yield_state.scroll = 0;
+                                }
+                                continue;
+                            }
+                        },
                     }
 
                     let (_, events_list_area, ..) =
@@ -577,73 +918,103 @@ pub async fn run_trending_tui(
                         app.is_in_filter_mode(),
                         app.show_logs,
                     ) {
-                        // If clicking in events list, select the clicked event
+                        // If clicking in events list, select the clicked item
                         if panel == FocusedPanel::EventsList {
-                            // Calculate which event was clicked
-                            // Account for border (1 line at top)
-                            let relative_y = mouse.row.saturating_sub(events_list_area.y + 1);
-                            let clicked_index = app.scroll.events_list + relative_y as usize;
-                            let filtered_len = app.filtered_events().len();
-
-                            if clicked_index < filtered_len {
-                                app.navigation.selected_index = clicked_index;
-                                // Reset markets scroll when changing events
-                                app.scroll.markets = 0;
-
-                                // Double-click toggles watching (same as Enter)
-                                if is_double_click
-                                    && let Some(event_slug) = app.selected_event_slug()
+                            if app.main_tab == MainTab::Yield {
+                                // Yield tab: select yield opportunity or search result
+                                // Account for border (1) + header row (1) + title bar (1) = 3
+                                // When searching/filtering, add 3 more for the input field
+                                let extra_offset = if app.yield_state.is_searching
+                                    || app.yield_state.is_filtering
                                 {
-                                    if app.is_watching(&event_slug) {
-                                        // Stop watching
-                                        app.stop_watching(&event_slug);
-                                    } else {
-                                        // Start watching
-                                        let event_slug_clone = event_slug.clone();
+                                    3
+                                } else {
+                                    0
+                                };
+                                let relative_y = mouse
+                                    .row
+                                    .saturating_sub(events_list_area.y + 3 + extra_offset)
+                                    as usize;
+                                let clicked_index = app.yield_state.scroll + relative_y;
 
-                                        app.trades
-                                            .event_trades
-                                            .entry(event_slug_clone.clone())
-                                            .or_insert_with(EventTrades::new);
+                                // Determine the total items based on mode
+                                let total_items = if !app.yield_state.search_results.is_empty() {
+                                    app.yield_state.search_results.len()
+                                } else {
+                                    app.yield_state.filtered_opportunities().len()
+                                };
 
-                                        let app_state_ws = Arc::clone(&app_state);
-                                        let event_slug_for_closure = event_slug_clone.clone();
+                                if clicked_index < total_items {
+                                    app.yield_state.selected_index = clicked_index;
+                                }
+                            } else {
+                                // Trending tab: select event (List widget, no header row)
+                                // Account for border (1) + title bar (1) = 2
+                                let relative_y = mouse.row.saturating_sub(events_list_area.y + 2);
+                                let clicked_index = app.scroll.events_list + relative_y as usize;
+                                let filtered_len = app.filtered_events().len();
 
-                                        let rtds_client = RTDSClient::new()
-                                            .with_event_slug(event_slug_clone.clone());
+                                if clicked_index < filtered_len {
+                                    app.navigation.selected_index = clicked_index;
+                                    // Reset markets scroll when changing events
+                                    app.scroll.markets = 0;
 
-                                        log_info!(
-                                            "Starting RTDS WebSocket for event: {}",
-                                            event_slug_clone
-                                        );
+                                    // Double-click toggles watching (same as Enter)
+                                    if is_double_click
+                                        && let Some(event_slug) = app.selected_event_slug()
+                                    {
+                                        if app.is_watching(&event_slug) {
+                                            // Stop watching
+                                            app.stop_watching(&event_slug);
+                                        } else {
+                                            // Start watching
+                                            let event_slug_clone = event_slug.clone();
 
-                                        let ws_handle = tokio::spawn(async move {
-                                            match rtds_client
-                                                .connect_and_listen(move |msg| {
-                                                    let app_state = Arc::clone(&app_state_ws);
-                                                    let event_slug = event_slug_for_closure.clone();
+                                            app.trades
+                                                .event_trades
+                                                .entry(event_slug_clone.clone())
+                                                .or_insert_with(EventTrades::new);
 
-                                                    tokio::spawn(async move {
-                                                        let mut app = app_state.lock().await;
-                                                        if let Some(event_trades) = app
-                                                            .trades
-                                                            .event_trades
-                                                            .get_mut(&event_slug)
-                                                        {
-                                                            event_trades.add_trade(&msg);
-                                                        }
-                                                    });
-                                                })
-                                                .await
-                                            {
-                                                Ok(()) => {},
-                                                Err(_e) => {
-                                                    log_error!("RTDS WebSocket error: {}", _e);
-                                                },
-                                            }
-                                        });
+                                            let app_state_ws = Arc::clone(&app_state);
+                                            let event_slug_for_closure = event_slug_clone.clone();
 
-                                        app.start_watching(event_slug_clone, ws_handle);
+                                            let rtds_client = RTDSClient::new()
+                                                .with_event_slug(event_slug_clone.clone());
+
+                                            log_info!(
+                                                "Starting RTDS WebSocket for event: {}",
+                                                event_slug_clone
+                                            );
+
+                                            let ws_handle = tokio::spawn(async move {
+                                                match rtds_client
+                                                    .connect_and_listen(move |msg| {
+                                                        let app_state = Arc::clone(&app_state_ws);
+                                                        let event_slug =
+                                                            event_slug_for_closure.clone();
+
+                                                        tokio::spawn(async move {
+                                                            let mut app = app_state.lock().await;
+                                                            if let Some(event_trades) = app
+                                                                .trades
+                                                                .event_trades
+                                                                .get_mut(&event_slug)
+                                                            {
+                                                                event_trades.add_trade(&msg);
+                                                            }
+                                                        });
+                                                    })
+                                                    .await
+                                                {
+                                                    Ok(()) => {},
+                                                    Err(_e) => {
+                                                        log_error!("RTDS WebSocket error: {}", _e);
+                                                    },
+                                                }
+                                            });
+
+                                            app.start_watching(event_slug_clone, ws_handle);
+                                        }
                                     }
                                 }
                             }
@@ -663,7 +1034,14 @@ pub async fn run_trending_tui(
                         app.show_logs,
                     ) {
                         match panel {
-                            FocusedPanel::EventsList => app.move_up(),
+                            FocusedPanel::EventsList => {
+                                // In Yield tab, scroll yield list or search results
+                                if app.main_tab == MainTab::Yield {
+                                    app.yield_state.move_up();
+                                } else {
+                                    app.move_up();
+                                }
+                            },
                             FocusedPanel::EventDetails => {
                                 if app.scroll.event_details > 0 {
                                     app.scroll.event_details -= 1;
@@ -701,71 +1079,84 @@ pub async fn run_trending_tui(
                     ) {
                         match panel {
                             FocusedPanel::EventsList => {
-                                app.move_down();
-                                // Check if we need to fetch more events (infinite scroll)
-                                if app.should_fetch_more() {
-                                    let app_state_clone = Arc::clone(&app_state);
-                                    let gamma_client_clone = GammaClient::new();
-                                    let order_by = app.pagination.order_by.clone();
-                                    let ascending = app.pagination.ascending;
-                                    let current_limit = app.pagination.current_limit;
+                                // In Yield tab, scroll yield list or search results
+                                if app.main_tab == MainTab::Yield {
+                                    // Use approximate visible height for yield list
+                                    let visible_height = 20;
+                                    app.yield_state.move_down(visible_height);
+                                } else {
+                                    app.move_down();
+                                    // Check if we need to fetch more events (infinite scroll)
+                                    if app.should_fetch_more() {
+                                        let app_state_clone = Arc::clone(&app_state);
+                                        let gamma_client_clone = GammaClient::new();
+                                        let order_by = app.pagination.order_by.clone();
+                                        let ascending = app.pagination.ascending;
+                                        let current_limit = app.pagination.current_limit;
 
-                                    // Set fetching flag to prevent duplicate requests
-                                    app.pagination.is_fetching_more = true;
+                                        // Set fetching flag to prevent duplicate requests
+                                        app.pagination.is_fetching_more = true;
 
-                                    // Fetch 50 more events
-                                    let new_limit = current_limit + 50;
-                                    log_info!(
-                                        "Fetching more trending events (limit: {})",
-                                        new_limit
-                                    );
+                                        // Fetch 50 more events
+                                        let new_limit = current_limit + 50;
+                                        log_info!(
+                                            "Fetching more trending events (limit: {})",
+                                            new_limit
+                                        );
 
-                                    tokio::spawn(async move {
-                                        match gamma_client_clone
-                                            .get_trending_events(
-                                                Some(&order_by),
-                                                Some(ascending),
-                                                Some(new_limit),
-                                            )
-                                            .await
-                                        {
-                                            Ok(mut new_events) => {
-                                                // Remove duplicates by comparing slugs
-                                                let existing_slugs: std::collections::HashSet<_> = {
-                                                    let app = app_state_clone.lock().await;
-                                                    app.events
-                                                        .iter()
-                                                        .map(|e| e.slug.clone())
-                                                        .collect()
-                                                };
+                                        tokio::spawn(async move {
+                                            match gamma_client_clone
+                                                .get_trending_events(
+                                                    Some(&order_by),
+                                                    Some(ascending),
+                                                    Some(new_limit),
+                                                )
+                                                .await
+                                            {
+                                                Ok(mut new_events) => {
+                                                    // Remove duplicates by comparing slugs
+                                                    let existing_slugs: std::collections::HashSet<
+                                                        _,
+                                                    > = {
+                                                        let app = app_state_clone.lock().await;
+                                                        app.events
+                                                            .iter()
+                                                            .map(|e| e.slug.clone())
+                                                            .collect()
+                                                    };
 
-                                                new_events
-                                                    .retain(|e| !existing_slugs.contains(&e.slug));
+                                                    new_events.retain(|e| {
+                                                        !existing_slugs.contains(&e.slug)
+                                                    });
 
-                                                if !new_events.is_empty() {
-                                                    log_info!(
-                                                        "Fetched {} new trending events",
-                                                        new_events.len()
+                                                    if !new_events.is_empty() {
+                                                        log_info!(
+                                                            "Fetched {} new trending events",
+                                                            new_events.len()
+                                                        );
+                                                        let mut app = app_state_clone.lock().await;
+                                                        app.events.append(&mut new_events);
+                                                        app.pagination.current_limit = new_limit;
+                                                    } else {
+                                                        log_info!(
+                                                            "No new events to add (already have all events)"
+                                                        );
+                                                    }
+
+                                                    let mut app = app_state_clone.lock().await;
+                                                    app.pagination.is_fetching_more = false;
+                                                },
+                                                Err(_e) => {
+                                                    log_error!(
+                                                        "Failed to fetch more events: {}",
+                                                        _e
                                                     );
                                                     let mut app = app_state_clone.lock().await;
-                                                    app.events.append(&mut new_events);
-                                                    app.pagination.current_limit = new_limit;
-                                                } else {
-                                                    log_info!(
-                                                        "No new events to add (already have all events)"
-                                                    );
-                                                }
-
-                                                let mut app = app_state_clone.lock().await;
-                                                app.pagination.is_fetching_more = false;
-                                            },
-                                            Err(_e) => {
-                                                log_error!("Failed to fetch more events: {}", _e);
-                                                let mut app = app_state_clone.lock().await;
-                                                app.pagination.is_fetching_more = false;
-                                            },
-                                        }
-                                    });
+                                                    app.pagination.is_fetching_more = false;
+                                                },
+                                            }
+                                        });
+                                    }
                                 }
                             },
                             FocusedPanel::EventDetails => {
@@ -817,7 +1208,14 @@ pub async fn run_trending_tui(
                 let mut app = app_state.lock().await;
                 match key.code {
                     KeyCode::Char('q') => {
-                        if app.is_in_filter_mode() {
+                        if app.main_tab == MainTab::Yield && app.yield_state.is_searching {
+                            // In yield search mode, 'q' adds to search (common letter)
+                            app.yield_state.add_search_char('q');
+                            yield_search_debounce = Some(tokio::time::Instant::now());
+                        } else if app.main_tab == MainTab::Yield && app.yield_state.is_filtering {
+                            // In yield filter mode, 'q' adds to filter (common letter)
+                            app.yield_state.add_filter_char('q');
+                        } else if app.is_in_filter_mode() {
                             app.exit_search_mode();
                         } else {
                             app.should_quit = true;
@@ -825,9 +1223,15 @@ pub async fn run_trending_tui(
                         }
                     },
                     KeyCode::Esc => {
-                        // Close popup first, then filter mode, then quit
+                        // Close popup first, then yield search/filter mode, then search/filter mode, then quit
                         if app.has_popup() {
                             app.close_popup();
+                        } else if app.main_tab == MainTab::Yield && app.yield_state.is_searching {
+                            app.yield_state.exit_search_mode();
+                            log_info!("Exited yield search mode");
+                        } else if app.main_tab == MainTab::Yield && app.yield_state.is_filtering {
+                            app.yield_state.exit_filter_mode();
+                            log_info!("Exited yield filter mode");
                         } else if app.is_in_filter_mode() {
                             app.exit_search_mode();
                         } else {
@@ -836,14 +1240,65 @@ pub async fn run_trending_tui(
                         }
                     },
                     KeyCode::Char('?') => {
-                        // Show help popup
-                        if !app.is_in_filter_mode() {
+                        // Show help popup (unless in search/filter mode)
+                        if app.main_tab == MainTab::Yield && app.yield_state.is_searching {
+                            app.yield_state.add_search_char('?');
+                            yield_search_debounce = Some(tokio::time::Instant::now());
+                        } else if app.main_tab == MainTab::Yield && app.yield_state.is_filtering {
+                            app.yield_state.add_filter_char('?');
+                        } else if !app.is_in_filter_mode() {
                             app.show_popup(state::PopupType::Help);
                         }
                     },
+                    KeyCode::Char('1') => {
+                        // Switch to Trending main tab (unless in search/filter mode)
+                        if app.main_tab == MainTab::Yield && app.yield_state.is_searching {
+                            app.yield_state.add_search_char('1');
+                            yield_search_debounce = Some(tokio::time::Instant::now());
+                        } else if app.main_tab == MainTab::Yield && app.yield_state.is_filtering {
+                            app.yield_state.add_filter_char('1');
+                        } else if !app.is_in_filter_mode() && app.main_tab != MainTab::Trending {
+                            app.main_tab = MainTab::Trending;
+                            log_info!("Switched to Trending tab");
+                        } else if app.is_in_filter_mode() {
+                            app.add_search_char('1');
+                            if app.search.mode == SearchMode::ApiSearch {
+                                search_debounce = Some(tokio::time::Instant::now());
+                            }
+                        }
+                    },
+                    KeyCode::Char('2') => {
+                        // Switch to Yield main tab (unless in search/filter mode)
+                        if app.main_tab == MainTab::Yield && app.yield_state.is_searching {
+                            app.yield_state.add_search_char('2');
+                            yield_search_debounce = Some(tokio::time::Instant::now());
+                        } else if app.main_tab == MainTab::Yield && app.yield_state.is_filtering {
+                            app.yield_state.add_filter_char('2');
+                        } else if !app.is_in_filter_mode() && app.main_tab != MainTab::Yield {
+                            app.main_tab = MainTab::Yield;
+                            // Fetch yield data if not already loaded
+                            if app.yield_state.opportunities.is_empty()
+                                && !app.yield_state.is_loading
+                            {
+                                drop(app);
+                                spawn_yield_fetch(Arc::clone(&app_state));
+                            }
+                            log_info!("Switched to Yield tab");
+                        } else if app.is_in_filter_mode() {
+                            app.add_search_char('2');
+                            if app.search.mode == SearchMode::ApiSearch {
+                                search_debounce = Some(tokio::time::Instant::now());
+                            }
+                        }
+                    },
                     KeyCode::Char('l') => {
-                        // Toggle logs panel visibility (disabled in filter mode)
-                        if !app.is_in_filter_mode() {
+                        // Toggle logs panel visibility (disabled in filter/search mode)
+                        if app.main_tab == MainTab::Yield && app.yield_state.is_searching {
+                            app.yield_state.add_search_char('l');
+                            yield_search_debounce = Some(tokio::time::Instant::now());
+                        } else if app.main_tab == MainTab::Yield && app.yield_state.is_filtering {
+                            app.yield_state.add_filter_char('l');
+                        } else if !app.is_in_filter_mode() {
                             app.show_logs = !app.show_logs;
                             // If hiding logs and logs panel was focused, switch to another panel
                             if !app.show_logs && app.navigation.focused_panel == FocusedPanel::Logs
@@ -859,26 +1314,71 @@ pub async fn run_trending_tui(
                         }
                     },
                     KeyCode::Char('/') => {
-                        // Search is only available when EventsList panel is focused
-                        if !app.is_in_filter_mode()
+                        // API search mode - works in both Trending and Yield tabs
+                        if app.main_tab == MainTab::Yield {
+                            if app.yield_state.is_filtering {
+                                // If in filter mode, add '/' to filter
+                                app.yield_state.add_filter_char('/');
+                            } else if !app.yield_state.is_searching {
+                                // Enter yield search mode
+                                app.yield_state.enter_search_mode();
+                                log_info!("Entered yield search mode");
+                            }
+                        } else if !app.is_in_filter_mode()
                             && app.navigation.focused_panel == FocusedPanel::EventsList
                         {
+                            // API search in Trending tab when EventsList panel is focused
                             app.enter_search_mode();
                         }
                     },
                     KeyCode::Char('f') => {
-                        // Local filter is only available when EventsList panel is focused
-                        if !app.is_in_filter_mode()
+                        // Local filter is available in EventsList panel (Trending) or Yield tab
+                        if app.main_tab == MainTab::Yield && app.yield_state.is_searching {
+                            // In yield search mode, add 'f' to search query
+                            app.yield_state.add_search_char('f');
+                            yield_search_debounce = Some(tokio::time::Instant::now());
+                        } else if app.main_tab == MainTab::Yield {
+                            if !app.yield_state.is_filtering {
+                                app.yield_state.enter_filter_mode();
+                                log_info!("Entered yield filter mode");
+                            } else {
+                                // Already filtering, add 'f' to filter query
+                                app.yield_state.add_filter_char('f');
+                            }
+                        } else if !app.is_in_filter_mode()
                             && app.navigation.focused_panel == FocusedPanel::EventsList
                         {
                             app.enter_local_filter_mode();
                         }
                     },
                     KeyCode::Char('o') => {
-                        // Open event URL in browser (only when EventDetails is focused)
-                        if !app.is_in_filter_mode()
-                            && app.navigation.focused_panel == FocusedPanel::EventDetails
-                        {
+                        // Open event URL in browser
+                        if app.main_tab == MainTab::Yield && app.yield_state.is_searching {
+                            app.yield_state.add_search_char('o');
+                            yield_search_debounce = Some(tokio::time::Instant::now());
+                        } else if app.main_tab == MainTab::Yield && app.yield_state.is_filtering {
+                            app.yield_state.add_filter_char('o');
+                        } else if app.is_in_filter_mode() {
+                            app.add_search_char('o');
+                            if app.search.mode == SearchMode::ApiSearch {
+                                search_debounce = Some(tokio::time::Instant::now());
+                            }
+                        } else if app.main_tab == MainTab::Yield {
+                            // Open yield opportunity URL
+                            if let Some(opp) = app.yield_state.selected_opportunity() {
+                                let url =
+                                    format!("https://polymarket.com/event/{}", opp.event_slug);
+                                #[cfg(target_os = "macos")]
+                                let _ = std::process::Command::new("open").arg(&url).spawn();
+                                #[cfg(target_os = "linux")]
+                                let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+                                #[cfg(target_os = "windows")]
+                                let _ = std::process::Command::new("cmd")
+                                    .args(["/C", "start", &url])
+                                    .spawn();
+                            }
+                        } else if app.navigation.focused_panel == FocusedPanel::EventDetails {
+                            // Open event URL from Trending tab
                             if let Some(event) = app.selected_event() {
                                 let url = format!("https://polymarket.com/event/{}", event.slug);
                                 #[cfg(target_os = "macos")]
@@ -890,16 +1390,49 @@ pub async fn run_trending_tui(
                                     .args(["/C", "start", &url])
                                     .spawn();
                             }
+                        }
+                    },
+                    KeyCode::Char('s') => {
+                        // Cycle sort order in Yield tab (or add to search/filter if in input mode)
+                        if app.main_tab == MainTab::Yield && app.yield_state.is_searching {
+                            app.yield_state.add_search_char('s');
+                            yield_search_debounce = Some(tokio::time::Instant::now());
+                        } else if app.main_tab == MainTab::Yield && app.yield_state.is_filtering {
+                            app.yield_state.add_filter_char('s');
+                        } else if !app.is_in_filter_mode() && app.main_tab == MainTab::Yield {
+                            app.yield_state.sort_by = app.yield_state.sort_by.next();
+                            app.yield_state.sort_opportunities();
+                            app.yield_state.selected_index = 0;
+                            app.yield_state.scroll = 0;
+                            log_info!("Sort changed to: {}", app.yield_state.sort_by.label());
                         } else if app.is_in_filter_mode() {
-                            app.add_search_char('o');
+                            app.add_search_char('s');
                             if app.search.mode == SearchMode::ApiSearch {
                                 search_debounce = Some(tokio::time::Instant::now());
                             }
                         }
                     },
                     KeyCode::Char('r') => {
-                        if app.is_in_filter_mode() {
-                            // Do nothing in filter mode
+                        if app.main_tab == MainTab::Yield && app.yield_state.is_searching {
+                            // In yield search mode, add 'r' to search query
+                            app.yield_state.add_search_char('r');
+                            yield_search_debounce = Some(tokio::time::Instant::now());
+                        } else if app.main_tab == MainTab::Yield && app.yield_state.is_filtering {
+                            // In yield filter mode, add 'r' to filter query
+                            app.yield_state.add_filter_char('r');
+                        } else if app.is_in_filter_mode() {
+                            // In filter mode, add 'r' to search query
+                            app.add_search_char('r');
+                            if app.search.mode == SearchMode::ApiSearch {
+                                search_debounce = Some(tokio::time::Instant::now());
+                            }
+                        } else if app.main_tab == MainTab::Yield {
+                            // Refresh yield opportunities
+                            if !app.yield_state.is_loading {
+                                log_info!("Refreshing yield opportunities...");
+                                drop(app);
+                                spawn_yield_fetch(Arc::clone(&app_state));
+                            }
                         } else if app.navigation.focused_panel == FocusedPanel::EventsList {
                             // Refresh events list and update cache
                             let current_filter = app.event_filter;
@@ -993,10 +1526,27 @@ pub async fn run_trending_tui(
                         if !app.is_in_filter_mode()
                             && app.navigation.focused_panel == FocusedPanel::Header
                         {
-                            let new_filter = app.event_filter.prev();
-                            if let Some((order_by, limit)) = switch_filter_tab(&mut app, new_filter)
-                            {
-                                spawn_filter_fetch(Arc::clone(&app_state), order_by, limit);
+                            match app.main_tab {
+                                MainTab::Trending => {
+                                    let new_filter = app.event_filter.prev();
+                                    if let Some((order_by, limit)) =
+                                        switch_filter_tab(&mut app, new_filter)
+                                    {
+                                        drop(app);
+                                        spawn_filter_fetch(Arc::clone(&app_state), order_by, limit);
+                                    }
+                                },
+                                MainTab::Yield => {
+                                    // Cycle sort backwards
+                                    app.yield_state.sort_by = match app.yield_state.sort_by {
+                                        state::YieldSortBy::Return => state::YieldSortBy::EndDate,
+                                        state::YieldSortBy::Volume => state::YieldSortBy::Return,
+                                        state::YieldSortBy::EndDate => state::YieldSortBy::Volume,
+                                    };
+                                    app.yield_state.sort_opportunities();
+                                    app.yield_state.selected_index = 0;
+                                    app.yield_state.scroll = 0;
+                                },
                             }
                         }
                     },
@@ -1004,15 +1554,33 @@ pub async fn run_trending_tui(
                         if !app.is_in_filter_mode()
                             && app.navigation.focused_panel == FocusedPanel::Header
                         {
-                            let new_filter = app.event_filter.next();
-                            if let Some((order_by, limit)) = switch_filter_tab(&mut app, new_filter)
-                            {
-                                spawn_filter_fetch(Arc::clone(&app_state), order_by, limit);
+                            match app.main_tab {
+                                MainTab::Trending => {
+                                    let new_filter = app.event_filter.next();
+                                    if let Some((order_by, limit)) =
+                                        switch_filter_tab(&mut app, new_filter)
+                                    {
+                                        drop(app);
+                                        spawn_filter_fetch(Arc::clone(&app_state), order_by, limit);
+                                    }
+                                },
+                                MainTab::Yield => {
+                                    // Cycle sort forward
+                                    app.yield_state.sort_by = app.yield_state.sort_by.next();
+                                    app.yield_state.sort_opportunities();
+                                    app.yield_state.selected_index = 0;
+                                    app.yield_state.scroll = 0;
+                                },
                             }
                         }
                     },
                     KeyCode::Up => {
                         if !app.is_in_filter_mode() {
+                            // Handle yield tab navigation
+                            if app.main_tab == MainTab::Yield {
+                                app.yield_state.move_up();
+                                continue;
+                            }
                             match app.navigation.focused_panel {
                                 FocusedPanel::Header => {
                                     // Header doesn't scroll, but we can allow it for consistency
@@ -1112,6 +1680,13 @@ pub async fn run_trending_tui(
                     },
                     KeyCode::Down => {
                         if !app.is_in_filter_mode() {
+                            // Handle yield tab navigation
+                            if app.main_tab == MainTab::Yield {
+                                // Calculate visible height (approximate)
+                                let visible_height = 20; // Approximate visible rows
+                                app.yield_state.move_down(visible_height);
+                                continue;
+                            }
                             match app.navigation.focused_panel {
                                 FocusedPanel::Header => {
                                     // Header doesn't scroll, but we can allow it for consistency
@@ -1332,7 +1907,14 @@ pub async fn run_trending_tui(
                         }
                     },
                     KeyCode::Backspace => {
-                        if app.is_in_filter_mode() {
+                        // Handle yield search mode
+                        if app.main_tab == MainTab::Yield && app.yield_state.is_searching {
+                            app.yield_state.delete_search_char();
+                            yield_search_debounce = Some(tokio::time::Instant::now());
+                        // Handle yield filter mode
+                        } else if app.main_tab == MainTab::Yield && app.yield_state.is_filtering {
+                            app.yield_state.delete_filter_char();
+                        } else if app.is_in_filter_mode() {
                             app.delete_search_char();
                             // Trigger API search after backspace only if in API search mode (with debounce)
                             if app.search.mode == SearchMode::ApiSearch {
@@ -1341,7 +1923,14 @@ pub async fn run_trending_tui(
                         }
                     },
                     KeyCode::Char(c) => {
-                        if app.is_in_filter_mode() {
+                        // Handle yield search mode
+                        if app.main_tab == MainTab::Yield && app.yield_state.is_searching {
+                            app.yield_state.add_search_char(c);
+                            yield_search_debounce = Some(tokio::time::Instant::now());
+                        // Handle yield filter mode
+                        } else if app.main_tab == MainTab::Yield && app.yield_state.is_filtering {
+                            app.yield_state.add_filter_char(c);
+                        } else if app.is_in_filter_mode() {
                             app.add_search_char(c);
                             // Trigger API search after character input only if in API search mode (with debounce)
                             if app.search.mode == SearchMode::ApiSearch {

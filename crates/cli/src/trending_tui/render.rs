@@ -1,7 +1,9 @@
 //! Render functions for the trending TUI
 
 use {
-    super::state::{EventFilter, FocusedPanel, PopupType, SearchMode, TrendingAppState},
+    super::state::{
+        EventFilter, FocusedPanel, MainTab, PopupType, SearchMode, TrendingAppState, YieldSortBy,
+    },
     chrono::{DateTime, Utc},
     polymarket_api::gamma::Event,
     ratatui::{
@@ -18,12 +20,34 @@ use {
     unicode_width::UnicodeWidthStr,
 };
 
-/// Check if a click is on a tab and return which filter it corresponds to
-/// Tabs are rendered on the first line of the header area
-/// Tab format with default padding: " Trending  Breaking  New "
-pub fn get_clicked_tab(x: u16, y: u16, _size: Rect) -> Option<EventFilter> {
-    // Tabs are on the first line (y = 0)
+/// Check if a click is on a main tab (Trending vs Yield)
+/// Main tabs are rendered on the first line (y = 0)
+pub fn get_clicked_main_tab(x: u16, y: u16, _size: Rect) -> Option<MainTab> {
+    // Main tabs are on the first line (y = 0)
     if y != 0 {
+        return None;
+    }
+
+    // Main tabs format: " Trending  Yield "
+    // Positions approximate: 0-10 = Trending, 10-17 = Yield
+    let tab_ranges = [
+        (0u16, 11u16, MainTab::Trending), // " Trending "
+        (11u16, 18u16, MainTab::Yield),   // " Yield "
+    ];
+
+    for (start, end, tab) in tab_ranges {
+        if x >= start && x < end {
+            return Some(tab);
+        }
+    }
+    None
+}
+
+/// Check if a click is on a sub-filter tab (Trending, Breaking, New) within the Trending main tab
+/// These tabs are rendered on the second line (y = 1)
+pub fn get_clicked_tab(x: u16, y: u16, _size: Rect) -> Option<EventFilter> {
+    // Sub-filter tabs are on the second line (y = 1)
+    if y != 1 {
         return None;
     }
 
@@ -45,6 +69,30 @@ pub fn get_clicked_tab(x: u16, y: u16, _size: Rect) -> Option<EventFilter> {
     None
 }
 
+/// Check if a click is on a yield sort tab (Return, Volume, End Date)
+/// These tabs are rendered on the second line (y = 1) when in Yield main tab
+pub fn get_clicked_yield_sort(x: u16, y: u16, _size: Rect) -> Option<YieldSortBy> {
+    // Sort tabs are on the second line (y = 1)
+    if y != 1 {
+        return None;
+    }
+
+    // Tab labels: "By Return" (9) + " " (1) + "By Volume" (9) + " " (1) + "By End Date" (11)
+    // Positions:   0-8              9         10-18             19        20-30
+    let tab_ranges = [
+        (0u16, 10u16, YieldSortBy::Return),   // "By Return" + divider
+        (10u16, 20u16, YieldSortBy::Volume),  // "By Volume" + divider
+        (20u16, 32u16, YieldSortBy::EndDate), // "By End Date"
+    ];
+
+    for (start, end, sort) in tab_ranges {
+        if x >= start && x < end {
+            return Some(sort);
+        }
+    }
+    None
+}
+
 /// Format a price (0.0-1.0) as cents like the Polymarket website
 /// Examples: 0.01 -> "1¢", 0.11 -> "11¢", 0.89 -> "89¢", 0.004 -> "<1¢"
 fn format_price_cents(price: f64) -> String {
@@ -59,11 +107,11 @@ fn format_price_cents(price: f64) -> String {
 }
 
 pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
-    // Header height: 3 lines for normal mode (title, filters, info), 6 for search mode
+    // Header height: 4 lines for normal mode (main tabs, sub-tabs, info), 7 for search mode
     let header_height = if app.is_in_filter_mode() {
-        6
+        7
     } else {
-        4
+        5
     };
     // Use Spacing::Overlap(1) to collapse borders between vertical sections
     // Conditionally include logs area based on show_logs
@@ -87,63 +135,123 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
         .constraints(constraints)
         .split(f.area());
 
-    // Header
-    let watched_count = app
-        .trades
-        .event_trades
-        .values()
-        .filter(|et| et.is_watching)
-        .count();
-    let filtered_count = app.filtered_events().len();
+    // Render header with main tabs
+    render_header(f, app, chunks[0]);
 
-    // Helper to get selected tab index
-    let selected_tab_index = match app.event_filter {
-        EventFilter::Trending => 0,
-        EventFilter::Breaking => 1,
-        EventFilter::New => 2,
+    // Main content depends on active main tab
+    match app.main_tab {
+        MainTab::Trending => {
+            // Main content - split into events list and trades view
+            let main_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .spacing(Spacing::Overlap(1))
+                .constraints([
+                    Constraint::Percentage(40), // Events list
+                    Constraint::Fill(1),        // Right side takes remaining space
+                ])
+                .split(chunks[1]);
+
+            render_events_list(f, app, main_chunks[0]);
+            render_trades(f, app, main_chunks[1]);
+        },
+        MainTab::Yield => {
+            render_yield_tab(f, app, chunks[1]);
+        },
+    }
+
+    // Logs area (only if shown)
+    // Footer index depends on whether logs are shown
+    let footer_idx = if app.show_logs {
+        render_logs(f, app, chunks[2]);
+        3
+    } else {
+        2
+    };
+
+    // Footer - show focused panel info with context-sensitive help
+    let panel_name = app.navigation.focused_panel.name();
+    let panel_help = if app.main_tab == MainTab::Yield {
+        "/: Search | f: Filter | s: Sort | r: Refresh | o: Open"
+    } else {
+        app.navigation.focused_panel.help_text()
+    };
+    let footer_text = if app.main_tab == MainTab::Yield && app.yield_state.is_searching {
+        "Type to search | Esc: Cancel".to_string()
+    } else if app.main_tab == MainTab::Yield && app.yield_state.is_filtering {
+        "Type to filter | Esc: Cancel".to_string()
+    } else if app.search.mode == SearchMode::ApiSearch {
+        "Type to search | Esc: Cancel".to_string()
+    } else if app.search.mode == SearchMode::LocalFilter {
+        "Type to filter | Esc: Cancel".to_string()
+    } else {
+        format!("{} | l: Logs | q: Quit | [{}]", panel_help, panel_name)
+    };
+    let footer = Paragraph::new(footer_text)
+        .block(Block::default().borders(Borders::ALL))
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(Color::Gray));
+    f.render_widget(footer, chunks[footer_idx]);
+
+    // Render popup if active (on top of everything)
+    if let Some(ref popup) = app.popup {
+        render_popup(f, popup);
+    }
+
+    // Render loading gauge if actively loading
+    if app.pagination.is_fetching_more
+        || app.search.is_searching
+        || app.yield_state.is_loading
+        || app.yield_state.is_search_loading
+    {
+        render_loading_gauge(f, app);
+    }
+}
+
+fn render_header(f: &mut Frame, app: &TrendingAppState, area: Rect) {
+    let is_header_focused = app.navigation.focused_panel == FocusedPanel::Header;
+
+    // Main tab index
+    let main_tab_index = match app.main_tab {
+        MainTab::Trending => 0,
+        MainTab::Yield => 1,
     };
 
     if app.is_in_filter_mode() {
-        // Split header into tabs, info, and search input
+        // Split header into main tabs, sub-tabs, info, and search input
         let header_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1), // Tabs line
+                Constraint::Length(1), // Main tabs line
+                Constraint::Length(1), // Sub-tabs line
                 Constraint::Length(2), // Info line
                 Constraint::Length(3), // Search input
             ])
-            .split(chunks[0]);
+            .split(area);
 
-        let is_header_focused = app.navigation.focused_panel == FocusedPanel::Header;
-
-        // Render tabs using Tabs widget
-        let tab_titles = vec!["Trending", "Breaking", "New"];
-        let tabs = Tabs::new(tab_titles)
-            .select(selected_tab_index)
+        // Render main tabs
+        let main_tab_titles = vec!["Trending", "Yield"];
+        let main_tabs = Tabs::new(main_tab_titles)
+            .select(main_tab_index)
             .style(Style::default().fg(Color::DarkGray))
             .highlight_style(
                 Style::default()
-                    .fg(if is_header_focused {
-                        Color::Yellow
-                    } else {
-                        Color::Cyan
-                    })
-                    .add_modifier(Modifier::BOLD),
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
             )
             .divider(" ");
-        f.render_widget(tabs, header_chunks[0]);
+        f.render_widget(main_tabs, header_chunks[0]);
+
+        // Render sub-tabs based on main tab
+        render_sub_tabs(f, app, header_chunks[1], is_header_focused);
 
         // Info line
-        let header_text = format!(
-            "🔥 {} events | Watching: {} | Esc to exit",
-            filtered_count, watched_count
-        );
-        let info = Paragraph::new(header_text)
+        let info_text = get_info_text(app);
+        let info = Paragraph::new(format!("{} | Esc to exit", info_text))
             .style(Style::default().fg(Color::Gray))
             .alignment(Alignment::Left);
-        f.render_widget(info, header_chunks[1]);
+        f.render_widget(info, header_chunks[2]);
 
-        // Search input field - show full query with proper spacing
+        // Search input field
         let search_line = if app.search.query.is_empty() {
             let prompt_text = match app.search.mode {
                 SearchMode::ApiSearch => "Type to search via API...",
@@ -178,39 +286,37 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
             .block(Block::default().borders(Borders::ALL).title(search_title))
             .alignment(Alignment::Left)
             .wrap(Wrap { trim: true });
-        f.render_widget(search_input, header_chunks[2]);
+        f.render_widget(search_input, header_chunks[3]);
     } else {
-        // Normal mode: Split header into tabs and info
+        // Normal mode: Split header into main tabs, sub-tabs, and info
         let header_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1), // Tabs line
+                Constraint::Length(1), // Main tabs line
+                Constraint::Length(1), // Sub-tabs line
                 Constraint::Length(3), // Info with border
             ])
-            .split(chunks[0]);
+            .split(area);
 
-        let is_header_focused = app.navigation.focused_panel == FocusedPanel::Header;
-
-        // Render tabs using Tabs widget
-        let tab_titles = vec!["Trending", "Breaking", "New"];
-        let tabs = Tabs::new(tab_titles)
-            .select(selected_tab_index)
+        // Render main tabs
+        let main_tab_titles = vec!["Trending", "Yield"];
+        let main_tabs = Tabs::new(main_tab_titles)
+            .select(main_tab_index)
             .style(Style::default().fg(Color::DarkGray))
             .highlight_style(
                 Style::default()
-                    .fg(if is_header_focused {
-                        Color::Yellow
-                    } else {
-                        Color::Cyan
-                    })
-                    .add_modifier(Modifier::BOLD),
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
             )
             .divider(" ");
-        f.render_widget(tabs, header_chunks[0]);
+        f.render_widget(main_tabs, header_chunks[0]);
 
-        // Info block - status only, shortcuts are in the footer
-        let header_text = format!("🔥 {} events | Watching: {}", filtered_count, watched_count);
-        let info = Paragraph::new(header_text)
+        // Render sub-tabs based on main tab
+        render_sub_tabs(f, app, header_chunks[1], is_header_focused);
+
+        // Info block
+        let info_text = get_info_text(app);
+        let info = Paragraph::new(info_text)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
@@ -222,59 +328,954 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
             )
             .style(Style::default().fg(Color::Gray))
             .alignment(Alignment::Left);
-        f.render_widget(info, header_chunks[1]);
+        f.render_widget(info, header_chunks[2]);
+    }
+}
+
+fn render_sub_tabs(f: &mut Frame, app: &TrendingAppState, area: Rect, is_focused: bool) {
+    match app.main_tab {
+        MainTab::Trending => {
+            let selected_tab_index = match app.event_filter {
+                EventFilter::Trending => 0,
+                EventFilter::Breaking => 1,
+                EventFilter::New => 2,
+            };
+            let tab_titles = vec!["Trending", "Breaking", "New"];
+            let tabs = Tabs::new(tab_titles)
+                .select(selected_tab_index)
+                .style(Style::default().fg(Color::DarkGray))
+                .highlight_style(
+                    Style::default()
+                        .fg(if is_focused {
+                            Color::Yellow
+                        } else {
+                            Color::Cyan
+                        })
+                        .add_modifier(Modifier::BOLD),
+                )
+                .divider(" ");
+            f.render_widget(tabs, area);
+        },
+        MainTab::Yield => {
+            let selected_sort_index = match app.yield_state.sort_by {
+                YieldSortBy::Return => 0,
+                YieldSortBy::Volume => 1,
+                YieldSortBy::EndDate => 2,
+            };
+            let sort_titles = vec!["By Return", "By Volume", "By End Date"];
+            let tabs = Tabs::new(sort_titles)
+                .select(selected_sort_index)
+                .style(Style::default().fg(Color::DarkGray))
+                .highlight_style(
+                    Style::default()
+                        .fg(if is_focused {
+                            Color::Yellow
+                        } else {
+                            Color::Green
+                        })
+                        .add_modifier(Modifier::BOLD),
+                )
+                .divider(" ");
+            f.render_widget(tabs, area);
+        },
+    }
+}
+
+fn get_info_text(app: &TrendingAppState) -> String {
+    match app.main_tab {
+        MainTab::Trending => {
+            let watched_count = app
+                .trades
+                .event_trades
+                .values()
+                .filter(|et| et.is_watching)
+                .count();
+            let filtered_count = app.filtered_events().len();
+            format!("🔥 {} events | Watching: {}", filtered_count, watched_count)
+        },
+        MainTab::Yield => {
+            let count = app.yield_state.opportunities.len();
+            let min_prob = app.yield_state.min_prob * 100.0;
+            if app.yield_state.is_loading {
+                format!("💰 Loading yield opportunities (≥{:.0}%)...", min_prob)
+            } else {
+                format!(
+                    "💰 {} yield opportunities (≥{:.0}% probability)",
+                    count, min_prob
+                )
+            }
+        },
+    }
+}
+
+/// Render the yield opportunities tab
+fn render_yield_tab(f: &mut Frame, app: &TrendingAppState, area: Rect) {
+    let yield_state = &app.yield_state;
+
+    // If searching, add a search input area at the top
+    if yield_state.is_searching {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3), // Search input
+                Constraint::Min(0),    // Main content
+            ])
+            .split(area);
+
+        // Render search input
+        let search_text = if yield_state.search_query.is_empty() {
+            Line::from("Type to search events...".fg(Color::DarkGray))
+        } else if yield_state.is_search_loading {
+            Line::from(vec![
+                Span::styled(
+                    &yield_state.search_query,
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" (searching...)", Style::default().fg(Color::Yellow)),
+            ])
+        } else {
+            Line::from(Span::styled(
+                &yield_state.search_query,
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ))
+        };
+        let search_title = if yield_state.is_search_loading {
+            "Search (loading...)"
+        } else {
+            "Search (Esc to close)"
+        };
+        let search_input = Paragraph::new(vec![search_text])
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(search_title)
+                    .border_style(Style::default().fg(Color::Yellow)),
+            )
+            .alignment(Alignment::Left);
+        f.render_widget(search_input, chunks[0]);
+
+        // Render main content below search
+        let main_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .spacing(Spacing::Overlap(1))
+            .constraints([
+                Constraint::Percentage(55), // Results list
+                Constraint::Fill(1),        // Details panel
+            ])
+            .split(chunks[1]);
+
+        // Show search results if available, otherwise show normal yield list
+        if !yield_state.search_results.is_empty() || !yield_state.last_searched_query.is_empty() {
+            render_yield_search_results(f, app, main_chunks[0]);
+            render_yield_search_details(f, app, main_chunks[1]);
+        } else {
+            render_yield_list(f, app, main_chunks[0]);
+            render_yield_details(f, app, main_chunks[1]);
+        }
+    // If filtering, add a filter input area at the top
+    } else if yield_state.is_filtering {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3), // Filter input
+                Constraint::Min(0),    // Main content
+            ])
+            .split(area);
+
+        // Render filter input
+        let filter_text = if yield_state.filter_query.is_empty() {
+            Line::from("Type to filter by event/market name...".fg(Color::DarkGray))
+        } else {
+            Line::from(Span::styled(
+                &yield_state.filter_query,
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ))
+        };
+        let filter_input = Paragraph::new(vec![filter_text])
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Filter (Esc to close, Backspace to clear)")
+                    .border_style(Style::default().fg(Color::Yellow)),
+            )
+            .alignment(Alignment::Left);
+        f.render_widget(filter_input, chunks[0]);
+
+        // Render main content below filter
+        let main_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .spacing(Spacing::Overlap(1))
+            .constraints([
+                Constraint::Percentage(55), // Opportunities list
+                Constraint::Fill(1),        // Details panel
+            ])
+            .split(chunks[1]);
+
+        render_yield_list(f, app, main_chunks[0]);
+        render_yield_details(f, app, main_chunks[1]);
+    } else {
+        // Normal mode: Split into list on left and details on right
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .spacing(Spacing::Overlap(1))
+            .constraints([
+                Constraint::Percentage(55), // Opportunities list
+                Constraint::Fill(1),        // Details panel
+            ])
+            .split(area);
+
+        render_yield_list(f, app, chunks[0]);
+        render_yield_details(f, app, chunks[1]);
+    }
+}
+
+fn render_yield_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
+    let yield_state = &app.yield_state;
+
+    if yield_state.is_loading {
+        let loading = Paragraph::new("Loading yield opportunities...")
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Yield Opportunities"),
+            )
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::Yellow));
+        f.render_widget(loading, area);
+        return;
     }
 
-    // Main content - split into events list and trades view
-    // Use Spacing::Overlap(1) to collapse borders between panels
-    let main_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .spacing(Spacing::Overlap(1))
-        .constraints([
-            Constraint::Percentage(40), // Events list
-            Constraint::Fill(1),        // Right side takes remaining space
-        ])
-        .split(chunks[1]);
+    if yield_state.opportunities.is_empty() {
+        let empty = Paragraph::new("No yield opportunities found.\nPress 'r' to refresh.")
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Yield Opportunities"),
+            )
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::Gray));
+        f.render_widget(empty, area);
+        return;
+    }
 
-    render_events_list(f, app, main_chunks[0]);
-    render_trades(f, app, main_chunks[1]);
+    // Get filtered opportunities
+    let filtered = yield_state.filtered_opportunities();
 
-    // Logs area (only if shown)
-    // Footer index depends on whether logs are shown
-    let footer_idx = if app.show_logs {
-        render_logs(f, app, chunks[2]);
-        3
-    } else {
-        2
-    };
-
-    // Footer - show focused panel info with context-sensitive help
-    let panel_name = app.navigation.focused_panel.name();
-    let panel_help = app.navigation.focused_panel.help_text();
-    let footer_text = if app.search.mode == SearchMode::ApiSearch {
-        format!("Type to search | Esc: Cancel | [{}]", panel_name)
-    } else if app.search.mode == SearchMode::LocalFilter {
-        format!("Type to filter | Esc: Cancel | [{}]", panel_name)
-    } else {
-        format!(
-            "{} | l: Logs | Tab: Switch | q: Quit | [{}]",
-            panel_help, panel_name
+    if filtered.is_empty() {
+        let empty = Paragraph::new(format!(
+            "No matches for '{}'\nPress Esc to clear filter.",
+            yield_state.filter_query
+        ))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Yield Opportunities (filtered)"),
         )
-    };
-    let footer = Paragraph::new(footer_text)
-        .block(Block::default().borders(Borders::ALL))
         .alignment(Alignment::Center)
         .style(Style::default().fg(Color::Gray));
-    f.render_widget(footer, chunks[footer_idx]);
-
-    // Render popup if active (on top of everything)
-    if let Some(ref popup) = app.popup {
-        render_popup(f, popup);
+        f.render_widget(empty, area);
+        return;
     }
 
-    // Render loading gauge if actively loading
-    if app.pagination.is_fetching_more || app.search.is_searching {
-        render_loading_gauge(f, app);
+    // Calculate visible height (accounting for borders and header row)
+    let visible_height = (area.height as usize).saturating_sub(3); // -2 borders, -1 header
+    let total_items = filtered.len();
+    let scroll = yield_state
+        .scroll
+        .min(total_items.saturating_sub(visible_height.max(1)));
+
+    let rows: Vec<Row> = filtered
+        .iter()
+        .enumerate()
+        .skip(scroll)
+        .take(visible_height)
+        .map(|(idx, opp)| {
+            // Format return with color based on value
+            let return_color = if opp.est_return >= 5.0 {
+                Color::Green
+            } else if opp.est_return >= 2.0 {
+                Color::Yellow
+            } else {
+                Color::Red
+            };
+
+            // Format volume
+            let volume_str = if opp.volume >= 1_000_000.0 {
+                format!("${:.1}M", opp.volume / 1_000_000.0)
+            } else if opp.volume >= 1_000.0 {
+                format!("${:.0}K", opp.volume / 1_000.0)
+            } else if opp.volume > 0.0 {
+                format!("${:.0}", opp.volume)
+            } else {
+                "-".to_string()
+            };
+
+            // Format end date
+            let end_str = opp
+                .end_date
+                .map(|d| {
+                    let now = Utc::now();
+                    let days = (d - now).num_days();
+                    if days < 0 {
+                        "expired".to_string()
+                    } else if days == 0 {
+                        "today".to_string()
+                    } else if days == 1 {
+                        "1d".to_string()
+                    } else if days < 30 {
+                        format!("{}d", days)
+                    } else {
+                        format!("{}mo", days / 30)
+                    }
+                })
+                .unwrap_or_else(|| "N/A".to_string());
+
+            let return_str = format!("{:.2}%", opp.est_return);
+            let price_str = format!("{:.1}¢", opp.price * 100.0);
+
+            // Truncate market name to fit the column
+            let market_name = truncate(&opp.market_name, 35);
+
+            // Zebra striping
+            let bg_color = if idx % 2 == 0 {
+                Color::Reset
+            } else {
+                Color::Rgb(30, 30, 40)
+            };
+
+            Row::new(vec![
+                Cell::from(market_name).style(Style::default().fg(Color::White)),
+                Cell::from(return_str).style(Style::default().fg(return_color)),
+                Cell::from(price_str).style(Style::default().fg(Color::Cyan)),
+                Cell::from(volume_str).style(Style::default().fg(Color::Green)),
+                Cell::from(end_str).style(Style::default().fg(Color::Magenta)),
+            ])
+            .style(Style::default().bg(bg_color))
+        })
+        .collect();
+
+    let is_focused = app.navigation.focused_panel == FocusedPanel::EventsList;
+    let block_style = if is_focused {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default()
+    };
+
+    // Build title with filter info if active
+    let title = if !yield_state.filter_query.is_empty() {
+        format!(
+            "Yield ({}/{}) - Filter: '{}' - Sort: {}",
+            filtered.len(),
+            yield_state.opportunities.len(),
+            truncate(&yield_state.filter_query, 15),
+            yield_state.sort_by.label()
+        )
+    } else {
+        format!(
+            "Yield Opportunities ({}) - Sort: {}",
+            yield_state.opportunities.len(),
+            yield_state.sort_by.label()
+        )
+    };
+
+    let table = Table::new(rows, [
+        Constraint::Fill(1),   // Market name (takes remaining space)
+        Constraint::Length(7), // Return (e.g., "12.34%")
+        Constraint::Length(7), // Price (e.g., "95.5¢")
+        Constraint::Length(8), // Volume (e.g., "$123.4K")
+        Constraint::Length(7), // Expires (e.g., "expired")
+    ])
+    .header(
+        Row::new(vec!["Market", "Return", "Price", "Volume", "Expires"])
+            .style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .bottom_margin(0),
+    )
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(title)
+            .border_style(block_style),
+    )
+    .column_spacing(1)
+    .row_highlight_style(
+        Style::default()
+            .bg(Color::Rgb(60, 60, 80))
+            .add_modifier(Modifier::BOLD),
+    );
+
+    // Use TableState for row selection
+    let mut table_state = ratatui::widgets::TableState::default();
+    table_state.select(Some(yield_state.selected_index.saturating_sub(scroll)));
+    f.render_stateful_widget(table, area, &mut table_state);
+
+    // Render scrollbar if needed
+    let total_items = yield_state.opportunities.len();
+    if total_items > visible_height {
+        let mut scrollbar_state = ScrollbarState::new(total_items)
+            .position(yield_state.scroll)
+            .viewport_content_length(visible_height);
+        f.render_stateful_widget(
+            Scrollbar::default()
+                .orientation(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(Some("↑"))
+                .end_symbol(Some("↓")),
+            area,
+            &mut scrollbar_state,
+        );
+    }
+}
+
+fn render_yield_details(f: &mut Frame, app: &TrendingAppState, area: Rect) {
+    let yield_state = &app.yield_state;
+
+    if let Some(opp) = yield_state.selected_opportunity() {
+        // Split into event info and market details
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .spacing(Spacing::Overlap(1))
+            .constraints([
+                Constraint::Length(10), // Event info
+                Constraint::Min(0),     // Market details
+            ])
+            .split(area);
+
+        // Event info panel
+        let end_date_str = opp
+            .end_date
+            .map(|dt| dt.format("%Y-%m-%d %H:%M UTC").to_string())
+            .unwrap_or_else(|| "N/A".to_string());
+
+        let event_url = format!("https://polymarket.com/event/{}", opp.event_slug);
+
+        let event_lines = vec![
+            Line::from(vec![
+                Span::styled("Event: ", Style::default().fg(Color::Yellow).bold()),
+                Span::styled(
+                    truncate(&opp.event_title, 50),
+                    Style::default().fg(Color::White),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("Status: ", Style::default().fg(Color::Yellow).bold()),
+                Span::styled(
+                    opp.event_status,
+                    Style::default().fg(if opp.event_status == "active" {
+                        Color::Green
+                    } else {
+                        Color::Red
+                    }),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("Ends: ", Style::default().fg(Color::Yellow).bold()),
+                Span::styled(end_date_str, Style::default().fg(Color::Magenta)),
+            ]),
+            Line::from(vec![
+                Span::styled("URL: ", Style::default().fg(Color::Yellow).bold()),
+                Span::styled(event_url, Style::default().fg(Color::Cyan)),
+            ]),
+        ];
+
+        let is_details_focused = app.navigation.focused_panel == FocusedPanel::EventDetails;
+        let event_block_style = if is_details_focused {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default()
+        };
+
+        let event_info = Paragraph::new(event_lines)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Event")
+                    .border_style(event_block_style),
+            )
+            .wrap(Wrap { trim: true });
+        f.render_widget(event_info, chunks[0]);
+
+        // Market details panel
+        let return_color = if opp.est_return >= 5.0 {
+            Color::Green
+        } else if opp.est_return >= 2.0 {
+            Color::Yellow
+        } else {
+            Color::Red
+        };
+
+        let volume_str = if opp.volume >= 1_000_000.0 {
+            format!("${:.1}M", opp.volume / 1_000_000.0)
+        } else if opp.volume >= 1_000.0 {
+            format!("${:.1}K", opp.volume / 1_000.0)
+        } else {
+            format!("${:.0}", opp.volume)
+        };
+
+        let market_lines = vec![
+            Line::from(vec![
+                Span::styled("Market: ", Style::default().fg(Color::Yellow).bold()),
+                Span::styled(&opp.market_name, Style::default().fg(Color::White)),
+            ]),
+            Line::from(vec![
+                Span::styled("Status: ", Style::default().fg(Color::Yellow).bold()),
+                Span::styled(
+                    opp.market_status,
+                    Style::default().fg(if opp.market_status == "open" {
+                        Color::Green
+                    } else {
+                        Color::Red
+                    }),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Outcome: ", Style::default().fg(Color::Yellow).bold()),
+                Span::styled(
+                    &opp.outcome,
+                    Style::default().fg(if opp.outcome == "Yes" {
+                        Color::Green
+                    } else {
+                        Color::Red
+                    }),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("Price: ", Style::default().fg(Color::Yellow).bold()),
+                Span::styled(
+                    format!("{:.1}¢ ({:.1}%)", opp.price * 100.0, opp.price * 100.0),
+                    Style::default().fg(Color::Cyan),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("Est. Return: ", Style::default().fg(Color::Yellow).bold()),
+                Span::styled(
+                    format!("{:.2}%", opp.est_return),
+                    Style::default()
+                        .fg(return_color)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("24h Volume: ", Style::default().fg(Color::Yellow).bold()),
+                Span::styled(volume_str, Style::default().fg(Color::Green)),
+            ]),
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                "💡 Buy at this price, get full $1 if outcome occurs",
+                Style::default().fg(Color::DarkGray),
+            )]),
+        ];
+
+        let is_markets_focused = app.navigation.focused_panel == FocusedPanel::Markets;
+        let market_block_style = if is_markets_focused {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default()
+        };
+
+        let market_details = Paragraph::new(market_lines)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Market Details")
+                    .border_style(market_block_style),
+            )
+            .wrap(Wrap { trim: true });
+        f.render_widget(market_details, chunks[1]);
+    } else {
+        let empty = Paragraph::new("No opportunity selected")
+            .block(Block::default().borders(Borders::ALL).title("Details"))
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::Gray));
+        f.render_widget(empty, area);
+    }
+}
+
+/// Render yield search results (events with yield info)
+fn render_yield_search_results(f: &mut Frame, app: &TrendingAppState, area: Rect) {
+    let yield_state = &app.yield_state;
+
+    if yield_state.is_search_loading && yield_state.search_results.is_empty() {
+        let loading = Paragraph::new("Searching...")
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Search Results"),
+            )
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::Yellow));
+        f.render_widget(loading, area);
+        return;
+    }
+
+    if yield_state.search_results.is_empty() {
+        let msg = if yield_state.last_searched_query.is_empty() {
+            "Type to search for events...".to_string()
+        } else {
+            format!("No results for '{}'", yield_state.last_searched_query)
+        };
+        let empty = Paragraph::new(msg)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Search Results"),
+            )
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::Gray));
+        f.render_widget(empty, area);
+        return;
+    }
+
+    // Calculate visible height (area height - 2 for borders - 1 for header row)
+    let visible_height = (area.height as usize).saturating_sub(3);
+    let total_items = yield_state.search_results.len();
+    let scroll = yield_state
+        .scroll
+        .min(total_items.saturating_sub(visible_height.max(1)));
+
+    let rows: Vec<Row> = yield_state
+        .search_results
+        .iter()
+        .enumerate()
+        .skip(scroll)
+        .take(visible_height)
+        .map(|(idx, result)| {
+            // Format yield info
+            let (yield_str, yield_color) = if let Some(ref y) = result.best_yield {
+                (
+                    format!("{:.1}%", y.est_return),
+                    if y.est_return >= 5.0 {
+                        Color::Green
+                    } else if y.est_return >= 2.0 {
+                        Color::Yellow
+                    } else {
+                        Color::Red
+                    },
+                )
+            } else {
+                ("No yield".to_string(), Color::DarkGray)
+            };
+
+            // Format volume
+            let volume_str = if result.total_volume >= 1_000_000.0 {
+                format!("${:.1}M", result.total_volume / 1_000_000.0)
+            } else if result.total_volume >= 1_000.0 {
+                format!("${:.0}K", result.total_volume / 1_000.0)
+            } else if result.total_volume > 0.0 {
+                format!("${:.0}", result.total_volume)
+            } else {
+                "-".to_string()
+            };
+
+            // Format end date
+            let end_str = result
+                .end_date
+                .map(|d| {
+                    let now = Utc::now();
+                    let days = (d - now).num_days();
+                    if days < 0 {
+                        "expired".to_string()
+                    } else if days == 0 {
+                        "today".to_string()
+                    } else if days == 1 {
+                        "1d".to_string()
+                    } else if days < 30 {
+                        format!("{}d", days)
+                    } else {
+                        format!("{}mo", days / 30)
+                    }
+                })
+                .unwrap_or_else(|| "N/A".to_string());
+
+            // Truncate event title
+            let title = truncate(&result.event_title, 40);
+
+            // Zebra striping
+            let bg_color = if idx % 2 == 0 {
+                Color::Reset
+            } else {
+                Color::Rgb(30, 30, 40)
+            };
+
+            Row::new(vec![
+                Cell::from(title).style(Style::default().fg(Color::White)),
+                Cell::from(yield_str).style(Style::default().fg(yield_color)),
+                Cell::from(volume_str).style(Style::default().fg(Color::Green)),
+                Cell::from(format!("{}", result.markets_count))
+                    .style(Style::default().fg(Color::Cyan)),
+                Cell::from(end_str).style(Style::default().fg(Color::Magenta)),
+            ])
+            .style(Style::default().bg(bg_color))
+        })
+        .collect();
+
+    let is_focused = app.navigation.focused_panel == FocusedPanel::EventsList;
+    let block_style = if is_focused {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default()
+    };
+
+    let title = format!(
+        "Search Results ({}) - '{}'",
+        yield_state.search_results.len(),
+        truncate(&yield_state.last_searched_query, 20)
+    );
+
+    let table = Table::new(rows, [
+        Constraint::Fill(1),   // Event title
+        Constraint::Length(9), // Yield (e.g., "No yield")
+        Constraint::Length(8), // Volume
+        Constraint::Length(3), // Markets count
+        Constraint::Length(7), // Expires
+    ])
+    .header(
+        Row::new(vec!["Event", "Yield", "Volume", "Mkt", "Expires"])
+            .style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .bottom_margin(0),
+    )
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(title)
+            .border_style(block_style),
+    )
+    .column_spacing(1)
+    .row_highlight_style(
+        Style::default()
+            .bg(Color::Rgb(60, 60, 80))
+            .add_modifier(Modifier::BOLD),
+    );
+
+    let mut table_state = ratatui::widgets::TableState::default();
+    table_state.select(Some(yield_state.selected_index.saturating_sub(scroll)));
+    f.render_stateful_widget(table, area, &mut table_state);
+
+    // Render scrollbar if needed
+    if total_items > visible_height {
+        let mut scrollbar_state = ScrollbarState::new(total_items)
+            .position(yield_state.scroll)
+            .viewport_content_length(visible_height);
+        f.render_stateful_widget(
+            Scrollbar::default()
+                .orientation(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(Some("↑"))
+                .end_symbol(Some("↓")),
+            area,
+            &mut scrollbar_state,
+        );
+    }
+}
+
+/// Render details for a selected yield search result
+fn render_yield_search_details(f: &mut Frame, app: &TrendingAppState, area: Rect) {
+    let yield_state = &app.yield_state;
+
+    if let Some(result) = yield_state.selected_search_result() {
+        // Split into event info and yield details
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .spacing(Spacing::Overlap(1))
+            .constraints([
+                Constraint::Length(10), // Event info
+                Constraint::Min(0),     // Yield details
+            ])
+            .split(area);
+
+        // Event info panel
+        let end_date_str = result
+            .end_date
+            .map(|dt| dt.format("%Y-%m-%d %H:%M UTC").to_string())
+            .unwrap_or_else(|| "N/A".to_string());
+
+        let event_url = format!("https://polymarket.com/event/{}", result.event_slug);
+
+        let volume_str = if result.total_volume >= 1_000_000.0 {
+            format!("${:.1}M", result.total_volume / 1_000_000.0)
+        } else if result.total_volume >= 1_000.0 {
+            format!("${:.1}K", result.total_volume / 1_000.0)
+        } else {
+            format!("${:.0}", result.total_volume)
+        };
+
+        let event_lines = vec![
+            Line::from(vec![
+                Span::styled("Event: ", Style::default().fg(Color::Yellow).bold()),
+                Span::styled(
+                    truncate(&result.event_title, 50),
+                    Style::default().fg(Color::White),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("Status: ", Style::default().fg(Color::Yellow).bold()),
+                Span::styled(
+                    result.event_status,
+                    Style::default().fg(if result.event_status == "active" {
+                        Color::Green
+                    } else {
+                        Color::Red
+                    }),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("Markets: ", Style::default().fg(Color::Yellow).bold()),
+                Span::styled(
+                    format!("{}", result.markets_count),
+                    Style::default().fg(Color::Cyan),
+                ),
+                Span::styled(" | Volume: ", Style::default().fg(Color::Yellow).bold()),
+                Span::styled(volume_str, Style::default().fg(Color::Green)),
+            ]),
+            Line::from(vec![
+                Span::styled("Ends: ", Style::default().fg(Color::Yellow).bold()),
+                Span::styled(end_date_str, Style::default().fg(Color::Magenta)),
+            ]),
+            Line::from(vec![
+                Span::styled("URL: ", Style::default().fg(Color::Yellow).bold()),
+                Span::styled(event_url, Style::default().fg(Color::Cyan)),
+            ]),
+        ];
+
+        let is_details_focused = app.navigation.focused_panel == FocusedPanel::EventDetails;
+        let event_block_style = if is_details_focused {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default()
+        };
+
+        let event_info = Paragraph::new(event_lines)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Event")
+                    .border_style(event_block_style),
+            )
+            .wrap(Wrap { trim: true });
+        f.render_widget(event_info, chunks[0]);
+
+        // Yield details panel
+        let is_markets_focused = app.navigation.focused_panel == FocusedPanel::Markets;
+        let yield_block_style = if is_markets_focused {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default()
+        };
+
+        if let Some(ref y) = result.best_yield {
+            let return_color = if y.est_return >= 5.0 {
+                Color::Green
+            } else if y.est_return >= 2.0 {
+                Color::Yellow
+            } else {
+                Color::Red
+            };
+
+            let yield_volume_str = if y.volume >= 1_000_000.0 {
+                format!("${:.1}M", y.volume / 1_000_000.0)
+            } else if y.volume >= 1_000.0 {
+                format!("${:.1}K", y.volume / 1_000.0)
+            } else {
+                format!("${:.0}", y.volume)
+            };
+
+            let yield_lines = vec![
+                Line::from(vec![
+                    Span::styled("Market: ", Style::default().fg(Color::Yellow).bold()),
+                    Span::styled(&y.market_name, Style::default().fg(Color::White)),
+                ]),
+                Line::from(vec![
+                    Span::styled("Outcome: ", Style::default().fg(Color::Yellow).bold()),
+                    Span::styled(
+                        &y.outcome,
+                        Style::default().fg(if y.outcome == "Yes" {
+                            Color::Green
+                        } else {
+                            Color::Red
+                        }),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("Price: ", Style::default().fg(Color::Yellow).bold()),
+                    Span::styled(
+                        format!("{:.1}¢ ({:.1}%)", y.price * 100.0, y.price * 100.0),
+                        Style::default().fg(Color::Cyan),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("Est. Return: ", Style::default().fg(Color::Yellow).bold()),
+                    Span::styled(
+                        format!("{:.2}%", y.est_return),
+                        Style::default()
+                            .fg(return_color)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("24h Volume: ", Style::default().fg(Color::Yellow).bold()),
+                    Span::styled(yield_volume_str, Style::default().fg(Color::Green)),
+                ]),
+                Line::from(""),
+                Line::from(vec![Span::styled(
+                    "💡 Buy at this price, get full $1 if outcome occurs",
+                    Style::default().fg(Color::DarkGray),
+                )]),
+            ];
+
+            let yield_details = Paragraph::new(yield_lines)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title("Best Yield Opportunity")
+                        .border_style(yield_block_style),
+                )
+                .wrap(Wrap { trim: true });
+            f.render_widget(yield_details, chunks[1]);
+        } else {
+            let no_yield_lines = vec![
+                Line::from(""),
+                Line::from(vec![Span::styled(
+                    "No high-probability outcomes found",
+                    Style::default().fg(Color::DarkGray),
+                )]),
+                Line::from(""),
+                Line::from(vec![Span::styled(
+                    format!(
+                        "(Looking for outcomes ≥{:.0}%)",
+                        app.yield_state.min_prob * 100.0
+                    ),
+                    Style::default().fg(Color::DarkGray),
+                )]),
+            ];
+
+            let no_yield = Paragraph::new(no_yield_lines)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title("No Yield Opportunity")
+                        .border_style(yield_block_style),
+                )
+                .alignment(Alignment::Center);
+            f.render_widget(no_yield, chunks[1]);
+        }
+    } else {
+        let empty = Paragraph::new("Select an event to see details")
+            .block(Block::default().borders(Borders::ALL).title("Details"))
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::Gray));
+        f.render_widget(empty, area);
     }
 }
 
@@ -384,8 +1385,12 @@ fn render_loading_gauge(f: &mut Frame, app: &TrendingAppState) {
         height: 1,
     };
 
-    let label = if app.search.is_searching {
+    let label = if app.yield_state.is_search_loading {
+        "Searching yield..."
+    } else if app.search.is_searching {
         "Searching..."
+    } else if app.yield_state.is_loading {
+        "Loading yield opportunities..."
     } else {
         "Loading more events..."
     };

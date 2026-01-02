@@ -10,7 +10,7 @@ use {
         Frame,
         layout::{Alignment, Constraint, Direction, Layout, Rect, Spacing},
         prelude::Stylize,
-        style::{Color, Modifier, Style},
+        style::{Color, Modifier, Style, palette::tailwind},
         text::{Line, Span},
         widgets::{
             Block, Borders, Cell, Clear, LineGauge, List, ListItem, ListState, Paragraph, Row,
@@ -28,17 +28,12 @@ pub fn get_clicked_main_tab(x: u16, y: u16, _size: Rect) -> Option<MainTab> {
         return None;
     }
 
-    // Main tabs format: " Trending  Yield "
-    // Positions approximate: 0-10 = Trending, 10-17 = Yield
-    let tab_ranges = [
-        (0u16, 11u16, MainTab::Trending), // " Trending "
-        (11u16, 18u16, MainTab::Yield),   // " Yield "
-    ];
-
-    for (start, end, tab) in tab_ranges {
-        if x >= start && x < end {
-            return Some(tab);
-        }
+    // Tab labels with padding: "  Trending  " (12) + " " (1) + "  Yield  " (9)
+    // Positions: 0-11 = Trending, 12 = divider, 13-21 = Yield
+    if x < 12 {
+        return Some(MainTab::Trending);
+    } else if (13..22).contains(&x) {
+        return Some(MainTab::Yield);
     }
     None
 }
@@ -46,25 +41,19 @@ pub fn get_clicked_main_tab(x: u16, y: u16, _size: Rect) -> Option<MainTab> {
 /// Check if a click is on a sub-filter tab (Trending, Breaking, New) within the Trending main tab
 /// These tabs are rendered on the second line (y = 1)
 pub fn get_clicked_tab(x: u16, y: u16, _size: Rect) -> Option<EventFilter> {
-    // Sub-filter tabs are on the second line (y = 1)
+    // Sub-tabs are on the second line (y = 1)
     if y != 1 {
         return None;
     }
 
-    // Tabs widget with default padding (" ") and divider (" "):
-    // Format: " Trending  Breaking  New "
-    // Positions: 0-9 = " Trending", 10-19 = " Breaking", 20-24 = " New"
-    // Each tab has 1 space padding on each side, divider is 1 space
-    let tab_ranges = [
-        (0u16, 10u16, EventFilter::Trending),  // " Trending "
-        (10u16, 20u16, EventFilter::Breaking), // " Breaking "
-        (20u16, 25u16, EventFilter::New),      // " New "
-    ];
-
-    for (start, end, filter) in tab_ranges {
-        if x >= start && x < end {
-            return Some(filter);
-        }
+    // Tab labels: "  Trending  " (12) + " " + "  Breaking  " (12) + " " + "  New  " (7)
+    // Positions: 0-11 = Trending, 13-24 = Breaking, 26-32 = New
+    if x < 12 {
+        return Some(EventFilter::Trending);
+    } else if (13..25).contains(&x) {
+        return Some(EventFilter::Breaking);
+    } else if x >= 26 {
+        return Some(EventFilter::New);
     }
     None
 }
@@ -77,22 +66,14 @@ pub fn get_clicked_yield_sort(x: u16, y: u16, _size: Rect) -> Option<YieldSortBy
         return None;
     }
 
-    // Actual rendering: " By Return   By Volume   By End Date"
-    // " By Return" = positions 0-9 (10 chars)
-    // "   " = positions 10-12 (3 space divider)
-    // "By Volume" = positions 13-21 (9 chars)
-    // "   " = positions 22-24 (3 space divider)
-    // "By End Date" = positions 25-35 (11 chars)
-    let tab_ranges = [
-        (0u16, 13u16, YieldSortBy::Return),   // " By Return" + divider
-        (13u16, 25u16, YieldSortBy::Volume),  // "By Volume" + divider
-        (25u16, 40u16, YieldSortBy::EndDate), // "By End Date"
-    ];
-
-    for (start, end, sort) in tab_ranges {
-        if x >= start && x < end {
-            return Some(sort);
-        }
+    // Tab labels: "  By Return  " (13) + " " + "  By Volume  " (13) + " " + "  By End Date  " (15)
+    // Positions: 0-12 = Return, 14-26 = Volume, 28-42 = EndDate
+    if x < 13 {
+        return Some(YieldSortBy::Return);
+    } else if (14..27).contains(&x) {
+        return Some(YieldSortBy::Volume);
+    } else if x >= 28 {
+        return Some(YieldSortBy::EndDate);
     }
     None
 }
@@ -302,16 +283,23 @@ fn render_header(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             ])
             .split(area);
 
-        // Render main tabs
-        let main_tab_titles = vec!["Trending", "Yield"];
+        // Render main tabs with colored backgrounds
+        let main_tab_titles: Vec<Line> = vec![
+            Line::from("  Trending  ")
+                .fg(tailwind::SLATE.c200)
+                .bg(tailwind::BLUE.c900),
+            Line::from("  Yield  ")
+                .fg(tailwind::SLATE.c200)
+                .bg(tailwind::EMERALD.c900),
+        ];
+        let highlight_style = match app.main_tab {
+            MainTab::Trending => (Color::default(), tailwind::BLUE.c700),
+            MainTab::Yield => (Color::default(), tailwind::EMERALD.c700),
+        };
         let main_tabs = Tabs::new(main_tab_titles)
             .select(main_tab_index)
-            .style(Style::default().fg(Color::DarkGray))
-            .highlight_style(
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-            )
+            .highlight_style(highlight_style)
+            .padding("", "")
             .divider(" ");
         f.render_widget(main_tabs, header_chunks[0]);
 
@@ -336,7 +324,7 @@ fn render_header(f: &mut Frame, app: &TrendingAppState, area: Rect) {
     }
 }
 
-fn render_sub_tabs(f: &mut Frame, app: &TrendingAppState, area: Rect, is_focused: bool) {
+fn render_sub_tabs(f: &mut Frame, app: &TrendingAppState, area: Rect, _is_focused: bool) {
     match app.main_tab {
         MainTab::Trending => {
             let selected_tab_index = match app.event_filter {
@@ -344,19 +332,27 @@ fn render_sub_tabs(f: &mut Frame, app: &TrendingAppState, area: Rect, is_focused
                 EventFilter::Breaking => 1,
                 EventFilter::New => 2,
             };
-            let tab_titles = vec!["Trending", "Breaking", "New"];
+            // Sub-tabs with colored backgrounds
+            let tab_titles: Vec<Line> = vec![
+                Line::from("  Trending  ")
+                    .fg(tailwind::SLATE.c200)
+                    .bg(tailwind::CYAN.c900),
+                Line::from("  Breaking  ")
+                    .fg(tailwind::SLATE.c200)
+                    .bg(tailwind::ORANGE.c900),
+                Line::from("  New  ")
+                    .fg(tailwind::SLATE.c200)
+                    .bg(tailwind::VIOLET.c900),
+            ];
+            let highlight_style = match app.event_filter {
+                EventFilter::Trending => (Color::default(), tailwind::CYAN.c700),
+                EventFilter::Breaking => (Color::default(), tailwind::ORANGE.c700),
+                EventFilter::New => (Color::default(), tailwind::VIOLET.c700),
+            };
             let tabs = Tabs::new(tab_titles)
                 .select(selected_tab_index)
-                .style(Style::default().fg(Color::DarkGray))
-                .highlight_style(
-                    Style::default()
-                        .fg(if is_focused {
-                            Color::Yellow
-                        } else {
-                            Color::Cyan
-                        })
-                        .add_modifier(Modifier::BOLD),
-                )
+                .highlight_style(highlight_style)
+                .padding("", "")
                 .divider(" ");
             f.render_widget(tabs, area);
         },
@@ -366,19 +362,27 @@ fn render_sub_tabs(f: &mut Frame, app: &TrendingAppState, area: Rect, is_focused
                 YieldSortBy::Volume => 1,
                 YieldSortBy::EndDate => 2,
             };
-            let sort_titles = vec!["By Return", "By Volume", "By End Date"];
+            // Sort tabs with colored backgrounds
+            let sort_titles: Vec<Line> = vec![
+                Line::from("  By Return  ")
+                    .fg(tailwind::SLATE.c200)
+                    .bg(tailwind::GREEN.c900),
+                Line::from("  By Volume  ")
+                    .fg(tailwind::SLATE.c200)
+                    .bg(tailwind::AMBER.c900),
+                Line::from("  By End Date  ")
+                    .fg(tailwind::SLATE.c200)
+                    .bg(tailwind::ROSE.c900),
+            ];
+            let highlight_style = match app.yield_state.sort_by {
+                YieldSortBy::Return => (Color::default(), tailwind::GREEN.c700),
+                YieldSortBy::Volume => (Color::default(), tailwind::AMBER.c700),
+                YieldSortBy::EndDate => (Color::default(), tailwind::ROSE.c700),
+            };
             let tabs = Tabs::new(sort_titles)
                 .select(selected_sort_index)
-                .style(Style::default().fg(Color::DarkGray))
-                .highlight_style(
-                    Style::default()
-                        .fg(if is_focused {
-                            Color::Yellow
-                        } else {
-                            Color::Green
-                        })
-                        .add_modifier(Modifier::BOLD),
-                )
+                .highlight_style(highlight_style)
+                .padding("", "")
                 .divider(" ");
             f.render_widget(tabs, area);
         },

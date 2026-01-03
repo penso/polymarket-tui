@@ -5019,7 +5019,10 @@ fn render_orderbook(f: &mut Frame, app: &TrendingAppState, event: &Event, area: 
         f.render_widget(levels_para, chunks[1]);
     } else {
         // No orderbook data or empty orderbook - show appropriate message
-        let message = if orderbook_state.is_loading {
+        let market_is_closed = market.map(|m| m.closed).unwrap_or(false);
+        let message = if market_is_closed {
+            "Market is closed"
+        } else if orderbook_state.is_loading {
             "Loading orderbook..."
         } else if orderbook_state.orderbook.is_some() {
             // We have an orderbook but it's empty (no orders)

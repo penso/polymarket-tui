@@ -2165,7 +2165,7 @@ pub async fn run_trending_tui(
                         }
                     },
                     KeyCode::Char('/') => {
-                        // API search mode - works in both Trending and Yield tabs
+                        // API search mode - works from any panel (except when popup is open)
                         if app.main_tab == MainTab::Yield {
                             if app.yield_state.is_filtering {
                                 // If in filter mode, add '/' to filter
@@ -2175,15 +2175,13 @@ pub async fn run_trending_tui(
                                 app.yield_state.enter_search_mode();
                                 log_info!("Entered yield search mode");
                             }
-                        } else if !app.is_in_filter_mode()
-                            && app.navigation.focused_panel == FocusedPanel::EventsList
-                        {
-                            // API search in Trending tab when EventsList panel is focused
+                        } else if !app.is_in_filter_mode() && !app.has_popup() {
+                            // API search in Trending/Favorites tab from any panel
                             app.enter_search_mode();
                         }
                     },
                     KeyCode::Char('f') => {
-                        // Local filter is available in EventsList panel (Trending) or Yield tab
+                        // Local filter - works from any panel (except when popup is open)
                         if app.main_tab == MainTab::Yield && app.yield_state.is_searching {
                             // In yield search mode, add 'f' to search query
                             app.yield_state.add_search_char('f');
@@ -2196,9 +2194,8 @@ pub async fn run_trending_tui(
                                 // Already filtering, add 'f' to filter query
                                 app.yield_state.add_filter_char('f');
                             }
-                        } else if !app.is_in_filter_mode()
-                            && app.navigation.focused_panel == FocusedPanel::EventsList
-                        {
+                        } else if !app.is_in_filter_mode() && !app.has_popup() {
+                            // Local filter in Trending/Favorites tab from any panel
                             app.enter_local_filter_mode();
                         }
                     },

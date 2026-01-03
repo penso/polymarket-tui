@@ -2284,22 +2284,10 @@ fn build_help_content(app: &TrendingAppState) -> Vec<Line<'static>> {
     lines
 }
 
-/// Render a dim overlay over the entire screen to indicate modal is active
-fn render_dim_overlay(f: &mut Frame) {
-    let area = f.area();
-    // First clear the area, then render a semi-transparent dim background
-    f.render_widget(Clear, area);
-    // Create a paragraph that fills the entire area with a dim background
-    // Use a lighter color so content behind is slightly visible
-    let overlay = Paragraph::new("")
-        .style(Style::default().bg(Color::Rgb(40, 40, 50)));
-    f.render_widget(overlay, area);
-}
-
 /// Render a popup/modal dialog
 fn render_popup(f: &mut Frame, app: &TrendingAppState, popup: &PopupType) {
-    // First, render a dim overlay to visually indicate the modal is active
-    render_dim_overlay(f);
+    // Note: We don't dim the full screen - content behind remains visible.
+    // Only the popup area itself is cleared and has a solid background.
 
     match popup {
         PopupType::Login => {

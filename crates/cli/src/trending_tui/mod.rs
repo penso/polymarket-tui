@@ -642,53 +642,69 @@ fn spawn_fetch_orderbook(app_state: Arc<TokioMutex<TrendingAppState>>, token_id:
                     orderbook.bids.len(),
                     orderbook.asks.len()
                 );
-                // Log first and last prices to help debug ordering
+                // Log raw API data for debugging
                 if let Some(bid) = orderbook.bids.first() {
-                    log_info!("First bid: {} @ {}", bid.size, bid.price);
-                }
-                if let Some(bid) = orderbook.bids.last() {
-                    log_info!("Last bid: {} @ {}", bid.size, bid.price);
+                    log_info!("Raw first bid: {} @ {}", bid.size, bid.price);
                 }
                 if let Some(ask) = orderbook.asks.first() {
-                    log_info!("First ask: {} @ {}", ask.size, ask.price);
-                }
-                if let Some(ask) = orderbook.asks.last() {
-                    log_info!("Last ask: {} @ {}", ask.size, ask.price);
+                    log_info!("Raw first ask: {} @ {}", ask.size, ask.price);
                 }
 
                 // Convert CLOB API Orderbook to our OrderbookData
-                // Calculate cumulative totals (running sum of price * size from best price)
-                let mut cumulative_total = 0.0;
-                let bids: Vec<state::OrderbookLevel> = orderbook
+                // First, parse and sort the levels:
+                // - Bids: sorted descending by price (highest/best bid first)
+                // - Asks: sorted ascending by price (lowest/best ask first)
+                let mut bids: Vec<state::OrderbookLevel> = orderbook
                     .bids
                     .iter()
                     .map(|level| {
                         let price = level.price.parse::<f64>().unwrap_or(0.0);
                         let size = level.size.parse::<f64>().unwrap_or(0.0);
-                        cumulative_total += price * size;
                         state::OrderbookLevel {
                             price,
                             size,
-                            total: cumulative_total,
+                            total: 0.0, // Will calculate cumulative after sorting
                         }
                     })
                     .collect();
-
+                // Sort bids descending by price (best bid = highest price first)
+                bids.sort_by(|a, b| {
+                    b.price
+                        .partial_cmp(&a.price)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+                // Calculate cumulative totals after sorting
                 let mut cumulative_total = 0.0;
-                let asks: Vec<state::OrderbookLevel> = orderbook
+                for bid in &mut bids {
+                    cumulative_total += bid.price * bid.size;
+                    bid.total = cumulative_total;
+                }
+
+                let mut asks: Vec<state::OrderbookLevel> = orderbook
                     .asks
                     .iter()
                     .map(|level| {
                         let price = level.price.parse::<f64>().unwrap_or(0.0);
                         let size = level.size.parse::<f64>().unwrap_or(0.0);
-                        cumulative_total += price * size;
                         state::OrderbookLevel {
                             price,
                             size,
-                            total: cumulative_total,
+                            total: 0.0, // Will calculate cumulative after sorting
                         }
                     })
                     .collect();
+                // Sort asks ascending by price (best ask = lowest price first)
+                asks.sort_by(|a, b| {
+                    a.price
+                        .partial_cmp(&b.price)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+                // Calculate cumulative totals after sorting
+                let mut cumulative_total = 0.0;
+                for ask in &mut asks {
+                    cumulative_total += ask.price * ask.size;
+                    ask.total = cumulative_total;
+                }
 
                 // Calculate spread
                 let spread = if let (Some(best_bid), Some(best_ask)) = (bids.first(), asks.first())

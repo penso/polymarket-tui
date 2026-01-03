@@ -54,13 +54,16 @@ pub fn get_clicked_tab(x: u16, y: u16, _size: Rect) -> Option<ClickedTab> {
 }
 
 /// Format a price (0.0-1.0) as cents like the Polymarket website
-/// Examples: 0.01 -> "1¢", 0.11 -> "11¢", 0.89 -> "89¢", 0.004 -> "<1¢"
+/// Examples: 0.01 -> "1¢", 0.11 -> "11¢", 0.89 -> "89¢", 0.004 -> "<1¢", 0.9995 -> "99.95¢"
 fn format_price_cents(price: f64) -> String {
     let cents = price * 100.0;
     if cents < 1.0 {
         "<1¢".to_string()
     } else if cents < 10.0 {
         format!("{:.1}¢", cents)
+    } else if (99.0..100.0).contains(&cents) {
+        // Show more precision for high prices (99-100%) to distinguish yields
+        format!("{:.2}¢", cents)
     } else {
         format!("{:.0}¢", cents)
     }
@@ -509,7 +512,7 @@ fn render_yield_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 .unwrap_or_else(|| "N/A".to_string());
 
             let return_str = format!("{:.2}%", opp.est_return);
-            let price_str = format!("{:.1}¢", opp.price * 100.0);
+            let price_str = format_price_cents(opp.price);
 
             // Create a cell with event title (dimmed) and market name
             // Let the table handle truncation based on column width
@@ -738,7 +741,11 @@ fn render_yield_details(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             Line::from(vec![
                 Span::styled("Price: ", Style::default().fg(Color::Yellow).bold()),
                 Span::styled(
-                    format!("{:.1}¢ ({:.1}%)", opp.price * 100.0, opp.price * 100.0),
+                    format!(
+                        "{} ({:.2}%)",
+                        format_price_cents(opp.price),
+                        opp.price * 100.0
+                    ),
                     Style::default().fg(Color::Cyan),
                 ),
             ]),
@@ -1108,7 +1115,7 @@ fn render_yield_search_details(f: &mut Frame, app: &TrendingAppState, area: Rect
                 Line::from(vec![
                     Span::styled("Price: ", Style::default().fg(Color::Yellow).bold()),
                     Span::styled(
-                        format!("{:.1}¢ ({:.1}%)", y.price * 100.0, y.price * 100.0),
+                        format!("{} ({:.2}%)", format_price_cents(y.price), y.price * 100.0),
                         Style::default().fg(Color::Cyan),
                     ),
                 ]),

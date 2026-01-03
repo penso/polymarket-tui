@@ -73,6 +73,7 @@ fn calculate_panel_areas(
     size: Rect,
     is_in_filter_mode: bool,
     show_logs: bool,
+    main_tab: MainTab,
 ) -> (Rect, Rect, Rect, Rect, Rect, Rect) {
     let header_height = if is_in_filter_mode {
         5
@@ -107,7 +108,32 @@ fn calculate_panel_areas(
         Rect::default() // Empty rect when logs hidden
     };
 
-    // Main content split - no overlap for full borders
+    // For Yield tab, layout is: 55% list on left, details on right (Event + Market Details)
+    if main_tab == MainTab::Yield {
+        let yield_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(55), Constraint::Fill(1)])
+            .split(chunks[1]);
+
+        let yield_list_area = yield_chunks[0];
+
+        // Right side: Event info (10 lines) + Market Details (rest)
+        let yield_details_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(10), Constraint::Min(0)])
+            .split(yield_chunks[1]);
+
+        return (
+            header_area,
+            yield_list_area,         // Yield list (maps to EventsList)
+            yield_details_chunks[0], // Event info (maps to EventDetails)
+            yield_details_chunks[1], // Market details (maps to Markets)
+            Rect::default(),         // No trades panel in Yield tab
+            logs_area,
+        );
+    }
+
+    // Trending tab: Main content split - no overlap for full borders
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(40), Constraint::Fill(1)])
@@ -146,9 +172,10 @@ fn get_panel_at_position(
     size: Rect,
     is_in_filter_mode: bool,
     show_logs: bool,
+    main_tab: MainTab,
 ) -> Option<FocusedPanel> {
     let (header, events_list, event_details, markets, trades, logs) =
-        calculate_panel_areas(size, is_in_filter_mode, show_logs);
+        calculate_panel_areas(size, is_in_filter_mode, show_logs, main_tab);
 
     if y >= header.y && y < header.y + header.height && x >= header.x && x < header.x + header.width
     {
@@ -420,6 +447,8 @@ async fn fetch_yield_opportunities(
         for (i, price_str) in market.outcome_prices.iter().enumerate() {
             if let Ok(price) = price_str.parse::<f64>()
                 && price >= min_prob
+                && price < 1.0
+            // Skip 100% price (no yield)
             {
                 let outcome = market
                     .outcomes
@@ -836,6 +865,7 @@ pub async fn run_trending_tui(
                         size,
                         app.is_in_filter_mode(),
                         app.show_logs,
+                        app.main_tab,
                     ) {
                         app.navigation.focused_panel = panel;
                     }
@@ -917,8 +947,12 @@ pub async fn run_trending_tui(
                         continue;
                     }
 
-                    let (_, events_list_area, ..) =
-                        calculate_panel_areas(size, app.is_in_filter_mode(), app.show_logs);
+                    let (_, events_list_area, ..) = calculate_panel_areas(
+                        size,
+                        app.is_in_filter_mode(),
+                        app.show_logs,
+                        app.main_tab,
+                    );
 
                     if let Some(panel) = get_panel_at_position(
                         mouse.column,
@@ -926,6 +960,7 @@ pub async fn run_trending_tui(
                         size,
                         app.is_in_filter_mode(),
                         app.show_logs,
+                        app.main_tab,
                     ) {
                         // If clicking in events list, select the clicked item
                         if panel == FocusedPanel::EventsList {
@@ -1041,6 +1076,7 @@ pub async fn run_trending_tui(
                         size,
                         app.is_in_filter_mode(),
                         app.show_logs,
+                        app.main_tab,
                     ) {
                         match panel {
                             FocusedPanel::EventsList => {
@@ -1085,6 +1121,7 @@ pub async fn run_trending_tui(
                         size,
                         app.is_in_filter_mode(),
                         app.show_logs,
+                        app.main_tab,
                     ) {
                         match panel {
                             FocusedPanel::EventsList => {

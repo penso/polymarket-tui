@@ -1007,8 +1007,14 @@ fn render_yield_tab(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             ])
             .split(area);
 
-        render_yield_list(f, app, chunks[0]);
-        render_yield_details(f, app, chunks[1]);
+        // Show search results if available (even when search input is hidden), otherwise show normal yield list
+        if !yield_state.search_results.is_empty() || !yield_state.last_searched_query.is_empty() {
+            render_yield_search_results(f, app, chunks[0]);
+            render_yield_search_details(f, app, chunks[1]);
+        } else {
+            render_yield_list(f, app, chunks[0]);
+            render_yield_details(f, app, chunks[1]);
+        }
     }
 }
 

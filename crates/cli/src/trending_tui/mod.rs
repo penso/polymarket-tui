@@ -317,6 +317,25 @@ async fn fetch_events_for_filter(
     }
 }
 
+/// Spawn async task to fetch API status and update app state
+fn spawn_fetch_api_status(app_state: Arc<TokioMutex<TrendingAppState>>) {
+    let gamma_client = GammaClient::new();
+
+    tokio::spawn(async move {
+        match gamma_client.get_status().await {
+            Ok(status) => {
+                let is_healthy = status.status == "ok" || status.status == "healthy";
+                let mut app = app_state.lock().await;
+                app.api_status = Some(is_healthy);
+            },
+            Err(_) => {
+                let mut app = app_state.lock().await;
+                app.api_status = Some(false);
+            },
+        }
+    });
+}
+
 /// Spawn async task to fetch user profile by address and update auth state
 fn spawn_fetch_user_profile(app_state: Arc<TokioMutex<TrendingAppState>>, address: String) {
     let gamma_client = GammaClient::new();
@@ -1063,6 +1082,7 @@ pub async fn run_trending_tui(
     let mut yield_search_debounce: Option<tokio::time::Instant> = None;
     let mut last_selected_event_slug: Option<String> = None;
     let mut last_click: Option<(tokio::time::Instant, u16, u16)> = None; // (time, column, row)
+    let mut last_status_check: tokio::time::Instant = tokio::time::Instant::now();
 
     // Load saved auth config on startup
     if let Some(auth_config) = crate::auth::AuthConfig::load() {
@@ -1117,6 +1137,9 @@ pub async fn run_trending_tui(
         }
     }
 
+    // Fetch API status on startup
+    spawn_fetch_api_status(Arc::clone(&app_state));
+
     // Preload data for all filter tabs (Trending, Breaking, New)
     {
         let app = app_state.lock().await;
@@ -1157,6 +1180,12 @@ pub async fn run_trending_tui(
     }
 
     loop {
+        // Periodically check API status (every 30 seconds)
+        if last_status_check.elapsed() >= tokio::time::Duration::from_secs(30) {
+            spawn_fetch_api_status(Arc::clone(&app_state));
+            last_status_check = tokio::time::Instant::now();
+        }
+
         // Handle search debouncing and API calls
         // Check debounce timer and trigger search if needed
         if let Some(debounce_time) = search_debounce {

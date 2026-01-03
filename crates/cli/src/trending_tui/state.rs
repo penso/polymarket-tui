@@ -1012,6 +1012,7 @@ pub struct TrendingAppState {
     pub login_form: LoginFormState, // Login form state
     pub trade_form: Option<TradeFormState>, // Trade form state (when trade popup is open)
     pub event_sort_by: EventSortBy, // Current sort option for events list
+    pub api_status: Option<bool>, // API health status: Some(true) = healthy, Some(false) = unhealthy, None = unknown
 }
 
 impl TrendingAppState {
@@ -1059,6 +1060,7 @@ impl TrendingAppState {
             login_form: LoginFormState::new(),
             trade_form: None,
             event_sort_by: EventSortBy::default(),
+            api_status: None,
         }
     }
 

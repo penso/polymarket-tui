@@ -822,16 +822,25 @@ fn render_yield_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             let return_str = format!("{:.2}%", opp.est_return);
             let price_str = format_price_cents(opp.price);
 
-            // Create a cell with event title (dimmed) and market name
+            // Check if event is favorited
+            let is_favorite = app.favorites_state.is_favorite(&opp.event_slug);
+
+            // Create a cell with favorite icon, event title (dimmed) and market name
             // Let the table handle truncation based on column width
-            let name_cell = Cell::from(Line::from(vec![
-                Span::styled(
-                    opp.event_title.as_str(),
-                    Style::default().fg(Color::DarkGray),
-                ),
-                Span::styled(" > ", Style::default().fg(Color::DarkGray)),
-                Span::styled(opp.market_name.as_str(), Style::default().fg(Color::White)),
-            ]));
+            let mut name_spans = Vec::new();
+            if is_favorite {
+                name_spans.push(Span::styled("⚑ ", Style::default().fg(Color::Magenta)));
+            }
+            name_spans.push(Span::styled(
+                opp.event_title.as_str(),
+                Style::default().fg(Color::DarkGray),
+            ));
+            name_spans.push(Span::styled(" > ", Style::default().fg(Color::DarkGray)));
+            name_spans.push(Span::styled(
+                opp.market_name.as_str(),
+                Style::default().fg(Color::White),
+            ));
+            let name_cell = Cell::from(Line::from(name_spans));
 
             // Zebra striping
             let bg_color = if idx % 2 == 0 {
@@ -1206,6 +1215,19 @@ fn render_yield_search_results(f: &mut Frame, app: &TrendingAppState, area: Rect
                 })
                 .unwrap_or_else(|| "N/A".to_string());
 
+            // Check if event is favorited
+            let is_favorite = app.favorites_state.is_favorite(&result.event_slug);
+
+            // Build event title with favorite icon
+            let mut title_spans = Vec::new();
+            if is_favorite {
+                title_spans.push(Span::styled("⚑ ", Style::default().fg(Color::Magenta)));
+            }
+            title_spans.push(Span::styled(
+                result.event_title.as_str(),
+                Style::default().fg(Color::White),
+            ));
+
             // Zebra striping
             let bg_color = if idx % 2 == 0 {
                 Color::Reset
@@ -1214,7 +1236,7 @@ fn render_yield_search_results(f: &mut Frame, app: &TrendingAppState, area: Rect
             };
 
             Row::new(vec![
-                Cell::from(result.event_title.as_str()).style(Style::default().fg(Color::White)),
+                Cell::from(Line::from(title_spans)),
                 Cell::from(yield_str).style(Style::default().fg(yield_color)),
                 Cell::from(volume_str).style(Style::default().fg(Color::Green)),
                 Cell::from(format!("{}", result.markets_count))

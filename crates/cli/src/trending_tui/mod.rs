@@ -276,6 +276,8 @@ fn spawn_filter_fetch(
                     filter
                 );
                 let mut app = app_state.lock().await;
+                // Cache events in global event cache
+                app.cache_events(&new_events);
                 app.events_cache.insert(filter, new_events.clone());
                 app.events = new_events;
                 app.pagination.is_fetching_more = false;
@@ -729,12 +731,7 @@ async fn fetch_yield_opportunities(
                     volume,
                     event_slug: event.slug.clone(),
                     event_title: event.title.clone(),
-                    event_status: event.status(),
                     end_date,
-                    event_active: event.active,
-                    event_closed: event.closed,
-                    event_tags: Vec::new(), // Tags not available from market endpoint
-                    event_total_volume: volume, // Use market volume (event total not available)
                 });
             }
         }
@@ -869,6 +866,8 @@ fn spawn_fetch_favorites(app_state: Arc<TokioMutex<TrendingAppState>>) {
 
         // Update state
         let mut app = app_state.lock().await;
+        // Cache events in global event cache
+        app.cache_events(&events);
         app.favorites_state.events = events;
         app.favorites_state.favorite_ids = favorites;
         app.favorites_state.favorite_event_slugs = favorite_slugs;
@@ -906,29 +905,11 @@ fn spawn_yield_search(app_state: Arc<TokioMutex<TrendingAppState>>, query: Strin
 
         log_info!("Yield search found {} events", events.len());
 
-        // Helper to get event status string
-        fn event_status(active: bool, closed: bool) -> &'static str {
-            if closed {
-                "closed"
-            } else if active {
-                "active"
-            } else {
-                "inactive"
-            }
-        }
-
         // Convert events to YieldSearchResults with yield info
         let mut results: Vec<YieldSearchResult> = events
             .iter()
             .map(|event| {
-                // Calculate total volume
-                let total_volume: f64 = event
-                    .markets
-                    .iter()
-                    .map(|m| m.volume_24hr.or(m.volume_total).unwrap_or(0.0))
-                    .sum();
-
-                // Parse end date
+                // Parse end date for filtering/sorting
                 let end_date = event
                     .end_date
                     .as_ref()
@@ -971,12 +952,7 @@ fn spawn_yield_search(app_state: Arc<TokioMutex<TrendingAppState>>, query: Strin
                                     volume,
                                     event_slug: event.slug.clone(),
                                     event_title: event.title.clone(),
-                                    event_status: event_status(event.active, event.closed),
                                     end_date,
-                                    event_active: event.active,
-                                    event_closed: event.closed,
-                                    event_tags: event.tags.iter().map(|t| t.label.clone()).collect(),
-                                    event_total_volume: total_volume,
                                 };
 
                                 // Keep the best (highest return) opportunity
@@ -994,17 +970,18 @@ fn spawn_yield_search(app_state: Arc<TokioMutex<TrendingAppState>>, query: Strin
 
                 YieldSearchResult {
                     event_slug: event.slug.clone(),
-                    event_title: event.title.clone(),
-                    event_status: event_status(event.active, event.closed),
-                    end_date,
-                    total_volume,
-                    markets_count: event.markets.len(),
                     best_yield,
                 }
             })
             .collect();
 
-        // Sort: events with yield first (by return), then events without yield (by volume)
+        let query_clone = query.clone();
+        let mut app = app_state.lock().await;
+        
+        // Cache all events from search results
+        app.cache_events(&events);
+        
+        // Sort: events with yield first (by return), then events without yield (by volume from cache)
         results.sort_by(|a, b| {
             match (&a.best_yield, &b.best_yield) {
                 (Some(ya), Some(yb)) => yb
@@ -1013,15 +990,19 @@ fn spawn_yield_search(app_state: Arc<TokioMutex<TrendingAppState>>, query: Strin
                     .unwrap_or(std::cmp::Ordering::Equal),
                 (Some(_), None) => std::cmp::Ordering::Less, // a (with yield) comes first
                 (None, Some(_)) => std::cmp::Ordering::Greater, // b (with yield) comes first
-                (None, None) => b
-                    .total_volume
-                    .partial_cmp(&a.total_volume)
-                    .unwrap_or(std::cmp::Ordering::Equal),
+                (None, None) => {
+                    // Look up volumes from cache
+                    let vol_a = app.get_cached_event(&a.event_slug)
+                        .map(|e| e.markets.iter().map(|m| m.volume_24hr.unwrap_or(0.0)).sum::<f64>())
+                        .unwrap_or(0.0);
+                    let vol_b = app.get_cached_event(&b.event_slug)
+                        .map(|e| e.markets.iter().map(|m| m.volume_24hr.unwrap_or(0.0)).sum::<f64>())
+                        .unwrap_or(0.0);
+                    vol_b.partial_cmp(&vol_a).unwrap_or(std::cmp::Ordering::Equal)
+                }
             }
         });
-
-        let query_clone = query.clone();
-        let mut app = app_state.lock().await;
+        
         app.yield_state.set_search_results(results, query_clone);
 
         log_info!(

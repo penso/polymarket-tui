@@ -605,6 +605,8 @@ impl TradesState {
 }
 
 /// A single yield opportunity (high probability market)
+/// Full event details are looked up from the global event_cache using event_slug
+/// Some event data is cached here for filtering and sorting purposes
 #[derive(Debug, Clone)]
 pub struct YieldOpportunity {
     pub market_name: String,
@@ -614,26 +616,16 @@ pub struct YieldOpportunity {
     pub est_return: f64,
     pub volume: f64,
     pub event_slug: String,
+    // Cached event data for filtering/sorting (full details from event_cache)
     pub event_title: String,
-    #[allow(dead_code)]
-    pub event_status: &'static str,
     pub end_date: Option<DateTime<Utc>>,
-    // Additional event fields for consistent display with Events tab
-    pub event_active: bool,
-    pub event_closed: bool,
-    pub event_tags: Vec<String>, // Tag labels
-    pub event_total_volume: f64, // Total volume across all markets
 }
 
 /// A search result in the Yield tab - an event with its best yield opportunity (if any)
+/// Event details are looked up from the global event_cache using event_slug
 #[derive(Debug, Clone)]
 pub struct YieldSearchResult {
     pub event_slug: String,
-    pub event_title: String,
-    pub event_status: &'static str,
-    pub end_date: Option<DateTime<Utc>>,
-    pub total_volume: f64,
-    pub markets_count: usize,
     /// Best yield opportunity for this event (highest return), if any
     pub best_yield: Option<YieldOpportunity>,
 }
@@ -938,18 +930,20 @@ pub struct TrendingAppState {
     pub logs: LogsState,
     pub navigation: NavigationState,
     pub trades: TradesState,
-    pub event_filter: EventFilter, // Current filter (Trending, Breaking, New)
+    pub event_filter: EventFilter, // Current filter (Trending, Breaking)
     pub market_prices: HashMap<String, f64>, // asset_id -> current price from API
     pub event_trade_counts: HashMap<String, usize>, // event_slug -> total trade count from API
     pub has_clob_auth: bool,       // Whether CLOB API authentication is available
     pub popup: Option<PopupType>,  // Currently active popup/modal
     pub trades_table_state: TableState, // State for trades table selection
     pub events_cache: HashMap<EventFilter, Vec<Event>>, // Cache for each filter tab
-    pub show_logs: bool,           // Whether to show the logs panel (toggle with 'l')
-    pub main_tab: MainTab,         // Current main tab (Trending vs Yield)
-    pub yield_state: YieldState,   // State for the Yield tab
+    /// Global event cache keyed by slug - single source of truth for event data
+    pub event_cache: HashMap<String, Event>,
+    pub show_logs: bool,   // Whether to show the logs panel (toggle with 'l')
+    pub main_tab: MainTab, // Current main tab (Trending vs Yield)
+    pub yield_state: YieldState, // State for the Yield tab
     pub favorites_state: FavoritesState, // State for the Favorites tab
-    pub auth_state: AuthState,     // Authentication state
+    pub auth_state: AuthState, // Authentication state
     pub login_form: LoginFormState, // Login form state
     pub trade_form: Option<TradeFormState>, // Trade form state (when trade popup is open)
 }
@@ -969,6 +963,11 @@ impl TrendingAppState {
         // Initialize cache with the initial events for the current filter
         let mut events_cache = HashMap::new();
         events_cache.insert(event_filter, events.clone());
+        // Initialize global event cache with initial events
+        let mut event_cache = HashMap::new();
+        for event in &events {
+            event_cache.insert(event.slug.clone(), event.clone());
+        }
         Self {
             events,
             should_quit: false,
@@ -985,6 +984,7 @@ impl TrendingAppState {
             popup: None,
             trades_table_state: TableState::default(),
             events_cache,
+            event_cache,
             show_logs: false, // Hidden by default
             main_tab: MainTab::Trending,
             yield_state: YieldState::new(),
@@ -993,6 +993,18 @@ impl TrendingAppState {
             login_form: LoginFormState::new(),
             trade_form: None,
         }
+    }
+
+    /// Add events to the global cache
+    pub fn cache_events(&mut self, events: &[Event]) {
+        for event in events {
+            self.event_cache.insert(event.slug.clone(), event.clone());
+        }
+    }
+
+    /// Get an event from the global cache by slug
+    pub fn get_cached_event(&self, slug: &str) -> Option<&Event> {
+        self.event_cache.get(slug)
     }
 
     /// Show a popup

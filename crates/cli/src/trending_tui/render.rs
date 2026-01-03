@@ -4442,13 +4442,26 @@ fn render_orderbook(f: &mut Frame, app: &TrendingAppState, event: &Event, area: 
         ("Yes".to_string(), "No".to_string())
     };
 
-    // Build a short title - just show selected outcome (truncate to fit)
+    // Build title based on available width
+    // For the depth chart panel (25% of area), we need a very short title
+    let depth_panel_width = (area.width as usize) / 4;
+    let max_name_len = depth_panel_width.saturating_sub(8); // Leave room for " (t)" and borders
     let selected_name = if selected_outcome == OrderbookOutcome::Yes {
-        truncate(&outcome_0_name, 15)
+        truncate(&outcome_0_name, max_name_len.max(3))
     } else {
-        truncate(&outcome_1_name, 15)
+        truncate(&outcome_1_name, max_name_len.max(3))
     };
-    let title = format!("{} (t)", selected_name);
+    let short_title = format!("{} (t)", selected_name);
+
+    // For the full-width panel (when no orders), we can show more
+    let full_title = format!(
+        "Order Book: {} (t: toggle)",
+        if selected_outcome == OrderbookOutcome::Yes {
+            truncate(&outcome_0_name, 20)
+        } else {
+            truncate(&outcome_1_name, 20)
+        }
+    );
 
     let is_focused = app.navigation.focused_panel == FocusedPanel::Markets; // TODO: Add FocusedPanel::Orderbook
     let block_style = if is_focused {
@@ -4488,7 +4501,7 @@ fn render_orderbook(f: &mut Frame, app: &TrendingAppState, event: &Event, area: 
         let depth_block = Block::default()
             .borders(Borders::LEFT | Borders::TOP | Borders::BOTTOM)
             .border_type(BorderType::Rounded)
-            .title(title.clone())
+            .title(short_title)
             .border_style(block_style);
 
         // Depth visualization using bars scaled to max size
@@ -4666,7 +4679,7 @@ fn render_orderbook(f: &mut Frame, app: &TrendingAppState, event: &Event, area: 
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .title(title)
+            .title(full_title)
             .border_style(block_style);
 
         let paragraph = Paragraph::new(message)

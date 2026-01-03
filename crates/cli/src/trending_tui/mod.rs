@@ -1205,6 +1205,7 @@ pub async fn run_trending_tui(
     let mut last_selected_event_slug: Option<String> = None;
     let mut last_click: Option<(tokio::time::Instant, u16, u16)> = None; // (time, column, row)
     let mut last_status_check: tokio::time::Instant = tokio::time::Instant::now();
+    let mut last_main_tab: Option<MainTab> = None; // Track tab changes for orderbook reset
 
     // Load saved auth config on startup
     if let Some(auth_config) = crate::auth::AuthConfig::load() {
@@ -1305,6 +1306,34 @@ pub async fn run_trending_tui(
         if last_status_check.elapsed() >= tokio::time::Duration::from_secs(30) {
             spawn_fetch_api_status(Arc::clone(&app_state));
             last_status_check = tokio::time::Instant::now();
+        }
+
+        // Check if tab changed and reset orderbook if needed
+        {
+            let mut app = app_state.lock().await;
+            let current_tab = app.main_tab;
+            if last_main_tab != Some(current_tab) {
+                // Tab changed - reset orderbook state
+                if last_main_tab.is_some() {
+                    app.orderbook_state.reset();
+                    // If switching to Events tab, fetch orderbook for selected event
+                    if current_tab == MainTab::Trending
+                        && let Some(event) = app.selected_event()
+                    {
+                        let orderbook_token_id = event.markets.first().and_then(|market| {
+                            market
+                                .clob_token_ids
+                                .as_ref()
+                                .and_then(|ids| ids.first().cloned())
+                        });
+                        if let Some(token_id) = orderbook_token_id {
+                            drop(app);
+                            spawn_fetch_orderbook(Arc::clone(&app_state), token_id);
+                        }
+                    }
+                }
+                last_main_tab = Some(current_tab);
+            }
         }
 
         // Periodically refresh orderbook data (every 5 seconds) when in Events tab

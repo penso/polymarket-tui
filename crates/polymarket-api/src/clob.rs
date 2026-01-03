@@ -201,6 +201,97 @@ pub struct Order {
     pub updated_at: Option<i64>,
 }
 
+/// Open order from CLOB API
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenOrder {
+    pub id: String,
+    pub status: String,
+    pub owner: String,
+    pub maker_address: String,
+    pub market: String,
+    pub asset_id: String,
+    pub side: String,
+    pub original_size: String,
+    pub size_matched: String,
+    pub price: String,
+    #[serde(default)]
+    pub associate_trades: Vec<String>,
+    pub outcome: String,
+    pub created_at: i64,
+    #[serde(default)]
+    pub expiration: Option<String>,
+    #[serde(default)]
+    pub order_type: Option<String>,
+}
+
+/// Balance and allowance response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BalanceAllowance {
+    pub balance: String,
+    pub allowance: String,
+}
+
+/// Asset type for balance queries
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum AssetType {
+    Collateral,
+    Conditional,
+}
+
+/// Cancel orders response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CancelOrdersResponse {
+    pub canceled: Vec<String>,
+    #[serde(default)]
+    pub not_canceled: std::collections::HashMap<String, serde_json::Value>,
+}
+
+/// Order response from posting an order
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderResponse {
+    pub success: bool,
+    #[serde(default)]
+    pub error_msg: Option<String>,
+    #[serde(default, rename = "orderID")]
+    pub order_id: Option<String>,
+    #[serde(default)]
+    pub transactions_hashes: Vec<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub taking_amount: Option<String>,
+    #[serde(default)]
+    pub making_amount: Option<String>,
+}
+
+/// User order request for creating orders
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserOrderRequest {
+    pub token_id: String,
+    pub price: f64,
+    pub size: f64,
+    pub side: Side,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fee_rate_bps: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nonce: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expiration: Option<u64>,
+}
+
+/// Market order request
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarketOrderRequest {
+    pub token_id: String,
+    pub amount: f64,
+    pub side: Side,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fee_rate_bps: Option<u32>,
+}
+
 /// CLOB REST API client
 pub struct ClobClient {
     client: reqwest::Client,
@@ -508,43 +599,177 @@ impl ClobClient {
         }
     }
 
-    /// Get user's orders (requires authentication)
-    pub async fn get_orders(&self) -> Result<Vec<Order>> {
-        let url = format!("{}/orders", CLOB_API_BASE);
-        // TODO: Add authentication headers
-        let orders: Vec<Order> = self.client.get(&url).send().await?.json().await?;
+    /// Get user's open orders (requires authentication)
+    pub async fn get_open_orders(&self, market: Option<&str>) -> Result<Vec<OpenOrder>> {
+        let request_path = if let Some(market) = market {
+            format!("/orders?market={}", market)
+        } else {
+            "/orders".to_string()
+        };
+
+        let headers = self
+            .create_l2_headers("GET", &request_path, None)
+            .ok_or_else(|| {
+                crate::error::PolymarketError::InvalidData(
+                    "Missing authentication credentials".to_string(),
+                )
+            })?;
+
+        let url = format!("{}{}", CLOB_API_BASE, request_path);
+        let response = self.client.get(&url).headers(headers).send().await?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(crate::error::PolymarketError::InvalidData(format!(
+                "HTTP {}: {}",
+                status, error_text
+            )));
+        }
+
+        let orders: Vec<OpenOrder> = response.json().await?;
         Ok(orders)
     }
 
     /// Get a specific order by ID (requires authentication)
-    pub async fn get_order(&self, order_id: &str) -> Result<Order> {
-        let url = format!("{}/orders/{}", CLOB_API_BASE, order_id);
-        // TODO: Add authentication headers
-        let order: Order = self.client.get(&url).send().await?.json().await?;
+    pub async fn get_order_by_id(&self, order_id: &str) -> Result<OpenOrder> {
+        let request_path = format!("/orders/{}", order_id);
+
+        let headers = self
+            .create_l2_headers("GET", &request_path, None)
+            .ok_or_else(|| {
+                crate::error::PolymarketError::InvalidData(
+                    "Missing authentication credentials".to_string(),
+                )
+            })?;
+
+        let url = format!("{}{}", CLOB_API_BASE, request_path);
+        let response = self.client.get(&url).headers(headers).send().await?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(crate::error::PolymarketError::InvalidData(format!(
+                "HTTP {}: {}",
+                status, error_text
+            )));
+        }
+
+        let order: OpenOrder = response.json().await?;
         Ok(order)
     }
 
-    /// Place a new order (requires authentication)
-    pub async fn place_order(
-        &self,
-        _market: &str,
-        _side: Side,
-        _order_type: OrderType,
-        _size: &str,
-        _price: Option<&str>,
-    ) -> Result<Order> {
-        // TODO: Add authentication headers and request body
-        // This is a placeholder - actual implementation would need proper auth signing
-        let _url = format!("{}/orders", CLOB_API_BASE);
-        todo!("Order placement requires authentication signing")
+    /// Get balance and allowance for collateral (USDC)
+    pub async fn get_balance_allowance(&self, asset_type: AssetType) -> Result<BalanceAllowance> {
+        let asset_type_str = match asset_type {
+            AssetType::Collateral => "COLLATERAL",
+            AssetType::Conditional => "CONDITIONAL",
+        };
+        let request_path = format!("/balance-allowance?asset_type={}", asset_type_str);
+
+        let headers = self
+            .create_l2_headers("GET", &request_path, None)
+            .ok_or_else(|| {
+                crate::error::PolymarketError::InvalidData(
+                    "Missing authentication credentials".to_string(),
+                )
+            })?;
+
+        let url = format!("{}{}", CLOB_API_BASE, request_path);
+        let response = self.client.get(&url).headers(headers).send().await?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(crate::error::PolymarketError::InvalidData(format!(
+                "HTTP {}: {}",
+                status, error_text
+            )));
+        }
+
+        let balance: BalanceAllowance = response.json().await?;
+        Ok(balance)
     }
 
-    /// Cancel an order (requires authentication)
-    pub async fn cancel_order(&self, order_id: &str) -> Result<()> {
-        let url = format!("{}/orders/{}", CLOB_API_BASE, order_id);
-        // TODO: Add authentication headers
-        self.client.delete(&url).send().await?;
-        Ok(())
+    /// Cancel a single order (requires authentication)
+    pub async fn cancel_order(&self, order_id: &str) -> Result<CancelOrdersResponse> {
+        let request_path = format!("/orders/{}", order_id);
+
+        let headers = self
+            .create_l2_headers("DELETE", &request_path, None)
+            .ok_or_else(|| {
+                crate::error::PolymarketError::InvalidData(
+                    "Missing authentication credentials".to_string(),
+                )
+            })?;
+
+        let url = format!("{}{}", CLOB_API_BASE, request_path);
+        let response = self.client.delete(&url).headers(headers).send().await?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(crate::error::PolymarketError::InvalidData(format!(
+                "HTTP {}: {}",
+                status, error_text
+            )));
+        }
+
+        let result: CancelOrdersResponse = response.json().await?;
+        Ok(result)
+    }
+
+    /// Cancel all open orders (requires authentication)
+    pub async fn cancel_all_orders(&self) -> Result<CancelOrdersResponse> {
+        let request_path = "/orders";
+
+        let headers = self
+            .create_l2_headers("DELETE", request_path, None)
+            .ok_or_else(|| {
+                crate::error::PolymarketError::InvalidData(
+                    "Missing authentication credentials".to_string(),
+                )
+            })?;
+
+        let url = format!("{}{}", CLOB_API_BASE, request_path);
+        let response = self.client.delete(&url).headers(headers).send().await?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(crate::error::PolymarketError::InvalidData(format!(
+                "HTTP {}: {}",
+                status, error_text
+            )));
+        }
+
+        let result: CancelOrdersResponse = response.json().await?;
+        Ok(result)
+    }
+
+    /// Get the wallet address used for authentication
+    pub fn get_address(&self) -> Option<&str> {
+        self.address.as_deref()
+    }
+
+    /// Get the API key (for display purposes)
+    pub fn get_api_key(&self) -> Option<&str> {
+        self.api_key.as_deref()
     }
 
     /// Get market price for a specific token and side

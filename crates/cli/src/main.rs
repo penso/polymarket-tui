@@ -1,3 +1,4 @@
+mod auth;
 mod display_trait;
 
 #[cfg(feature = "tui")]

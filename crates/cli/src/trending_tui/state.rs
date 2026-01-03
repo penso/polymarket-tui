@@ -160,7 +160,147 @@ pub enum PopupType {
     Help,              // Show help/keyboard shortcuts
     ConfirmQuit,       // Confirm before quitting
     EventInfo(String), // Show detailed event info (slug)
-    Login,             // Login modal (placeholder)
+    Login,             // Login modal with credential input
+    UserProfile,       // Show authenticated user profile
+    Trade(String),     // Trade modal for a market (token_id)
+}
+
+/// Login form field being edited
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoginField {
+    ApiKey,
+    Secret,
+    Passphrase,
+    Address,
+}
+
+#[allow(dead_code)]
+impl LoginField {
+    pub fn next(&self) -> Self {
+        match self {
+            LoginField::ApiKey => LoginField::Secret,
+            LoginField::Secret => LoginField::Passphrase,
+            LoginField::Passphrase => LoginField::Address,
+            LoginField::Address => LoginField::ApiKey,
+        }
+    }
+
+    pub fn prev(&self) -> Self {
+        match self {
+            LoginField::ApiKey => LoginField::Address,
+            LoginField::Secret => LoginField::ApiKey,
+            LoginField::Passphrase => LoginField::Secret,
+            LoginField::Address => LoginField::Passphrase,
+        }
+    }
+}
+
+/// Login form state
+#[derive(Debug, Clone)]
+pub struct LoginFormState {
+    pub api_key: String,
+    pub secret: String,
+    pub passphrase: String,
+    pub address: String,
+    pub active_field: LoginField,
+    pub error_message: Option<String>,
+    pub is_validating: bool,
+}
+
+#[allow(dead_code)]
+impl LoginFormState {
+    pub fn new() -> Self {
+        Self {
+            api_key: String::new(),
+            secret: String::new(),
+            passphrase: String::new(),
+            address: String::new(),
+            active_field: LoginField::ApiKey,
+            error_message: None,
+            is_validating: false,
+        }
+    }
+
+    pub fn get_active_field_value(&self) -> &str {
+        match self.active_field {
+            LoginField::ApiKey => &self.api_key,
+            LoginField::Secret => &self.secret,
+            LoginField::Passphrase => &self.passphrase,
+            LoginField::Address => &self.address,
+        }
+    }
+
+    pub fn add_char(&mut self, c: char) {
+        match self.active_field {
+            LoginField::ApiKey => self.api_key.push(c),
+            LoginField::Secret => self.secret.push(c),
+            LoginField::Passphrase => self.passphrase.push(c),
+            LoginField::Address => self.address.push(c),
+        }
+        self.error_message = None;
+    }
+
+    pub fn delete_char(&mut self) {
+        match self.active_field {
+            LoginField::ApiKey => {
+                self.api_key.pop();
+            },
+            LoginField::Secret => {
+                self.secret.pop();
+            },
+            LoginField::Passphrase => {
+                self.passphrase.pop();
+            },
+            LoginField::Address => {
+                self.address.pop();
+            },
+        }
+        self.error_message = None;
+    }
+
+    pub fn clear(&mut self) {
+        self.api_key.clear();
+        self.secret.clear();
+        self.passphrase.clear();
+        self.address.clear();
+        self.active_field = LoginField::ApiKey;
+        self.error_message = None;
+        self.is_validating = false;
+    }
+}
+
+/// User authentication state
+#[derive(Debug, Clone)]
+pub struct AuthState {
+    pub is_authenticated: bool,
+    pub username: Option<String>,
+    pub address: Option<String>,
+    pub balance: Option<f64>,
+}
+
+impl AuthState {
+    pub fn new() -> Self {
+        Self {
+            is_authenticated: false,
+            username: None,
+            address: None,
+            balance: None,
+        }
+    }
+
+    pub fn display_name(&self) -> String {
+        if let Some(ref name) = self.username {
+            name.clone()
+        } else if let Some(ref addr) = self.address {
+            if addr.len() >= 10 {
+                format!("{}...{}", &addr[..6], &addr[addr.len() - 4..])
+            } else {
+                addr.clone()
+            }
+        } else {
+            "Unknown".to_string()
+        }
+    }
 }
 
 /// Search-related state
@@ -558,6 +698,8 @@ pub struct TrendingAppState {
     pub show_logs: bool,           // Whether to show the logs panel (toggle with 'l')
     pub main_tab: MainTab,         // Current main tab (Trending vs Yield)
     pub yield_state: YieldState,   // State for the Yield tab
+    pub auth_state: AuthState,     // Authentication state
+    pub login_form: LoginFormState, // Login form state
 }
 
 impl TrendingAppState {
@@ -593,6 +735,8 @@ impl TrendingAppState {
             show_logs: false, // Hidden by default
             main_tab: MainTab::Trending,
             yield_state: YieldState::new(),
+            auth_state: AuthState::new(),
+            login_form: LoginFormState::new(),
         }
     }
 

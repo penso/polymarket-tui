@@ -1,7 +1,9 @@
 //! Render functions for the trending TUI
 
 use {
-    super::state::{EventFilter, FocusedPanel, MainTab, PopupType, SearchMode, TrendingAppState},
+    super::state::{
+        EventFilter, FocusedPanel, LoginField, MainTab, PopupType, SearchMode, TrendingAppState,
+    },
     chrono::{DateTime, Utc},
     polymarket_api::gamma::Event,
     ratatui::{
@@ -201,7 +203,7 @@ pub fn render(f: &mut Frame, app: &mut TrendingAppState) {
 
     // Render popup if active (on top of everything)
     if let Some(ref popup) = app.popup {
-        render_popup(f, popup);
+        render_popup(f, app, popup);
     }
 }
 
@@ -329,9 +331,24 @@ fn render_header(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             .divider(" ");
         f.render_widget(tabs, tabs_line_chunks[0]);
 
-        // Render login button on the right
-        let login_button = Paragraph::new("[ Login ]")
-            .style(Style::default().fg(Color::Cyan))
+        // Render login/user button on the right
+        let (button_text, button_style) = if app.auth_state.is_authenticated {
+            let name = app.auth_state.display_name();
+            // Truncate to fit in button area (max ~8 chars to fit in Length(10))
+            let display = if name.len() > 8 {
+                format!("{}...", &name[..5])
+            } else {
+                name
+            };
+            (
+                format!("[ {} ]", display),
+                Style::default().fg(Color::Green),
+            )
+        } else {
+            ("[ Login ]".to_string(), Style::default().fg(Color::Cyan))
+        };
+        let login_button = Paragraph::new(button_text)
+            .style(button_style)
             .alignment(Alignment::Right);
         f.render_widget(login_button, tabs_line_chunks[1]);
 
@@ -1270,7 +1287,23 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
 }
 
 /// Render a popup/modal dialog
-fn render_popup(f: &mut Frame, popup: &PopupType) {
+fn render_popup(f: &mut Frame, app: &TrendingAppState, popup: &PopupType) {
+    match popup {
+        PopupType::Login => {
+            render_login_popup(f, app);
+            return;
+        },
+        PopupType::UserProfile => {
+            render_user_profile_popup(f, app);
+            return;
+        },
+        PopupType::Trade(token_id) => {
+            render_trade_popup(f, app, token_id);
+            return;
+        },
+        _ => {},
+    }
+
     let area = centered_rect(60, 50, f.area());
 
     // Clear the area behind the popup
@@ -1328,26 +1361,232 @@ fn render_popup(f: &mut Frame, popup: &PopupType) {
                 Style::default().fg(Color::DarkGray),
             )]),
         ]),
-        PopupType::Login => ("Login", vec![
-            Line::from(""),
-            Line::from("Lorem ipsum dolor sit amet, consectetur adipiscing elit."),
-            Line::from("Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."),
-            Line::from(""),
-            Line::from("Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris"),
-            Line::from("nisi ut aliquip ex ea commodo consequat."),
-            Line::from(""),
-            Line::from("Duis aute irure dolor in reprehenderit in voluptate velit esse"),
-            Line::from("cillum dolore eu fugiat nulla pariatur."),
-            Line::from(""),
-            Line::from(vec![Span::styled(
-                "Press Esc to close",
-                Style::default().fg(Color::DarkGray),
-            )]),
-        ]),
+        // These are handled above with early return
+        PopupType::Login | PopupType::UserProfile | PopupType::Trade(_) => unreachable!(),
     };
 
     let block = Block::default()
         .title(title)
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(Color::Cyan))
+        .style(Style::default().bg(Color::Black));
+
+    let paragraph = Paragraph::new(content)
+        .block(block)
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(paragraph, area);
+}
+
+/// Render the login popup with input fields
+fn render_login_popup(f: &mut Frame, app: &TrendingAppState) {
+    let area = centered_rect(70, 60, f.area());
+    f.render_widget(Clear, area);
+
+    let form = &app.login_form;
+
+    // Helper to create a field line with label and value
+    let make_field_line = |label: &str, value: &str, is_active: bool, is_secret: bool| -> Line {
+        let display_value = if is_secret && !value.is_empty() {
+            "*".repeat(value.len().min(40))
+        } else if value.is_empty() {
+            "(empty)".to_string()
+        } else {
+            value.to_string()
+        };
+
+        let label_style = Style::default().fg(Color::Yellow).bold();
+        let value_style = if is_active {
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        } else if value.is_empty() {
+            Style::default().fg(Color::DarkGray)
+        } else {
+            Style::default().fg(Color::White)
+        };
+
+        let cursor = if is_active {
+            "_"
+        } else {
+            ""
+        };
+
+        Line::from(vec![
+            Span::styled(format!("{}: ", label), label_style),
+            Span::styled(display_value, value_style),
+            Span::styled(cursor, Style::default().fg(Color::Cyan)),
+        ])
+    };
+
+    let mut content = vec![
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "Enter your Polymarket API credentials:",
+            Style::default().fg(Color::White),
+        )]),
+        Line::from(""),
+        make_field_line(
+            "API Key    ",
+            &form.api_key,
+            form.active_field == LoginField::ApiKey,
+            false,
+        ),
+        Line::from(""),
+        make_field_line(
+            "Secret     ",
+            &form.secret,
+            form.active_field == LoginField::Secret,
+            true,
+        ),
+        Line::from(""),
+        make_field_line(
+            "Passphrase ",
+            &form.passphrase,
+            form.active_field == LoginField::Passphrase,
+            true,
+        ),
+        Line::from(""),
+        make_field_line(
+            "Address    ",
+            &form.address,
+            form.active_field == LoginField::Address,
+            false,
+        ),
+        Line::from(""),
+    ];
+
+    // Add error message if present
+    if let Some(ref error) = form.error_message {
+        content.push(Line::from(vec![Span::styled(
+            format!("Error: {}", error),
+            Style::default().fg(Color::Red),
+        )]));
+        content.push(Line::from(""));
+    }
+
+    // Add validation status
+    if form.is_validating {
+        content.push(Line::from(vec![Span::styled(
+            "Validating credentials...",
+            Style::default().fg(Color::Yellow),
+        )]));
+    }
+
+    content.push(Line::from(""));
+    content.push(Line::from(vec![
+        Span::styled("Tab", Style::default().fg(Color::Cyan).bold()),
+        Span::styled(" - Next field  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Enter", Style::default().fg(Color::Green).bold()),
+        Span::styled(" - Submit  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Esc", Style::default().fg(Color::Red).bold()),
+        Span::styled(" - Cancel", Style::default().fg(Color::DarkGray)),
+    ]));
+
+    let block = Block::default()
+        .title("Login - API Credentials")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(Color::Cyan))
+        .style(Style::default().bg(Color::Black));
+
+    let paragraph = Paragraph::new(content)
+        .block(block)
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(paragraph, area);
+}
+
+/// Render user profile popup
+fn render_user_profile_popup(f: &mut Frame, app: &TrendingAppState) {
+    let area = centered_rect(60, 50, f.area());
+    f.render_widget(Clear, area);
+
+    let auth = &app.auth_state;
+
+    let mut content = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Status: ", Style::default().fg(Color::Yellow).bold()),
+            Span::styled(
+                if auth.is_authenticated {
+                    "Authenticated"
+                } else {
+                    "Not authenticated"
+                },
+                Style::default().fg(if auth.is_authenticated {
+                    Color::Green
+                } else {
+                    Color::Red
+                }),
+            ),
+        ]),
+        Line::from(""),
+    ];
+
+    if let Some(ref addr) = auth.address {
+        content.push(Line::from(vec![
+            Span::styled("Address: ", Style::default().fg(Color::Yellow).bold()),
+            Span::styled(addr.clone(), Style::default().fg(Color::Cyan)),
+        ]));
+    }
+
+    if let Some(balance) = auth.balance {
+        content.push(Line::from(vec![
+            Span::styled("Balance: ", Style::default().fg(Color::Yellow).bold()),
+            Span::styled(
+                format!("${:.2} USDC", balance),
+                Style::default().fg(Color::Green),
+            ),
+        ]));
+    }
+
+    content.push(Line::from(""));
+    content.push(Line::from(vec![Span::styled(
+        "Press Esc to close, or 'L' to logout",
+        Style::default().fg(Color::DarkGray),
+    )]));
+
+    let block = Block::default()
+        .title("User Profile")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(Color::Cyan))
+        .style(Style::default().bg(Color::Black));
+
+    let paragraph = Paragraph::new(content)
+        .block(block)
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(paragraph, area);
+}
+
+/// Render trade popup (placeholder for now)
+fn render_trade_popup(f: &mut Frame, _app: &TrendingAppState, token_id: &str) {
+    let area = centered_rect(60, 50, f.area());
+    f.render_widget(Clear, area);
+
+    let content = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Token ID: ", Style::default().fg(Color::Yellow).bold()),
+            Span::styled(truncate(token_id, 40), Style::default().fg(Color::Cyan)),
+        ]),
+        Line::from(""),
+        Line::from("Trade functionality coming soon..."),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "Press Esc to close",
+            Style::default().fg(Color::DarkGray),
+        )]),
+    ];
+
+    let block = Block::default()
+        .title("Trade")
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(Color::Cyan))

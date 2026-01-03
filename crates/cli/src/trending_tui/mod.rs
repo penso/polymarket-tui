@@ -681,6 +681,17 @@ pub async fn run_trending_tui(
     let mut last_selected_event_slug: Option<String> = None;
     let mut last_click: Option<(tokio::time::Instant, u16, u16)> = None; // (time, column, row)
 
+    // Load saved auth config on startup
+    if let Some(auth_config) = crate::auth::AuthConfig::load() {
+        let mut app = app_state.lock().await;
+        let short_addr = auth_config.short_address();
+        app.auth_state.is_authenticated = true;
+        app.auth_state.address = Some(auth_config.address);
+        app.auth_state.username = auth_config.username;
+        app.has_clob_auth = true;
+        log_info!("Loaded saved auth config for {}", short_addr);
+    }
+
     // Fetch trade counts for the initially selected event (if authenticated)
     {
         let app = app_state.lock().await;
@@ -889,7 +900,11 @@ pub async fn run_trending_tui(
 
                     // Check for login button click (top right)
                     if render::is_login_button_clicked(mouse.column, mouse.row, size) {
-                        app.show_popup(PopupType::Login);
+                        if app.auth_state.is_authenticated {
+                            app.show_popup(PopupType::UserProfile);
+                        } else {
+                            app.show_popup(PopupType::Login);
+                        }
                         continue;
                     }
 
@@ -1258,6 +1273,87 @@ pub async fn run_trending_tui(
                     continue;
                 }
                 let mut app = app_state.lock().await;
+
+                // Handle Login popup input
+                if matches!(app.popup, Some(PopupType::Login)) {
+                    match key.code {
+                        KeyCode::Esc => {
+                            app.login_form.clear();
+                            app.close_popup();
+                        },
+                        KeyCode::Tab | KeyCode::Down => {
+                            app.login_form.active_field = app.login_form.active_field.next();
+                        },
+                        KeyCode::BackTab | KeyCode::Up => {
+                            app.login_form.active_field = app.login_form.active_field.prev();
+                        },
+                        KeyCode::Backspace => {
+                            app.login_form.delete_char();
+                        },
+                        KeyCode::Enter => {
+                            // Validate and save credentials
+                            let config = crate::auth::AuthConfig {
+                                api_key: app.login_form.api_key.clone(),
+                                secret: app.login_form.secret.clone(),
+                                passphrase: app.login_form.passphrase.clone(),
+                                address: app.login_form.address.clone(),
+                                username: None,
+                            };
+
+                            match config.validate() {
+                                Ok(()) => {
+                                    // Save to config file
+                                    match config.save() {
+                                        Ok(()) => {
+                                            // Update auth state
+                                            app.auth_state.is_authenticated = true;
+                                            app.auth_state.address = Some(config.address.clone());
+                                            app.auth_state.username = config.username.clone();
+                                            app.has_clob_auth = true;
+                                            app.login_form.clear();
+                                            app.close_popup();
+                                            log_info!("Logged in successfully");
+                                        },
+                                        Err(e) => {
+                                            app.login_form.error_message = Some(e);
+                                        },
+                                    }
+                                },
+                                Err(e) => {
+                                    app.login_form.error_message = Some(e);
+                                },
+                            }
+                        },
+                        KeyCode::Char(c) => {
+                            app.login_form.add_char(c);
+                        },
+                        _ => {},
+                    }
+                    continue;
+                }
+
+                // Handle UserProfile popup
+                if matches!(app.popup, Some(PopupType::UserProfile)) {
+                    match key.code {
+                        KeyCode::Esc => {
+                            app.close_popup();
+                        },
+                        KeyCode::Char('l') | KeyCode::Char('L') => {
+                            // Logout
+                            let _ = crate::auth::AuthConfig::delete();
+                            app.auth_state.is_authenticated = false;
+                            app.auth_state.address = None;
+                            app.auth_state.username = None;
+                            app.auth_state.balance = None;
+                            app.has_clob_auth = false;
+                            app.close_popup();
+                            log_info!("Logged out");
+                        },
+                        _ => {},
+                    }
+                    continue;
+                }
+
                 match key.code {
                     KeyCode::Char('q') => {
                         if app.main_tab == MainTab::Yield && app.yield_state.is_searching {

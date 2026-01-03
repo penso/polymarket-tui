@@ -1721,7 +1721,9 @@ pub async fn run_trending_tui(
                             }
                         }
                         // Handle click on Markets panel to select market or open trade popup
-                        if panel == FocusedPanel::Markets && app.main_tab == MainTab::Trending {
+                        if panel == FocusedPanel::Markets
+                            && matches!(app.main_tab, MainTab::Trending | MainTab::Favorites)
+                        {
                             // Determine what was clicked: market row, Yes button, or No button
                             #[derive(Debug)]
                             enum MarketClickAction {
@@ -1729,8 +1731,15 @@ pub async fn run_trending_tui(
                                 OpenTrade(String, String, String, f64), /* token_id, question, outcome, price */
                             }
 
-                            let click_action: Option<MarketClickAction> = if let Some(event) =
-                                app.selected_event()
+                            // Get the selected event based on current tab
+                            let selected_event = if app.main_tab == MainTab::Favorites {
+                                app.favorites_state.selected_event().cloned()
+                            } else {
+                                app.selected_event().cloned()
+                            };
+
+                            let click_action: Option<MarketClickAction> = if let Some(ref event) =
+                                selected_event
                             {
                                 // Calculate which market row was clicked
                                 let (_, _, _, markets_area, ..) = calculate_panel_areas(

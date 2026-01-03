@@ -4710,7 +4710,7 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
 
 /// Check if a click on the orderbook panel title should toggle the outcome
 /// Returns Some(OrderbookOutcome) if a tab was clicked, None otherwise
-/// The title format is: "Order Book: {name0} - {name1}" starting at area.x + 1 (after border)
+/// The title format is: "{name0} - {name1}" starting at area.x + 1 (after border)
 pub fn check_orderbook_title_click(
     click_x: u16,
     click_y: u16,
@@ -4725,17 +4725,16 @@ pub fn check_orderbook_title_click(
         return None;
     }
 
-    // Title starts after the border character and "Order Book: " prefix
-    // Format: "╭Order Book: Yes - No───..."
-    // Position: border(1) + "Order Book: "(12) = 13 chars before first outcome name
+    // Title starts after the border character
+    // Format: "╭Yes - No───..."
+    // Position: border(1) then first outcome name
     let title_start_x = orderbook_area.x + 1; // After left border
-    let prefix_len = 12; // "Order Book: "
-    let name_0_start = title_start_x + prefix_len as u16;
-    let name_0_len = outcome_0_name.chars().count().min(10) as u16; // truncated to 10
+    let name_0_start = title_start_x;
+    let name_0_len = outcome_0_name.chars().count().min(8) as u16; // truncated to 8
     let name_0_end = name_0_start + name_0_len;
     let separator_len = 3u16; // " - "
     let name_1_start = name_0_end + separator_len;
-    let name_1_len = outcome_1_name.chars().count().min(10) as u16;
+    let name_1_len = outcome_1_name.chars().count().min(8) as u16;
     let name_1_end = name_1_start + name_1_len;
 
     if click_x >= name_0_start && click_x < name_0_end {
@@ -4779,13 +4778,13 @@ fn render_orderbook(f: &mut Frame, app: &TrendingAppState, event: &Event, area: 
         ("Yes".to_string(), "No".to_string())
     };
 
-    // Build title with clickable tabs like lazygit: "Order Book: Yes - No"
+    // Build title with clickable tabs like lazygit: "Yes - No"
     // The selected outcome is highlighted, unselected is dimmed
-    let truncated_name_0 = truncate(&outcome_0_name, 10);
-    let truncated_name_1 = truncate(&outcome_1_name, 10);
+    // Use shorter names to fit in the narrow depth chart panel (25% width)
+    let truncated_name_0 = truncate(&outcome_0_name, 8);
+    let truncated_name_1 = truncate(&outcome_1_name, 8);
 
     let title_line = Line::from(vec![
-        Span::raw("Order Book: "),
         if selected_outcome == OrderbookOutcome::Yes {
             Span::styled(
                 truncated_name_0.clone(),

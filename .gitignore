@@ -7,3 +7,4 @@ credentials.json
 *.pem
 *.key
 secrets.*
+polymarket_logs_*.txt

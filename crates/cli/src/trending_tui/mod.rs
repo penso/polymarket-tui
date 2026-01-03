@@ -2737,6 +2737,19 @@ pub async fn run_trending_tui(
                             log_info!("Events sort changed to: {}", app.event_sort_by.label());
                         }
                     },
+                    KeyCode::Char('S') => {
+                        // Save logs to file (Shift+S) when logs panel is visible
+                        if app.show_logs && !app.is_in_filter_mode() {
+                            match app.logs.save_to_file() {
+                                Ok(filename) => {
+                                    log_info!("Logs saved to: {}", filename);
+                                },
+                                Err(e) => {
+                                    log_error!("Failed to save logs: {}", e);
+                                },
+                            }
+                        }
+                    },
                     KeyCode::Char('t') => {
                         // Toggle orderbook Yes/No outcome (or add to search/filter if in input mode)
                         if app.main_tab == MainTab::Yield && app.yield_state.is_searching {

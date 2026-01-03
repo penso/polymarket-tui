@@ -3221,16 +3221,17 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         Style::default()
     };
 
-    // Build title with count and search query if applicable
+    // Build title with count, sort option, and search query if applicable
     let event_count = app.filtered_events().len();
+    let sort_label = app.event_sort_by.label();
     let title = if !app.search.last_searched_query.is_empty() && !app.search.results.is_empty() {
         // Show search query in title when displaying API search results
         format!(
-            "Events ({}) - \"{}\"",
-            event_count, app.search.last_searched_query
+            "Events ({}) [{}] - \"{}\"",
+            event_count, sort_label, app.search.last_searched_query
         )
     } else {
-        format!("Events ({})", event_count)
+        format!("Events ({}) [{}]", event_count, sort_label)
     };
 
     // Build block with optional bottom title for loading status

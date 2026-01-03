@@ -2324,7 +2324,7 @@ pub async fn run_trending_tui(
                         }
                     },
                     KeyCode::Char('s') => {
-                        // Cycle sort order in Yield tab (or add to search/filter if in input mode)
+                        // Cycle sort order (or add to search/filter if in input mode)
                         if app.main_tab == MainTab::Yield && app.yield_state.is_searching {
                             app.yield_state.add_search_char('s');
                             yield_search_debounce = Some(tokio::time::Instant::now());
@@ -2341,6 +2341,13 @@ pub async fn run_trending_tui(
                             if app.search.mode == SearchMode::ApiSearch {
                                 search_debounce = Some(tokio::time::Instant::now());
                             }
+                        } else if app.main_tab == MainTab::Trending || app.main_tab == MainTab::Favorites {
+                            // Cycle sort order for Events tab
+                            app.event_sort_by = app.event_sort_by.next();
+                            app.sort_events();
+                            app.navigation.selected_index = 0;
+                            app.scroll.events_list = 0;
+                            log_info!("Events sort changed to: {}", app.event_sort_by.label());
                         }
                     },
                     KeyCode::Char('r') => {

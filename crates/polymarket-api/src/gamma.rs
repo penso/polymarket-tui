@@ -142,9 +142,18 @@ pub struct Event {
     /// Volume in last 24 hours (from favorites API)
     #[serde(rename = "volume24hr", default)]
     pub volume_24hr: Option<f64>,
+    /// Total volume
+    #[serde(default)]
+    pub volume: Option<f64>,
     /// Total liquidity
     #[serde(default)]
     pub liquidity: Option<f64>,
+    /// Competitive score (0-1, higher means more competitive/closer odds)
+    #[serde(default)]
+    pub competitive: Option<f64>,
+    /// When the event was created
+    #[serde(rename = "createdAt", default)]
+    pub created_at: Option<String>,
     /// Max price change in the last 24 hours across all markets (for Breaking tab)
     /// This is populated when fetching breaking events, not from the API directly
     #[serde(skip)]

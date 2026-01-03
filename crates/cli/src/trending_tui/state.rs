@@ -149,6 +149,65 @@ impl EventFilter {
     }
 }
 
+/// Sort options for events list (matches Polymarket website options)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EventSortBy {
+    #[default]
+    Volume24hr, // 24h Volume (default for Trending)
+    VolumeTotal, // Total Volume
+    Liquidity,   // Liquidity
+    Newest,      // Newest (by created date)
+    EndingSoon,  // Ending Soon
+    Competitive, // Competitive (closer odds)
+}
+
+impl EventSortBy {
+    pub fn label(&self) -> &'static str {
+        match self {
+            EventSortBy::Volume24hr => "24h Vol",
+            EventSortBy::VolumeTotal => "Total Vol",
+            EventSortBy::Liquidity => "Liquidity",
+            EventSortBy::Newest => "Newest",
+            EventSortBy::EndingSoon => "Ending Soon",
+            EventSortBy::Competitive => "Competitive",
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            EventSortBy::Volume24hr => EventSortBy::VolumeTotal,
+            EventSortBy::VolumeTotal => EventSortBy::Liquidity,
+            EventSortBy::Liquidity => EventSortBy::Newest,
+            EventSortBy::Newest => EventSortBy::EndingSoon,
+            EventSortBy::EndingSoon => EventSortBy::Competitive,
+            EventSortBy::Competitive => EventSortBy::Volume24hr,
+        }
+    }
+
+    /// Get the API order parameter for this sort option
+    #[allow(dead_code)]
+    pub fn api_order_param(&self) -> &'static str {
+        match self {
+            EventSortBy::Volume24hr => "volume24hr",
+            EventSortBy::VolumeTotal => "volume",
+            EventSortBy::Liquidity => "liquidity",
+            EventSortBy::Newest => "createdAt",
+            EventSortBy::EndingSoon => "endDate",
+            EventSortBy::Competitive => "competitive",
+        }
+    }
+
+    /// Whether this sort should be ascending (true) or descending (false)
+    #[allow(dead_code)]
+    pub fn is_ascending(&self) -> bool {
+        match self {
+            EventSortBy::EndingSoon => true, // Soonest first
+            EventSortBy::Newest => false,    // Most recent first
+            _ => false,                      // Highest values first
+        }
+    }
+}
+
 /// Search mode enum to replace boolean flags
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchMode {
@@ -952,6 +1011,7 @@ pub struct TrendingAppState {
     pub auth_state: AuthState, // Authentication state
     pub login_form: LoginFormState, // Login form state
     pub trade_form: Option<TradeFormState>, // Trade form state (when trade popup is open)
+    pub event_sort_by: EventSortBy, // Current sort option for events list
 }
 
 impl TrendingAppState {
@@ -998,6 +1058,7 @@ impl TrendingAppState {
             auth_state: AuthState::new(),
             login_form: LoginFormState::new(),
             trade_form: None,
+            event_sort_by: EventSortBy::default(),
         }
     }
 
@@ -1011,6 +1072,61 @@ impl TrendingAppState {
     /// Get an event from the global cache by slug
     pub fn get_cached_event(&self, slug: &str) -> Option<&Event> {
         self.event_cache.get(slug)
+    }
+
+    /// Sort events by the current sort option
+    pub fn sort_events(&mut self) {
+        match self.event_sort_by {
+            EventSortBy::Volume24hr => {
+                self.events.sort_by(|a, b| {
+                    b.volume_24hr
+                        .partial_cmp(&a.volume_24hr)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+            },
+            EventSortBy::VolumeTotal => {
+                self.events.sort_by(|a, b| {
+                    b.volume
+                        .partial_cmp(&a.volume)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+            },
+            EventSortBy::Liquidity => {
+                self.events.sort_by(|a, b| {
+                    b.liquidity
+                        .partial_cmp(&a.liquidity)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+            },
+            EventSortBy::Newest => {
+                // Sort by created_at descending (newest first)
+                self.events
+                    .sort_by(|a, b| match (&b.created_at, &a.created_at) {
+                        (Some(b_date), Some(a_date)) => b_date.cmp(a_date),
+                        (Some(_), None) => std::cmp::Ordering::Less,
+                        (None, Some(_)) => std::cmp::Ordering::Greater,
+                        (None, None) => std::cmp::Ordering::Equal,
+                    });
+            },
+            EventSortBy::EndingSoon => {
+                // Sort by end_date ascending (soonest first), None at end
+                self.events
+                    .sort_by(|a, b| match (&a.end_date, &b.end_date) {
+                        (Some(a_date), Some(b_date)) => a_date.cmp(b_date),
+                        (Some(_), None) => std::cmp::Ordering::Less,
+                        (None, Some(_)) => std::cmp::Ordering::Greater,
+                        (None, None) => std::cmp::Ordering::Equal,
+                    });
+            },
+            EventSortBy::Competitive => {
+                // Sort by competitive score descending (most competitive first)
+                self.events.sort_by(|a, b| {
+                    b.competitive
+                        .partial_cmp(&a.competitive)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+            },
+        }
     }
 
     /// Show a popup

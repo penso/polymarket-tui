@@ -53,6 +53,29 @@ pub fn get_clicked_tab(x: u16, y: u16, _size: Rect) -> Option<ClickedTab> {
     None
 }
 
+/// Yield opportunity threshold (95% probability = 5% potential return)
+const YIELD_MIN_PROB: f64 = 0.95;
+
+/// Check if a market has a yield opportunity (any outcome with price >= 95% and < 100%)
+fn market_has_yield(market: &polymarket_api::gamma::Market) -> bool {
+    // Skip closed/resolved markets - no yield opportunity
+    if market.closed {
+        return false;
+    }
+
+    market.outcome_prices.iter().any(|price_str| {
+        price_str
+            .parse::<f64>()
+            .ok()
+            .is_some_and(|price| (YIELD_MIN_PROB..1.0).contains(&price))
+    })
+}
+
+/// Check if an event has any yield opportunities (any market with high probability outcome)
+fn event_has_yield(event: &polymarket_api::gamma::Event) -> bool {
+    event.markets.iter().any(market_has_yield)
+}
+
 /// Format a price (0.0-1.0) as cents like the Polymarket website
 /// Examples: 0.01 -> "1¢", 0.11 -> "11¢", 0.89 -> "89¢", 0.004 -> "<1¢", 0.9995 -> "99.95¢"
 fn format_price_cents(price: f64) -> String {
@@ -578,13 +601,16 @@ fn render_yield_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         block = block.title_bottom(Line::from(" Searching... ").centered());
     }
 
-    let table = Table::new(rows, [
-        Constraint::Fill(1),   // Market name (takes remaining space)
-        Constraint::Length(7), // Return (e.g., "12.34%")
-        Constraint::Length(7), // Price (e.g., "95.5¢")
-        Constraint::Length(8), // Volume (e.g., "$123.4K")
-        Constraint::Length(7), // Expires (e.g., "expired")
-    ])
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Fill(1),   // Market name (takes remaining space)
+            Constraint::Length(7), // Return (e.g., "12.34%")
+            Constraint::Length(7), // Price (e.g., "95.5¢")
+            Constraint::Length(8), // Volume (e.g., "$123.4K")
+            Constraint::Length(7), // Expires (e.g., "expired")
+        ],
+    )
     .header(
         Row::new(vec!["Market", "Return", "Price", "Volume", "Expires"])
             .style(
@@ -941,13 +967,16 @@ fn render_yield_search_results(f: &mut Frame, app: &TrendingAppState, area: Rect
         block = block.title_bottom(Line::from(" Searching... ").centered());
     }
 
-    let table = Table::new(rows, [
-        Constraint::Fill(1),   // Event title
-        Constraint::Length(9), // Yield (e.g., "No yield")
-        Constraint::Length(8), // Volume
-        Constraint::Length(3), // Markets count
-        Constraint::Length(7), // Expires
-    ])
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Fill(1),   // Event title
+            Constraint::Length(9), // Yield (e.g., "No yield")
+            Constraint::Length(8), // Volume
+            Constraint::Length(3), // Markets count
+            Constraint::Length(7), // Expires
+        ],
+    )
     .header(
         Row::new(vec!["Event", "Yield", "Volume", "Mkt", "Expires"])
             .style(
@@ -1220,57 +1249,66 @@ fn render_popup(f: &mut Frame, popup: &PopupType) {
     f.render_widget(Clear, area);
 
     let (title, content) = match popup {
-        PopupType::Help => ("Help - Keyboard Shortcuts", vec![
-            Line::from(vec![Span::styled(
-                "Navigation:",
-                Style::default().fg(Color::Yellow).bold(),
-            )]),
-            Line::from("  ↑/k, ↓/j  - Move up/down in lists"),
-            Line::from("  Tab       - Switch between panels"),
-            Line::from("  ←/→       - Switch between tabs (Trending/Breaking/New)"),
-            Line::from(""),
-            Line::from(vec![Span::styled(
-                "Actions:",
-                Style::default().fg(Color::Yellow).bold(),
-            )]),
-            Line::from("  Enter     - Toggle watching event for live trades"),
-            Line::from("  /         - API search (searches Polymarket)"),
-            Line::from("  f         - Local filter (filters current list)"),
-            Line::from("  Esc       - Cancel search/filter or close popup"),
-            Line::from(""),
-            Line::from(vec![Span::styled(
-                "Other:",
-                Style::default().fg(Color::Yellow).bold(),
-            )]),
-            Line::from("  ?         - Show this help"),
-            Line::from("  q         - Quit"),
-            Line::from(""),
-            Line::from(vec![Span::styled(
-                "Press Esc to close",
-                Style::default().fg(Color::DarkGray),
-            )]),
-        ]),
-        PopupType::ConfirmQuit => ("Confirm Quit", vec![
-            Line::from(""),
-            Line::from("Are you sure you want to quit?"),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("  y  ", Style::default().fg(Color::Green).bold()),
-                Span::styled("- Yes, quit", Style::default().fg(Color::White)),
-            ]),
-            Line::from(vec![
-                Span::styled("  n  ", Style::default().fg(Color::Red).bold()),
-                Span::styled("- No, cancel", Style::default().fg(Color::White)),
-            ]),
-        ]),
-        PopupType::EventInfo(slug) => ("Event Info", vec![
-            Line::from(format!("Slug: {}", slug)),
-            Line::from(""),
-            Line::from(vec![Span::styled(
-                "Press Esc to close",
-                Style::default().fg(Color::DarkGray),
-            )]),
-        ]),
+        PopupType::Help => (
+            "Help - Keyboard Shortcuts",
+            vec![
+                Line::from(vec![Span::styled(
+                    "Navigation:",
+                    Style::default().fg(Color::Yellow).bold(),
+                )]),
+                Line::from("  ↑/k, ↓/j  - Move up/down in lists"),
+                Line::from("  Tab       - Switch between panels"),
+                Line::from("  ←/→       - Switch between tabs (Trending/Breaking/New)"),
+                Line::from(""),
+                Line::from(vec![Span::styled(
+                    "Actions:",
+                    Style::default().fg(Color::Yellow).bold(),
+                )]),
+                Line::from("  Enter     - Toggle watching event for live trades"),
+                Line::from("  /         - API search (searches Polymarket)"),
+                Line::from("  f         - Local filter (filters current list)"),
+                Line::from("  Esc       - Cancel search/filter or close popup"),
+                Line::from(""),
+                Line::from(vec![Span::styled(
+                    "Other:",
+                    Style::default().fg(Color::Yellow).bold(),
+                )]),
+                Line::from("  ?         - Show this help"),
+                Line::from("  q         - Quit"),
+                Line::from(""),
+                Line::from(vec![Span::styled(
+                    "Press Esc to close",
+                    Style::default().fg(Color::DarkGray),
+                )]),
+            ],
+        ),
+        PopupType::ConfirmQuit => (
+            "Confirm Quit",
+            vec![
+                Line::from(""),
+                Line::from("Are you sure you want to quit?"),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("  y  ", Style::default().fg(Color::Green).bold()),
+                    Span::styled("- Yes, quit", Style::default().fg(Color::White)),
+                ]),
+                Line::from(vec![
+                    Span::styled("  n  ", Style::default().fg(Color::Red).bold()),
+                    Span::styled("- No, cancel", Style::default().fg(Color::White)),
+                ]),
+            ],
+        ),
+        PopupType::EventInfo(slug) => (
+            "Event Info",
+            vec![
+                Line::from(format!("Slug: {}", slug)),
+                Line::from(""),
+                Line::from(vec![Span::styled(
+                    "Press Esc to close",
+                    Style::default().fg(Color::DarkGray),
+                )]),
+            ],
+        ),
     };
 
     let block = Block::default()
@@ -1361,14 +1399,24 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             };
             let right_text_width = right_text.width();
 
-            // Reserve space for right text + 1 space padding + closed icon if needed
+            // Reserve space for right text + 1 space padding + icons if needed
             let closed_icon = if is_closed {
                 "✕ "
             } else {
                 ""
             };
             let closed_icon_width = closed_icon.width();
-            let reserved_width = right_text_width + 1 + closed_icon_width;
+
+            // Check for yield opportunity (high probability market)
+            let has_yield = !is_closed && event_has_yield(event);
+            let yield_icon = if has_yield {
+                "$ "
+            } else {
+                ""
+            };
+            let yield_icon_width = yield_icon.width();
+
+            let reserved_width = right_text_width + 1 + closed_icon_width + yield_icon_width;
             let available_width = usable_width.saturating_sub(reserved_width);
 
             // Truncate title to fit available space (using display width)
@@ -1377,12 +1425,16 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             let title_width = title.width();
             let remaining_width = usable_width
                 .saturating_sub(closed_icon_width)
+                .saturating_sub(yield_icon_width)
                 .saturating_sub(title_width)
                 .saturating_sub(right_text_width);
 
             let mut line_spans = Vec::new();
             if is_closed {
                 line_spans.push(Span::styled(closed_icon, Style::default().fg(Color::Red)));
+            }
+            if has_yield {
+                line_spans.push(Span::styled(yield_icon, Style::default().fg(Color::Green)));
             }
             line_spans.push(Span::styled(title, style));
 
@@ -1617,16 +1669,19 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 })
                 .collect();
 
-            let table = Table::new(rows, [
-                Constraint::Length(9),  // Time
-                Constraint::Length(5),  // Side
-                Constraint::Length(4),  // Outcome
-                Constraint::Length(8),  // Price
-                Constraint::Length(9),  // Shares
-                Constraint::Length(9),  // Value
-                Constraint::Fill(1),    // Market (takes remaining space)
-                Constraint::Length(12), // User
-            ])
+            let table = Table::new(
+                rows,
+                [
+                    Constraint::Length(9),  // Time
+                    Constraint::Length(5),  // Side
+                    Constraint::Length(4),  // Outcome
+                    Constraint::Length(8),  // Price
+                    Constraint::Length(9),  // Shares
+                    Constraint::Length(9),  // Value
+                    Constraint::Fill(1),    // Market (takes remaining space)
+                    Constraint::Length(12), // User
+                ],
+            )
             .header(
                 Row::new(vec![
                     "Time", "Side", "Out", "Price", "Shares", "Value", "Market", "User",
@@ -2017,8 +2072,12 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
                 .unwrap_or_default();
 
             // Status indicator: ● for active, ◐ for in-review, ○ for resolved
+            // Add $ for yield opportunity (high probability market)
+            let has_yield = market_has_yield(market);
             let status_icon = if market.closed {
                 "○ "
+            } else if has_yield {
+                "$ " // Yield opportunity indicator
             } else if market.is_in_review() {
                 "◐ "
             } else {
@@ -2122,6 +2181,8 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
             // Start with status icon
             let icon_color = if market.closed {
                 Color::DarkGray
+            } else if has_yield {
+                Color::Green // Yield opportunity in green
             } else if market.is_in_review() {
                 Color::Cyan
             } else {

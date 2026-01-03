@@ -4368,16 +4368,16 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
     let mut sorted_markets: Vec<_> = event.markets.iter().collect();
     sorted_markets.sort_by_key(|m| m.closed);
 
-    // Fixed column widths for alignment
+    // Fixed column widths for alignment - compact layout
     // Yield: "+XX.X%" = 6 chars max
     // Volume: "$XXX.XM" = 7 chars max
-    // Button: "[XXXXXXXX XXXXX¢]" = outcome(8) + space + price(6) + brackets(2) = 17 chars max
+    // Button: "[XXXXXXXX XX.X¢]" = outcome(8) + space + price(5) + brackets(2) = 16 chars max
     const YIELD_COL_WIDTH: usize = 6;
     const VOLUME_COL_WIDTH: usize = 7;
-    const BUTTON_COL_WIDTH: usize = 17;
+    const BUTTON_COL_WIDTH: usize = 16;
 
     // Calculate total fixed right content width for active markets
-    // Layout: [yield 6] [volume 7] [button1 17] [button2 17] + 3 spaces = 50
+    // Layout: [yield 6][space][volume 7][space][button1 16][space][button2 16] = 49
     let fixed_right_width =
         YIELD_COL_WIDTH + 1 + VOLUME_COL_WIDTH + 1 + BUTTON_COL_WIDTH + 1 + BUTTON_COL_WIDTH;
     let usable_width = (area.width as usize).saturating_sub(2); // -2 for borders
@@ -4611,7 +4611,7 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
             }
 
             if has_buttons {
-                // For active markets: right-align each column within its fixed width
+                // For active markets: compact layout with single space separators
                 // Yield column (right-aligned within YIELD_COL_WIDTH)
                 let yield_display = yield_str.as_deref().unwrap_or("");
                 let yield_padded = format!("{:>width$}", yield_display, width = YIELD_COL_WIDTH);
@@ -4629,14 +4629,13 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
                 ));
                 line_spans.push(Span::styled(" ", Style::default()));
 
-                // Yes button (right-aligned within BUTTON_COL_WIDTH)
-                let yes_padded = format!("{:>width$}", yes_button, width = BUTTON_COL_WIDTH);
+                // Yes button (left-aligned within BUTTON_COL_WIDTH for alignment across rows)
+                let yes_padded = format!("{:<width$}", yes_button, width = BUTTON_COL_WIDTH);
                 line_spans.push(Span::styled(yes_padded, Style::default().fg(Color::Green)));
                 line_spans.push(Span::styled(" ", Style::default()));
 
-                // No button (right-aligned within BUTTON_COL_WIDTH)
-                let no_padded = format!("{:>width$}", no_button, width = BUTTON_COL_WIDTH);
-                line_spans.push(Span::styled(no_padded, Style::default().fg(Color::Red)));
+                // No button (no padding needed, it's the last column)
+                line_spans.push(Span::styled(no_button, Style::default().fg(Color::Red)));
             } else {
                 // For closed markets: show outcomes and volume
                 if !outcomes_str.is_empty() {

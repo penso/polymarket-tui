@@ -4442,13 +4442,13 @@ fn render_orderbook(f: &mut Frame, app: &TrendingAppState, event: &Event, area: 
         ("Yes".to_string(), "No".to_string())
     };
 
-    // Build a simple title string showing selected outcome
+    // Build a short title - just show selected outcome (truncate to fit)
     let selected_name = if selected_outcome == OrderbookOutcome::Yes {
-        &outcome_0_name
+        truncate(&outcome_0_name, 15)
     } else {
-        &outcome_1_name
+        truncate(&outcome_1_name, 15)
     };
-    let title = format!("Order Book: {} (t: toggle)", selected_name);
+    let title = format!("{} (t)", selected_name);
 
     let is_focused = app.navigation.focused_panel == FocusedPanel::Markets; // TODO: Add FocusedPanel::Orderbook
     let block_style = if is_focused {
@@ -4466,6 +4466,15 @@ fn render_orderbook(f: &mut Frame, app: &TrendingAppState, event: &Event, area: 
 
     if has_orders {
         let orderbook = orderbook_state.orderbook.as_ref().unwrap();
+
+        // Find max size for scaling the depth bars
+        let max_size = orderbook
+            .bids
+            .iter()
+            .chain(orderbook.asks.iter())
+            .map(|l| l.size)
+            .fold(0.0_f64, |a, b| a.max(b));
+
         // Split area into two columns: depth chart (left) and price levels (right)
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
@@ -4475,22 +4484,27 @@ fn render_orderbook(f: &mut Frame, app: &TrendingAppState, event: &Event, area: 
             ])
             .split(area);
 
-        // Render depth chart placeholder (left side)
+        // Render depth chart (left side)
         let depth_block = Block::default()
             .borders(Borders::LEFT | Borders::TOP | Borders::BOTTOM)
             .border_type(BorderType::Rounded)
-            .title(title)
+            .title(title.clone())
             .border_style(block_style);
 
-        // Simple depth visualization using bars
+        // Depth visualization using bars scaled to max size
         let visible_height = (chunks[0].height as usize).saturating_sub(2);
+        let bar_max_width = (chunks[0].width as usize).saturating_sub(2);
         let mut depth_lines: Vec<Line> = Vec::new();
 
         // Show asks (sell orders) in red at the top
-        let asks_to_show = orderbook.asks.iter().take(visible_height / 2).rev();
-        for level in asks_to_show {
-            let bar_width = ((level.size / 500.0) * 20.0).min(20.0) as usize;
-            let bar = "█".repeat(bar_width.max(1));
+        let asks_to_show: Vec<_> = orderbook.asks.iter().take(visible_height / 2).collect();
+        for level in asks_to_show.iter().rev() {
+            let bar_width = if max_size > 0.0 {
+                ((level.size / max_size) * bar_max_width as f64).max(1.0) as usize
+            } else {
+                1
+            };
+            let bar = "█".repeat(bar_width.min(bar_max_width));
             depth_lines.push(Line::from(vec![Span::styled(
                 bar,
                 Style::default().fg(Color::LightRed),
@@ -4499,8 +4513,14 @@ fn render_orderbook(f: &mut Frame, app: &TrendingAppState, event: &Event, area: 
 
         // Add spread line
         if let Some(spread) = orderbook.spread {
+            let spread_cents = spread * 100.0;
+            let spread_str = if spread_cents >= 1.0 {
+                format!("Spread: {:.1}¢", spread_cents)
+            } else {
+                format!("Spread: {:.2}¢", spread_cents)
+            };
             depth_lines.push(Line::from(vec![Span::styled(
-                format!("Spread: {:.1}¢", spread * 100.0),
+                spread_str,
                 Style::default().fg(Color::Yellow),
             )]));
         }
@@ -4508,8 +4528,12 @@ fn render_orderbook(f: &mut Frame, app: &TrendingAppState, event: &Event, area: 
         // Show bids (buy orders) in green at the bottom
         let bids_to_show = orderbook.bids.iter().take(visible_height / 2);
         for level in bids_to_show {
-            let bar_width = ((level.size / 500.0) * 20.0).min(20.0) as usize;
-            let bar = "█".repeat(bar_width.max(1));
+            let bar_width = if max_size > 0.0 {
+                ((level.size / max_size) * bar_max_width as f64).max(1.0) as usize
+            } else {
+                1
+            };
+            let bar = "█".repeat(bar_width.min(bar_max_width));
             depth_lines.push(Line::from(vec![Span::styled(
                 bar,
                 Style::default().fg(Color::LightGreen),
@@ -4535,16 +4559,28 @@ fn render_orderbook(f: &mut Frame, app: &TrendingAppState, event: &Event, area: 
             Span::styled("TOTAL", Style::default().fg(Color::DarkGray).bold()),
         ]));
 
+        // Helper to format price in cents or dollars
+        let format_price = |price: f64| -> String {
+            let cents = price * 100.0;
+            if cents >= 100.0 {
+                format!("  ${:.2}   ", price)
+            } else if cents >= 1.0 {
+                format!("  {:>5.1}¢   ", cents)
+            } else {
+                format!("  {:>5.2}¢   ", cents)
+            }
+        };
+
         // Asks (sell orders) - show in descending price order
         let asks_count = (visible_rows.saturating_sub(2)) / 2;
         for level in orderbook.asks.iter().take(asks_count).rev() {
             level_lines.push(Line::from(vec![
                 Span::styled(
-                    format!("  {:>5.0}¢   ", level.price * 100.0),
+                    format_price(level.price),
                     Style::default().fg(Color::LightRed),
                 ),
                 Span::styled(
-                    format!("{:>8.2}   ", level.size),
+                    format!("{:>10.0}   ", level.size),
                     Style::default().fg(Color::White),
                 ),
                 Span::styled(
@@ -4556,8 +4592,14 @@ fn render_orderbook(f: &mut Frame, app: &TrendingAppState, event: &Event, area: 
 
         // Spread separator
         if let Some(spread) = orderbook.spread {
+            let spread_cents = spread * 100.0;
+            let spread_str = if spread_cents >= 1.0 {
+                format!("  ─── Spread: {:.1}¢ ───", spread_cents)
+            } else {
+                format!("  ─── Spread: {:.2}¢ ───", spread_cents)
+            };
             level_lines.push(Line::from(vec![Span::styled(
-                format!("  ─── Spread: {:.1}¢ ───", spread * 100.0),
+                spread_str,
                 Style::default().fg(Color::Yellow),
             )]));
         }
@@ -4567,11 +4609,11 @@ fn render_orderbook(f: &mut Frame, app: &TrendingAppState, event: &Event, area: 
         for level in orderbook.bids.iter().take(bids_count) {
             level_lines.push(Line::from(vec![
                 Span::styled(
-                    format!("  {:>5.0}¢   ", level.price * 100.0),
+                    format_price(level.price),
                     Style::default().fg(Color::LightGreen),
                 ),
                 Span::styled(
-                    format!("{:>8.2}   ", level.size),
+                    format!("{:>10.0}   ", level.size),
                     Style::default().fg(Color::White),
                 ),
                 Span::styled(

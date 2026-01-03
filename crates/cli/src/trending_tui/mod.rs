@@ -2967,8 +2967,39 @@ pub async fn run_trending_tui(
                                     }
                                 },
                                 FocusedPanel::Markets => {
-                                    if app.scroll.markets > 0 {
-                                        app.scroll.markets -= 1;
+                                    // Move selected market up and fetch orderbook
+                                    if app.orderbook_state.selected_market_index > 0 {
+                                        app.orderbook_state.selected_market_index -= 1;
+                                        // Adjust scroll if needed to keep selection visible
+                                        if app.orderbook_state.selected_market_index
+                                            < app.scroll.markets
+                                        {
+                                            app.scroll.markets =
+                                                app.orderbook_state.selected_market_index;
+                                        }
+                                        // Fetch orderbook for new selection
+                                        if let Some(event) = app.selected_event() {
+                                            let market_idx =
+                                                app.orderbook_state.selected_market_index;
+                                            let outcome_idx =
+                                                match app.orderbook_state.selected_outcome {
+                                                    state::OrderbookOutcome::Yes => 0,
+                                                    state::OrderbookOutcome::No => 1,
+                                                };
+                                            if let Some(market) = event.markets.get(market_idx)
+                                                && let Some(token_id) = market
+                                                    .clob_token_ids
+                                                    .as_ref()
+                                                    .and_then(|ids| ids.get(outcome_idx).cloned())
+                                            {
+                                                app.orderbook_state.orderbook = None;
+                                                drop(app);
+                                                spawn_fetch_orderbook(
+                                                    Arc::clone(&app_state),
+                                                    token_id,
+                                                );
+                                            }
+                                        }
                                     }
                                 },
                                 FocusedPanel::Trades => {
@@ -3199,12 +3230,43 @@ pub async fn run_trending_tui(
                                     }
                                 },
                                 FocusedPanel::Markets => {
-                                    if let Some(event) = app.selected_event() {
+                                    // Move selected market down and fetch orderbook
+                                    // Extract data we need before modifying app state
+                                    let market_info = app.selected_event().and_then(|event| {
+                                        let max_index = event.markets.len().saturating_sub(1);
+                                        let current_idx = app.orderbook_state.selected_market_index;
+                                        if current_idx < max_index {
+                                            let new_idx = current_idx + 1;
+                                            let outcome_idx =
+                                                match app.orderbook_state.selected_outcome {
+                                                    state::OrderbookOutcome::Yes => 0,
+                                                    state::OrderbookOutcome::No => 1,
+                                                };
+                                            let token_id =
+                                                event.markets.get(new_idx).and_then(|market| {
+                                                    market.clob_token_ids.as_ref().and_then(|ids| {
+                                                        ids.get(outcome_idx).cloned()
+                                                    })
+                                                });
+                                            Some((new_idx, token_id))
+                                        } else {
+                                            None
+                                        }
+                                    });
+
+                                    if let Some((new_idx, token_id)) = market_info {
+                                        app.orderbook_state.selected_market_index = new_idx;
+                                        // Adjust scroll if needed to keep selection visible
                                         let visible_height: usize = 5; // Markets panel height
-                                        if app.scroll.markets
-                                            < event.markets.len().saturating_sub(visible_height)
-                                        {
-                                            app.scroll.markets += 1;
+                                        if new_idx >= app.scroll.markets + visible_height {
+                                            app.scroll.markets =
+                                                new_idx.saturating_sub(visible_height - 1);
+                                        }
+                                        // Fetch orderbook for new selection
+                                        if let Some(token_id) = token_id {
+                                            app.orderbook_state.orderbook = None;
+                                            drop(app);
+                                            spawn_fetch_orderbook(Arc::clone(&app_state), token_id);
                                         }
                                     }
                                 },

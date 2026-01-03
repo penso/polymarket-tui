@@ -4360,9 +4360,8 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
             // Check if this market is selected for orderbook display
             let is_orderbook_selected = idx == app.orderbook_state.selected_market_index;
 
-            let status_icon = if is_orderbook_selected {
-                "▶ " // Orderbook selection indicator
-            } else if market.closed {
+            // Status indicator: ● for active, ◐ for in-review, ○ for resolved, $ for yield
+            let status_icon = if market.closed {
                 "○ "
             } else if has_yield {
                 "$ " // Yield opportunity indicator
@@ -4482,10 +4481,8 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
                 .saturating_sub(question_width)
                 .saturating_sub(right_content_width);
 
-            // Start with status icon
-            let icon_color = if is_orderbook_selected {
-                Color::Yellow // Highlight selected market for orderbook
-            } else if market.closed {
+            // Start with status icon - use original colors
+            let icon_color = if market.closed {
                 Color::DarkGray
             } else if has_yield {
                 Color::Green // Yield opportunity in green
@@ -4535,8 +4532,10 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
                 ));
             }
 
-            // Alternating row colors (zebra striping) for better readability
-            let bg_color = if idx % 2 == 0 {
+            // Background color: highlight selected market, otherwise zebra striping
+            let bg_color = if is_orderbook_selected {
+                Color::Rgb(60, 60, 80) // Highlight selected market (same as events list)
+            } else if idx % 2 == 0 {
                 Color::Reset
             } else {
                 Color::Rgb(30, 30, 40)

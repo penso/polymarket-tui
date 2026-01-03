@@ -1255,12 +1255,21 @@ fn render_yield_details(f: &mut Frame, app: &TrendingAppState, area: Rect) {
     if let Some(opp) = yield_state.selected_opportunity() {
         // Look up the event from the global cache
         if let Some(event) = app.get_cached_event(&opp.event_slug) {
+            // Calculate dynamic height for event info based on content
+            // Base: 5 lines (Slug, URL, Status, End, Volume) + 2 for borders + 1 for title
+            // Add 1 if tags present, add extra lines for URL wrapping
+            let event_url = format!("https://polymarket.com/event/{}", event.slug);
+            let available_width = area.width.saturating_sub(8) as usize; // Account for borders and "URL: " prefix
+            let url_lines = (event_url.len() / available_width.max(1)) + 1;
+            let has_tags = !event.tags.is_empty();
+            let event_panel_height = 8 + url_lines as u16 + if has_tags { 1 } else { 0 };
+
             // Split into event info and market details
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(9), // Event info (matching Events tab)
-                    Constraint::Min(0),    // Market details
+                    Constraint::Length(event_panel_height), // Dynamic event info height
+                    Constraint::Min(0),                     // Market details
                 ])
                 .split(area);
 
@@ -1640,12 +1649,19 @@ fn render_yield_search_details(f: &mut Frame, app: &TrendingAppState, area: Rect
     if let Some(result) = yield_state.selected_search_result() {
         // Look up event from cache
         if let Some(event) = app.get_cached_event(&result.event_slug) {
+            // Calculate dynamic height for event info based on content
+            let event_url = format!("https://polymarket.com/event/{}", event.slug);
+            let available_width = area.width.saturating_sub(8) as usize;
+            let url_lines = (event_url.len() / available_width.max(1)) + 1;
+            let has_tags = !event.tags.is_empty();
+            let event_panel_height = 8 + url_lines as u16 + if has_tags { 1 } else { 0 };
+
             // Split into event info and yield details
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(9), // Event info (matching Events tab)
-                    Constraint::Min(0),    // Yield details
+                    Constraint::Length(event_panel_height), // Dynamic event info height
+                    Constraint::Min(0),                     // Yield details
                 ])
                 .split(area);
 

@@ -184,7 +184,7 @@ fn event_has_yield(event: &polymarket_api::gamma::Event) -> bool {
 
 /// Format a price (0.0-1.0) as cents like the Polymarket website
 /// Examples: 0.01 -> "1¢", 0.11 -> "11¢", 0.89 -> "89¢", 0.004 -> "<1¢", 0.9995 -> "99.95¢"
-fn format_price_cents(price: f64) -> String {
+pub fn format_price_cents(price: f64) -> String {
     let cents = price * 100.0;
     if cents < 1.0 {
         "<1¢".to_string()
@@ -4392,35 +4392,65 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
                     .map(|(outcome, _)| format!("Winner: {}", outcome))
                     .unwrap_or_else(|| "Resolved".to_string())
             } else {
-                // For active markets, show all outcomes with prices
-                let mut outcome_strings = Vec::new();
-                for (idx, outcome) in market.outcomes.iter().enumerate() {
-                    let price = if let Some(ref token_ids) = market.clob_token_ids {
-                        // Active markets: try live prices first, fallback to outcome_prices
-                        token_ids
-                            .get(idx)
-                            .and_then(|asset_id| app.market_prices.get(asset_id).copied())
-                            .or_else(|| {
-                                market
-                                    .outcome_prices
-                                    .get(idx)
-                                    .and_then(|p| p.parse::<f64>().ok())
-                            })
-                    } else {
-                        // No token IDs: use outcome_prices
-                        market
-                            .outcome_prices
-                            .get(idx)
-                            .and_then(|p| p.parse::<f64>().ok())
-                    };
+                // For active markets, we'll show Buy buttons instead of prices
+                String::new()
+            };
 
-                    let price_str = price
-                        .map(format_price_cents)
-                        .unwrap_or_else(|| "N/A".to_string());
+            // Get prices for active markets (for Buy buttons)
+            let (yes_price, no_price): (Option<f64>, Option<f64>) = if !market.closed {
+                let yes = if let Some(ref token_ids) = market.clob_token_ids {
+                    token_ids
+                        .first()
+                        .and_then(|asset_id| app.market_prices.get(asset_id).copied())
+                        .or_else(|| {
+                            market
+                                .outcome_prices
+                                .first()
+                                .and_then(|p| p.parse::<f64>().ok())
+                        })
+                } else {
+                    market
+                        .outcome_prices
+                        .first()
+                        .and_then(|p| p.parse::<f64>().ok())
+                };
+                let no = if let Some(ref token_ids) = market.clob_token_ids {
+                    token_ids
+                        .get(1)
+                        .and_then(|asset_id| app.market_prices.get(asset_id).copied())
+                        .or_else(|| {
+                            market
+                                .outcome_prices
+                                .get(1)
+                                .and_then(|p| p.parse::<f64>().ok())
+                        })
+                } else {
+                    market
+                        .outcome_prices
+                        .get(1)
+                        .and_then(|p| p.parse::<f64>().ok())
+                };
+                (yes, no)
+            } else {
+                (None, None)
+            };
 
-                    outcome_strings.push(format!("{}: {}", outcome, price_str));
-                }
-                outcome_strings.join(" | ")
+            // Build Buy buttons for active markets
+            let yes_button = if !market.closed {
+                let price_str = yes_price
+                    .map(format_price_cents)
+                    .unwrap_or_else(|| "N/A".to_string());
+                format!("[Yes {}]", price_str)
+            } else {
+                String::new()
+            };
+            let no_button = if !market.closed {
+                let price_str = no_price
+                    .map(format_price_cents)
+                    .unwrap_or_else(|| "N/A".to_string());
+                format!("[No {}]", price_str)
+            } else {
+                String::new()
             };
 
             // Calculate widths for right alignment
@@ -4430,17 +4460,20 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
             let yield_str = yield_return.map(|ret| format!("+{:.1}%", ret));
 
             // Calculate space needed for right-aligned content
-            // Order from right to left: volume, outcomes, yield (if any)
-            // Use .width() for proper Unicode width calculation
+            // For active markets: [yield] [volume] [Yes XX¢] [No XX¢]
+            // For closed markets: [Winner: X] [volume]
             let outcomes_width = outcomes_str.width();
             let volume_width = volume_str.len();
             let yield_width = yield_str.as_ref().map(|s| s.len()).unwrap_or(0);
+            let yes_button_width = yes_button.len();
+            let no_button_width = no_button.len();
 
             let has_outcomes = !outcomes_str.is_empty();
             let has_volume = !volume_str.is_empty();
             let has_yield_str = yield_str.is_some();
+            let has_buttons = !market.closed;
 
-            // Calculate total right content width: [yield] [outcomes] [volume]
+            // Calculate total right content width
             let mut right_content_width = 0;
             if has_yield_str {
                 right_content_width += yield_width;
@@ -4456,6 +4489,14 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
                     right_content_width += 1; // space
                 }
                 right_content_width += volume_width;
+            }
+            if has_buttons {
+                if right_content_width > 0 {
+                    right_content_width += 1; // space
+                }
+                right_content_width += yes_button_width;
+                right_content_width += 1; // space between buttons
+                right_content_width += no_button_width;
             }
 
             // Calculate available width for question (reserve space for icon + right content + 1 space padding)
@@ -4501,35 +4542,45 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
                 line_spans.push(Span::styled(" ".repeat(remaining_width), Style::default()));
             }
 
-            // Add right-aligned content in order: [yield] [outcomes] [volume]
+            // Add right-aligned content in order: [yield] [outcomes] [volume] [Yes] [No]
             // Yield return (if any) - prepended before outcomes
             if let Some(ref yield_s) = yield_str {
                 line_spans.push(Span::styled(
                     yield_s.clone(),
                     Style::default().fg(Color::Yellow),
                 ));
-                if has_outcomes || has_volume {
+                if has_outcomes || has_volume || has_buttons {
                     line_spans.push(Span::styled(" ", Style::default()));
                 }
             }
 
-            // Outcomes (Yes/No prices)
+            // Outcomes (Winner display for closed markets)
             if has_outcomes {
                 line_spans.push(Span::styled(
                     outcomes_str.clone(),
                     Style::default().fg(Color::Cyan),
                 ));
-                if has_volume {
+                if has_volume || has_buttons {
                     line_spans.push(Span::styled(" ", Style::default()));
                 }
             }
 
-            // Volume (always on the right)
+            // Volume
             if has_volume {
                 line_spans.push(Span::styled(
                     volume_str.clone(),
                     Style::default().fg(Color::Green),
                 ));
+                if has_buttons {
+                    line_spans.push(Span::styled(" ", Style::default()));
+                }
+            }
+
+            // Buy buttons for active markets
+            if has_buttons {
+                line_spans.push(Span::styled(yes_button, Style::default().fg(Color::Green)));
+                line_spans.push(Span::styled(" ", Style::default()));
+                line_spans.push(Span::styled(no_button, Style::default().fg(Color::Red)));
             }
 
             // Background color: highlight selected market, otherwise zebra striping

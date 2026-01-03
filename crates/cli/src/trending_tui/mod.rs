@@ -1720,10 +1720,16 @@ pub async fn run_trending_tui(
                                 }
                             }
                         }
-                        // Handle click on Markets panel to select market for orderbook
+                        // Handle click on Markets panel to select market or open trade popup
                         if panel == FocusedPanel::Markets && app.main_tab == MainTab::Trending {
-                            // Extract clicked market info before mutably borrowing app
-                            let click_data: Option<(usize, Option<String>)> = if let Some(event) =
+                            // Determine what was clicked: market row, Yes button, or No button
+                            #[derive(Debug)]
+                            enum MarketClickAction {
+                                SelectMarket(usize, Option<String>), /* idx, token_id for orderbook */
+                                OpenTrade(String, String, String, f64), /* token_id, question, outcome, price */
+                            }
+
+                            let click_action: Option<MarketClickAction> = if let Some(event) =
                                 app.selected_event()
                             {
                                 // Calculate which market row was clicked
@@ -1737,6 +1743,8 @@ pub async fn run_trending_tui(
                                 let relative_y =
                                     mouse.row.saturating_sub(markets_area.y + 1) as usize;
                                 let clicked_idx = app.scroll.markets + relative_y;
+                                let click_x = mouse.column.saturating_sub(markets_area.x + 1);
+                                let panel_width = markets_area.width.saturating_sub(2); // borders
 
                                 // Sort markets same way as render_markets (non-closed first)
                                 let mut sorted_markets: Vec<_> = event.markets.iter().collect();
@@ -1744,16 +1752,136 @@ pub async fn run_trending_tui(
 
                                 if clicked_idx < sorted_markets.len() {
                                     let market = sorted_markets[clicked_idx];
-                                    // Get token_id for orderbook based on selected outcome
-                                    let outcome_idx = match app.orderbook_state.selected_outcome {
-                                        state::OrderbookOutcome::Yes => 0,
-                                        state::OrderbookOutcome::No => 1,
-                                    };
-                                    let token_id = market
-                                        .clob_token_ids
-                                        .as_ref()
-                                        .and_then(|ids| ids.get(outcome_idx).cloned());
-                                    Some((clicked_idx, token_id))
+
+                                    // For active markets, check if click is on Yes/No buttons
+                                    if !market.closed {
+                                        // Get prices for button text width calculation
+                                        let yes_price = if let Some(ref token_ids) =
+                                            market.clob_token_ids
+                                        {
+                                            token_ids.first().and_then(|asset_id| {
+                                                app.market_prices.get(asset_id).copied()
+                                            })
+                                        } else {
+                                            None
+                                        }
+                                        .or_else(|| {
+                                            market
+                                                .outcome_prices
+                                                .first()
+                                                .and_then(|p| p.parse::<f64>().ok())
+                                        });
+                                        let no_price = if let Some(ref token_ids) =
+                                            market.clob_token_ids
+                                        {
+                                            token_ids.get(1).and_then(|asset_id| {
+                                                app.market_prices.get(asset_id).copied()
+                                            })
+                                        } else {
+                                            None
+                                        }
+                                        .or_else(|| {
+                                            market
+                                                .outcome_prices
+                                                .get(1)
+                                                .and_then(|p| p.parse::<f64>().ok())
+                                        });
+
+                                        let yes_price_str = yes_price
+                                            .map(render::format_price_cents)
+                                            .unwrap_or_else(|| "N/A".to_string());
+                                        let no_price_str = no_price
+                                            .map(render::format_price_cents)
+                                            .unwrap_or_else(|| "N/A".to_string());
+
+                                        // Button format: "[Yes XX¢] [No XX¢]"
+                                        let yes_button = format!("[Yes {}]", yes_price_str);
+                                        let no_button = format!("[No {}]", no_price_str);
+                                        let yes_button_width = yes_button.len() as u16;
+                                        let no_button_width = no_button.len() as u16;
+
+                                        // Buttons are at the right edge of the panel
+                                        // No button is at the far right
+                                        let no_button_start =
+                                            panel_width.saturating_sub(no_button_width);
+                                        // Yes button is before No button with 1 space
+                                        let yes_button_start = no_button_start
+                                            .saturating_sub(1)
+                                            .saturating_sub(yes_button_width);
+
+                                        if click_x >= no_button_start {
+                                            // Clicked on No button
+                                            if let Some(ref token_ids) = market.clob_token_ids {
+                                                if let Some(token_id) = token_ids.get(1) {
+                                                    let outcome = market
+                                                        .outcomes
+                                                        .get(1)
+                                                        .cloned()
+                                                        .unwrap_or_else(|| "No".to_string());
+                                                    Some(MarketClickAction::OpenTrade(
+                                                        token_id.clone(),
+                                                        market.question.clone(),
+                                                        outcome,
+                                                        no_price.unwrap_or(0.5),
+                                                    ))
+                                                } else {
+                                                    None
+                                                }
+                                            } else {
+                                                None
+                                            }
+                                        } else if click_x >= yes_button_start
+                                            && click_x < no_button_start
+                                        {
+                                            // Clicked on Yes button
+                                            if let Some(ref token_ids) = market.clob_token_ids {
+                                                if let Some(token_id) = token_ids.first() {
+                                                    let outcome = market
+                                                        .outcomes
+                                                        .first()
+                                                        .cloned()
+                                                        .unwrap_or_else(|| "Yes".to_string());
+                                                    Some(MarketClickAction::OpenTrade(
+                                                        token_id.clone(),
+                                                        market.question.clone(),
+                                                        outcome,
+                                                        yes_price.unwrap_or(0.5),
+                                                    ))
+                                                } else {
+                                                    None
+                                                }
+                                            } else {
+                                                None
+                                            }
+                                        } else {
+                                            // Clicked elsewhere on the row - select market
+                                            let outcome_idx =
+                                                match app.orderbook_state.selected_outcome {
+                                                    state::OrderbookOutcome::Yes => 0,
+                                                    state::OrderbookOutcome::No => 1,
+                                                };
+                                            let token_id = market
+                                                .clob_token_ids
+                                                .as_ref()
+                                                .and_then(|ids| ids.get(outcome_idx).cloned());
+                                            Some(MarketClickAction::SelectMarket(
+                                                clicked_idx,
+                                                token_id,
+                                            ))
+                                        }
+                                    } else {
+                                        // Closed market - just select it
+                                        let outcome_idx = match app.orderbook_state.selected_outcome
+                                        {
+                                            state::OrderbookOutcome::Yes => 0,
+                                            state::OrderbookOutcome::No => 1,
+                                        };
+                                        let token_id = market
+                                            .clob_token_ids
+                                            .as_ref()
+                                            .and_then(|ids| ids.get(outcome_idx).cloned());
+                                        Some(MarketClickAction::SelectMarket(clicked_idx, token_id))
+                                    }
                                 } else {
                                     None
                                 }
@@ -1761,16 +1889,33 @@ pub async fn run_trending_tui(
                                 None
                             };
 
-                            // Update selected market and fetch orderbook
-                            if let Some((clicked_idx, token_id)) = click_data
-                                && app.orderbook_state.selected_market_index != clicked_idx
-                            {
-                                app.orderbook_state.selected_market_index = clicked_idx;
-                                if let Some(token_id) = token_id {
-                                    app.orderbook_state.orderbook = None;
-                                    drop(app);
-                                    spawn_fetch_orderbook(Arc::clone(&app_state), token_id);
-                                }
+                            // Handle the click action
+                            match click_action {
+                                Some(MarketClickAction::SelectMarket(clicked_idx, token_id)) => {
+                                    if app.orderbook_state.selected_market_index != clicked_idx {
+                                        app.orderbook_state.selected_market_index = clicked_idx;
+                                        if let Some(token_id) = token_id {
+                                            app.orderbook_state.orderbook = None;
+                                            drop(app);
+                                            spawn_fetch_orderbook(Arc::clone(&app_state), token_id);
+                                        }
+                                    }
+                                },
+                                Some(MarketClickAction::OpenTrade(
+                                    token_id,
+                                    question,
+                                    outcome,
+                                    price,
+                                )) => {
+                                    app.open_trade_popup(
+                                        token_id,
+                                        question.clone(),
+                                        outcome,
+                                        price,
+                                    );
+                                    log_info!("Opening trade popup for: {}", question);
+                                },
+                                None => {},
                             }
                         }
                     }

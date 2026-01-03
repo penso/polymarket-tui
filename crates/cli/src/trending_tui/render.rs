@@ -2312,6 +2312,7 @@ fn render_popup(f: &mut Frame, app: &TrendingAppState, popup: &PopupType) {
     };
 
     // Clear the area behind the popup
+    f.render_widget(Clear, area);
 
     let (title, content) = match popup {
         PopupType::Help => {

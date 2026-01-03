@@ -601,16 +601,13 @@ fn render_yield_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         block = block.title_bottom(Line::from(" Searching... ").centered());
     }
 
-    let table = Table::new(
-        rows,
-        [
-            Constraint::Fill(1),   // Market name (takes remaining space)
-            Constraint::Length(7), // Return (e.g., "12.34%")
-            Constraint::Length(7), // Price (e.g., "95.5¢")
-            Constraint::Length(8), // Volume (e.g., "$123.4K")
-            Constraint::Length(7), // Expires (e.g., "expired")
-        ],
-    )
+    let table = Table::new(rows, [
+        Constraint::Fill(1),   // Market name (takes remaining space)
+        Constraint::Length(7), // Return (e.g., "12.34%")
+        Constraint::Length(7), // Price (e.g., "95.5¢")
+        Constraint::Length(8), // Volume (e.g., "$123.4K")
+        Constraint::Length(7), // Expires (e.g., "expired")
+    ])
     .header(
         Row::new(vec!["Market", "Return", "Price", "Volume", "Expires"])
             .style(
@@ -967,16 +964,13 @@ fn render_yield_search_results(f: &mut Frame, app: &TrendingAppState, area: Rect
         block = block.title_bottom(Line::from(" Searching... ").centered());
     }
 
-    let table = Table::new(
-        rows,
-        [
-            Constraint::Fill(1),   // Event title
-            Constraint::Length(9), // Yield (e.g., "No yield")
-            Constraint::Length(8), // Volume
-            Constraint::Length(3), // Markets count
-            Constraint::Length(7), // Expires
-        ],
-    )
+    let table = Table::new(rows, [
+        Constraint::Fill(1),   // Event title
+        Constraint::Length(9), // Yield (e.g., "No yield")
+        Constraint::Length(8), // Volume
+        Constraint::Length(3), // Markets count
+        Constraint::Length(7), // Expires
+    ])
     .header(
         Row::new(vec!["Event", "Yield", "Volume", "Mkt", "Expires"])
             .style(
@@ -1249,66 +1243,57 @@ fn render_popup(f: &mut Frame, popup: &PopupType) {
     f.render_widget(Clear, area);
 
     let (title, content) = match popup {
-        PopupType::Help => (
-            "Help - Keyboard Shortcuts",
-            vec![
-                Line::from(vec![Span::styled(
-                    "Navigation:",
-                    Style::default().fg(Color::Yellow).bold(),
-                )]),
-                Line::from("  ↑/k, ↓/j  - Move up/down in lists"),
-                Line::from("  Tab       - Switch between panels"),
-                Line::from("  ←/→       - Switch between tabs (Trending/Breaking/New)"),
-                Line::from(""),
-                Line::from(vec![Span::styled(
-                    "Actions:",
-                    Style::default().fg(Color::Yellow).bold(),
-                )]),
-                Line::from("  Enter     - Toggle watching event for live trades"),
-                Line::from("  /         - API search (searches Polymarket)"),
-                Line::from("  f         - Local filter (filters current list)"),
-                Line::from("  Esc       - Cancel search/filter or close popup"),
-                Line::from(""),
-                Line::from(vec![Span::styled(
-                    "Other:",
-                    Style::default().fg(Color::Yellow).bold(),
-                )]),
-                Line::from("  ?         - Show this help"),
-                Line::from("  q         - Quit"),
-                Line::from(""),
-                Line::from(vec![Span::styled(
-                    "Press Esc to close",
-                    Style::default().fg(Color::DarkGray),
-                )]),
-            ],
-        ),
-        PopupType::ConfirmQuit => (
-            "Confirm Quit",
-            vec![
-                Line::from(""),
-                Line::from("Are you sure you want to quit?"),
-                Line::from(""),
-                Line::from(vec![
-                    Span::styled("  y  ", Style::default().fg(Color::Green).bold()),
-                    Span::styled("- Yes, quit", Style::default().fg(Color::White)),
-                ]),
-                Line::from(vec![
-                    Span::styled("  n  ", Style::default().fg(Color::Red).bold()),
-                    Span::styled("- No, cancel", Style::default().fg(Color::White)),
-                ]),
-            ],
-        ),
-        PopupType::EventInfo(slug) => (
-            "Event Info",
-            vec![
-                Line::from(format!("Slug: {}", slug)),
-                Line::from(""),
-                Line::from(vec![Span::styled(
-                    "Press Esc to close",
-                    Style::default().fg(Color::DarkGray),
-                )]),
-            ],
-        ),
+        PopupType::Help => ("Help - Keyboard Shortcuts", vec![
+            Line::from(vec![Span::styled(
+                "Navigation:",
+                Style::default().fg(Color::Yellow).bold(),
+            )]),
+            Line::from("  ↑/k, ↓/j  - Move up/down in lists"),
+            Line::from("  Tab       - Switch between panels"),
+            Line::from("  ←/→       - Switch between tabs (Trending/Breaking/New)"),
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                "Actions:",
+                Style::default().fg(Color::Yellow).bold(),
+            )]),
+            Line::from("  Enter     - Toggle watching event for live trades"),
+            Line::from("  /         - API search (searches Polymarket)"),
+            Line::from("  f         - Local filter (filters current list)"),
+            Line::from("  Esc       - Cancel search/filter or close popup"),
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                "Other:",
+                Style::default().fg(Color::Yellow).bold(),
+            )]),
+            Line::from("  ?         - Show this help"),
+            Line::from("  q         - Quit"),
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                "Press Esc to close",
+                Style::default().fg(Color::DarkGray),
+            )]),
+        ]),
+        PopupType::ConfirmQuit => ("Confirm Quit", vec![
+            Line::from(""),
+            Line::from("Are you sure you want to quit?"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("  y  ", Style::default().fg(Color::Green).bold()),
+                Span::styled("- Yes, quit", Style::default().fg(Color::White)),
+            ]),
+            Line::from(vec![
+                Span::styled("  n  ", Style::default().fg(Color::Red).bold()),
+                Span::styled("- No, cancel", Style::default().fg(Color::White)),
+            ]),
+        ]),
+        PopupType::EventInfo(slug) => ("Event Info", vec![
+            Line::from(format!("Slug: {}", slug)),
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                "Press Esc to close",
+                Style::default().fg(Color::DarkGray),
+            )]),
+        ]),
     };
 
     let block = Block::default()
@@ -1669,19 +1654,16 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 })
                 .collect();
 
-            let table = Table::new(
-                rows,
-                [
-                    Constraint::Length(9),  // Time
-                    Constraint::Length(5),  // Side
-                    Constraint::Length(4),  // Outcome
-                    Constraint::Length(8),  // Price
-                    Constraint::Length(9),  // Shares
-                    Constraint::Length(9),  // Value
-                    Constraint::Fill(1),    // Market (takes remaining space)
-                    Constraint::Length(12), // User
-                ],
-            )
+            let table = Table::new(rows, [
+                Constraint::Length(9),  // Time
+                Constraint::Length(5),  // Side
+                Constraint::Length(4),  // Outcome
+                Constraint::Length(8),  // Price
+                Constraint::Length(9),  // Shares
+                Constraint::Length(9),  // Value
+                Constraint::Fill(1),    // Market (takes remaining space)
+                Constraint::Length(12), // User
+            ])
             .header(
                 Row::new(vec![
                     "Time", "Side", "Out", "Price", "Shares", "Value", "Market", "User",

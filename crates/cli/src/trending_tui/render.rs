@@ -1393,29 +1393,158 @@ fn render_yield_details(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 .wrap(Wrap { trim: true });
             f.render_widget(market_details, chunks[1]);
         } else {
-            // Event not in cache - show loading message
-            let loading = Paragraph::new("Loading event details...")
+            // Event not in cache - show loading state with same 2-panel layout
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(9), // Event info panel
+                    Constraint::Min(0),    // Market details panel
+                ])
+                .split(area);
+
+            // Event panel with loading message
+            let is_details_focused = app.navigation.focused_panel == FocusedPanel::EventDetails;
+            let event_block_style = if is_details_focused {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default()
+            };
+
+            let event_loading = Paragraph::new("Loading...")
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
-                        .title("Event Details"),
+                        .title("Event")
+                        .border_style(event_block_style),
                 )
                 .alignment(Alignment::Center)
                 .style(Style::default().fg(Color::Yellow));
-            f.render_widget(loading, area);
+            f.render_widget(event_loading, chunks[0]);
+
+            // Market details panel - show the opportunity info we already have
+            let is_markets_focused = app.navigation.focused_panel == FocusedPanel::Markets;
+            let market_block_style = if is_markets_focused {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default()
+            };
+
+            let return_color = if opp.est_return >= 5.0 {
+                Color::Green
+            } else if opp.est_return >= 2.0 {
+                Color::Yellow
+            } else {
+                Color::Red
+            };
+
+            let market_volume_str = if opp.volume >= 1_000_000.0 {
+                format!("${:.1}M", opp.volume / 1_000_000.0)
+            } else if opp.volume >= 1_000.0 {
+                format!("${:.1}K", opp.volume / 1_000.0)
+            } else {
+                format!("${:.0}", opp.volume)
+            };
+
+            let market_lines = vec![
+                Line::from(vec![
+                    Span::styled("Market: ", Style::default().fg(Color::Yellow).bold()),
+                    Span::styled(opp.market_name.clone(), Style::default().fg(Color::White)),
+                ]),
+                Line::from(vec![
+                    Span::styled("Status: ", Style::default().fg(Color::Yellow).bold()),
+                    Span::styled(
+                        opp.market_status,
+                        Style::default().fg(if opp.market_status == "open" {
+                            Color::Green
+                        } else {
+                            Color::Red
+                        }),
+                    ),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("Outcome: ", Style::default().fg(Color::Yellow).bold()),
+                    Span::styled(
+                        opp.outcome.clone(),
+                        Style::default().fg(if opp.outcome == "Yes" {
+                            Color::Green
+                        } else {
+                            Color::Red
+                        }),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("Price: ", Style::default().fg(Color::Yellow).bold()),
+                    Span::styled(
+                        format!(
+                            "{} ({:.2}%)",
+                            format_price_cents(opp.price),
+                            opp.price * 100.0
+                        ),
+                        Style::default().fg(Color::Cyan),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("Est. Return: ", Style::default().fg(Color::Yellow).bold()),
+                    Span::styled(
+                        format!("{:.2}%", opp.est_return),
+                        Style::default()
+                            .fg(return_color)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("24h Volume: ", Style::default().fg(Color::Yellow).bold()),
+                    Span::styled(market_volume_str, Style::default().fg(Color::Green)),
+                ]),
+                Line::from(""),
+                Line::from(vec![Span::styled(
+                    "Buy at this price, get full $1 if outcome occurs",
+                    Style::default().fg(Color::DarkGray),
+                )]),
+            ];
+
+            let market_details = Paragraph::new(market_lines)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
+                        .title("Market Details")
+                        .border_style(market_block_style),
+                )
+                .wrap(Wrap { trim: true });
+            f.render_widget(market_details, chunks[1]);
         }
     } else {
-        let empty = Paragraph::new("No opportunity selected")
+        // No opportunity selected - show empty state with 2-panel layout
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(9), // Event info panel
+                Constraint::Min(0),    // Market details panel
+            ])
+            .split(area);
+
+        let event_empty = Paragraph::new("No opportunity selected")
             .block(
                 Block::default()
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
-                    .title("Details"),
+                    .title("Event"),
             )
             .alignment(Alignment::Center)
             .style(Style::default().fg(Color::Gray));
-        f.render_widget(empty, area);
+        f.render_widget(event_empty, chunks[0]);
+
+        let market_empty = Paragraph::new("")
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .title("Market Details"),
+            );
+        f.render_widget(market_empty, chunks[1]);
     }
 }
 
@@ -1794,29 +1923,151 @@ fn render_yield_search_details(f: &mut Frame, app: &TrendingAppState, area: Rect
                 f.render_widget(no_yield, chunks[1]);
             }
         } else {
-            // Event not in cache - show loading message
-            let loading = Paragraph::new("Loading event details...")
+            // Event not in cache - show loading state with same 2-panel layout
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(9), // Event info panel
+                    Constraint::Min(0),    // Yield details panel
+                ])
+                .split(area);
+
+            // Event panel with loading message
+            let is_details_focused = app.navigation.focused_panel == FocusedPanel::EventDetails;
+            let event_block_style = if is_details_focused {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default()
+            };
+
+            let event_loading = Paragraph::new("Loading...")
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
-                        .title("Event Details"),
+                        .title("Event")
+                        .border_style(event_block_style),
                 )
                 .alignment(Alignment::Center)
                 .style(Style::default().fg(Color::Yellow));
-            f.render_widget(loading, area);
+            f.render_widget(event_loading, chunks[0]);
+
+            // Yield details panel - show best yield info if available
+            let is_markets_focused = app.navigation.focused_panel == FocusedPanel::Markets;
+            let yield_block_style = if is_markets_focused {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default()
+            };
+
+            if let Some(ref y) = result.best_yield {
+                let return_color = if y.est_return >= 5.0 {
+                    Color::Green
+                } else if y.est_return >= 2.0 {
+                    Color::Yellow
+                } else {
+                    Color::Red
+                };
+
+                let yield_volume_str = if y.volume >= 1_000_000.0 {
+                    format!("${:.1}M", y.volume / 1_000_000.0)
+                } else if y.volume >= 1_000.0 {
+                    format!("${:.1}K", y.volume / 1_000.0)
+                } else {
+                    format!("${:.0}", y.volume)
+                };
+
+                let yield_lines = vec![
+                    Line::from(vec![
+                        Span::styled("Market: ", Style::default().fg(Color::Yellow).bold()),
+                        Span::styled(y.market_name.clone(), Style::default().fg(Color::White)),
+                    ]),
+                    Line::from(vec![
+                        Span::styled("Outcome: ", Style::default().fg(Color::Yellow).bold()),
+                        Span::styled(
+                            y.outcome.clone(),
+                            Style::default().fg(if y.outcome == "Yes" {
+                                Color::Green
+                            } else {
+                                Color::Red
+                            }),
+                        ),
+                    ]),
+                    Line::from(vec![
+                        Span::styled("Price: ", Style::default().fg(Color::Yellow).bold()),
+                        Span::styled(
+                            format!("{} ({:.2}%)", format_price_cents(y.price), y.price * 100.0),
+                            Style::default().fg(Color::Cyan),
+                        ),
+                    ]),
+                    Line::from(vec![
+                        Span::styled("Est. Return: ", Style::default().fg(Color::Yellow).bold()),
+                        Span::styled(
+                            format!("{:.2}%", y.est_return),
+                            Style::default()
+                                .fg(return_color)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                    ]),
+                    Line::from(vec![
+                        Span::styled("24h Volume: ", Style::default().fg(Color::Yellow).bold()),
+                        Span::styled(yield_volume_str, Style::default().fg(Color::Green)),
+                    ]),
+                ];
+
+                let yield_details = Paragraph::new(yield_lines)
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .border_type(BorderType::Rounded)
+                            .title("Best Yield Opportunity")
+                            .border_style(yield_block_style),
+                    )
+                    .wrap(Wrap { trim: true });
+                f.render_widget(yield_details, chunks[1]);
+            } else {
+                let no_yield = Paragraph::new("No yield opportunity")
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .border_type(BorderType::Rounded)
+                            .title("Yield Details")
+                            .border_style(yield_block_style),
+                    )
+                    .alignment(Alignment::Center)
+                    .style(Style::default().fg(Color::DarkGray));
+                f.render_widget(no_yield, chunks[1]);
+            }
         }
     } else {
-        let empty = Paragraph::new("Select an event to see details")
+        // No search result selected - show empty state with 2-panel layout
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(9), // Event info panel
+                Constraint::Min(0),    // Yield details panel
+            ])
+            .split(area);
+
+        let event_empty = Paragraph::new("Select an event to see details")
             .block(
                 Block::default()
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
-                    .title("Details"),
+                    .title("Event"),
             )
             .alignment(Alignment::Center)
             .style(Style::default().fg(Color::Gray));
-        f.render_widget(empty, area);
+        f.render_widget(event_empty, chunks[0]);
+
+        let yield_empty = Paragraph::new("")
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .title("Yield Details"),
+            );
+        f.render_widget(yield_empty, chunks[1]);
     }
 }
 

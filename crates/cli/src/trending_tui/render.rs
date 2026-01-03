@@ -1402,7 +1402,7 @@ fn render_yield_details(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 ])
                 .split(area);
 
-            // Event panel with loading message
+            // Event panel with loading indicator in title
             let is_details_focused = app.navigation.focused_panel == FocusedPanel::EventDetails;
             let event_block_style = if is_details_focused {
                 Style::default().fg(Color::Yellow)
@@ -1410,16 +1410,14 @@ fn render_yield_details(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 Style::default()
             };
 
-            let event_loading = Paragraph::new("Loading...")
+            let event_loading = Paragraph::new("")
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
-                        .title("Event")
+                        .title("Event (Loading...)")
                         .border_style(event_block_style),
-                )
-                .alignment(Alignment::Center)
-                .style(Style::default().fg(Color::Yellow));
+                );
             f.render_widget(event_loading, chunks[0]);
 
             // Market details panel - show the opportunity info we already have
@@ -1932,7 +1930,7 @@ fn render_yield_search_details(f: &mut Frame, app: &TrendingAppState, area: Rect
                 ])
                 .split(area);
 
-            // Event panel with loading message
+            // Event panel with loading indicator in title
             let is_details_focused = app.navigation.focused_panel == FocusedPanel::EventDetails;
             let event_block_style = if is_details_focused {
                 Style::default().fg(Color::Yellow)
@@ -1940,16 +1938,14 @@ fn render_yield_search_details(f: &mut Frame, app: &TrendingAppState, area: Rect
                 Style::default()
             };
 
-            let event_loading = Paragraph::new("Loading...")
+            let event_loading = Paragraph::new("")
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
-                        .title("Event")
+                        .title("Event (Loading...)")
                         .border_style(event_block_style),
-                )
-                .alignment(Alignment::Center)
-                .style(Style::default().fg(Color::Yellow));
+                );
             f.render_widget(event_loading, chunks[0]);
 
             // Yield details panel - show best yield info if available

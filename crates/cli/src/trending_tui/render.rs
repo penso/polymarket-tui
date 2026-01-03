@@ -829,26 +829,45 @@ fn render_favorites_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                 .sum();
 
             // Format volume
-            let volume_str = if total_volume >= 1_000_000.0 {
-                format!("${:.1}M", total_volume / 1_000_000.0)
-            } else if total_volume >= 1_000.0 {
-                format!("${:.1}K", total_volume / 1_000.0)
-            } else {
-                format!("${:.0}", total_volume)
-            };
+            let volume_str = format_volume(total_volume);
 
             // Format market count with padding
             let markets_str = format!("{:>width$}", event.markets.len(), width = max_markets_width);
 
-            // Build the display line with favorite icon (all favorites are bookmarked)
-            let mut spans = vec![Span::styled("⚑ ", Style::default().fg(Color::Magenta))];
+            // Calculate widths for proper alignment
+            let usable_width = area.width.saturating_sub(2) as usize; // -2 for borders
 
-            // Check for yield opportunities
-            if event_has_yield(event) {
-                spans.push(Span::styled("$ ", Style::default().fg(Color::Green)));
-            }
+            // Icons: favorite (always shown) + yield (if applicable)
+            let favorite_icon = "⚑ ";
+            let favorite_icon_width = favorite_icon.width();
+            let has_yield = !is_closed && event_has_yield(event);
+            let yield_icon = if has_yield { "$ " } else { "" };
+            let yield_icon_width = yield_icon.width();
 
-            // Title with appropriate styling
+            // Build right-aligned text: "volume markets"
+            let right_text = if volume_str.is_empty() {
+                markets_str.clone()
+            } else {
+                format!("{} {}", volume_str, markets_str)
+            };
+            let right_text_width = right_text.width();
+
+            // Calculate available width for title
+            let reserved_width = favorite_icon_width + yield_icon_width + right_text_width + 1;
+            let available_width = usable_width.saturating_sub(reserved_width);
+
+            // Truncate title to fit
+            let title = truncate_to_width(&event.title, available_width);
+            let title_width = title.width();
+
+            // Calculate spacing to right-align
+            let remaining_width = usable_width
+                .saturating_sub(favorite_icon_width)
+                .saturating_sub(yield_icon_width)
+                .saturating_sub(title_width)
+                .saturating_sub(right_text_width);
+
+            // Title style
             let title_style = if is_closed {
                 Style::default().fg(Color::DarkGray)
             } else if is_selected {
@@ -858,26 +877,39 @@ fn render_favorites_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             } else {
                 Style::default().fg(Color::White)
             };
-            spans.push(Span::styled(truncate(&event.title, 40), title_style));
 
-            // Volume
-            spans.push(Span::styled(
-                format!(" {}", volume_str),
-                Style::default().fg(if is_closed {
-                    Color::DarkGray
-                } else {
-                    Color::Green
-                }),
-            ));
+            // Build spans with proper alignment
+            let mut spans = Vec::new();
 
-            // Market count
+            // Favorite icon (always shown for favorites)
+            spans.push(Span::styled(favorite_icon, Style::default().fg(Color::Magenta)));
+
+            // Yield icon if applicable
+            if has_yield {
+                spans.push(Span::styled(yield_icon, Style::default().fg(Color::Green)));
+            }
+
+            // Title
+            spans.push(Span::styled(title, title_style));
+
+            // Spacing to right-align
+            if remaining_width > 0 {
+                spans.push(Span::styled(" ".repeat(remaining_width), Style::default()));
+            }
+
+            // Volume (right-aligned)
+            if !volume_str.is_empty() {
+                spans.push(Span::styled(
+                    volume_str.clone(),
+                    Style::default().fg(if is_closed { Color::DarkGray } else { Color::Green }),
+                ));
+                spans.push(Span::styled(" ", Style::default()));
+            }
+
+            // Market count (right-aligned)
             spans.push(Span::styled(
-                format!(" {}", markets_str),
-                Style::default().fg(if is_closed {
-                    Color::DarkGray
-                } else {
-                    Color::Cyan
-                }),
+                markets_str,
+                Style::default().fg(if is_closed { Color::DarkGray } else { Color::Cyan }),
             ));
 
             let line = Line::from(spans);
@@ -2107,6 +2139,151 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         .split(popup_layout[1])[1]
 }
 
+/// Build context-aware help content based on current tab
+#[allow(clippy::vec_init_then_push)]
+fn build_help_content(app: &TrendingAppState) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+
+    // Common icons section
+    lines.push(Line::from(vec![Span::styled(
+        "Icons:",
+        Style::default().fg(Color::Yellow).bold(),
+    )]));
+    lines.push(Line::from(vec![
+        Span::styled("  ⚑ ", Style::default().fg(Color::Magenta)),
+        Span::raw("Favorited event (synced from Polymarket)"),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  $ ", Style::default().fg(Color::Green)),
+        Span::raw("Yield opportunity (market with >95% probability)"),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  ✕ ", Style::default().fg(Color::Red)),
+        Span::raw("Closed/inactive event"),
+    ]));
+    lines.push(Line::from(""));
+
+    // Tab-specific content
+    match app.main_tab {
+        MainTab::Trending => {
+            lines.push(Line::from(vec![Span::styled(
+                "Events Tab - Line Values:",
+                Style::default().fg(Color::Yellow).bold(),
+            )]));
+            lines.push(Line::from("  Each line shows: [icons] Title ... [metric] [markets]"));
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![Span::styled(
+                "  Metric changes with sort (press 's'):",
+                Style::default().fg(Color::Cyan),
+            )]));
+            lines.push(Line::from(vec![
+                Span::styled("  24h Vol:     ", Style::default().fg(Color::Green)),
+                Span::raw("24-hour trading volume across all markets"),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("  Total Vol:   ", Style::default().fg(Color::Green)),
+                Span::raw("Total trading volume since event creation"),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("  Liquidity:   ", Style::default().fg(Color::Cyan)),
+                Span::raw("Available liquidity for trading"),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("  Newest:      ", Style::default().fg(Color::Cyan)),
+                Span::raw("Shows liquidity, sorted by creation date"),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("  Ending Soon: ", Style::default().fg(Color::Cyan)),
+                Span::raw("Shows liquidity, sorted by end date"),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("  Competitive: ", Style::default().fg(Color::Magenta)),
+                Span::raw("Score 0-100% (closer to 50/50 = more competitive)"),
+            ]));
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled("  Markets count ", Style::default().fg(Color::Cyan)),
+                Span::raw("(rightmost) = number of markets in event"),
+            ]));
+        },
+        MainTab::Favorites => {
+            lines.push(Line::from(vec![Span::styled(
+                "Favorites Tab - Line Values:",
+                Style::default().fg(Color::Yellow).bold(),
+            )]));
+            lines.push(Line::from("  Each line shows: ⚑ [yield] Title ... [volume] [markets]"));
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled("  Volume ", Style::default().fg(Color::Green)),
+                Span::raw("= Total trading volume (24h or total)"),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("  Markets ", Style::default().fg(Color::Cyan)),
+                Span::raw("= Number of markets in the event"),
+            ]));
+            lines.push(Line::from(""));
+            lines.push(Line::from("  Favorites are synced from your Polymarket account."));
+            lines.push(Line::from("  Login with 'L' to sync your favorites."));
+        },
+        MainTab::Yield => {
+            lines.push(Line::from(vec![Span::styled(
+                "Yield Tab - Line Values:",
+                Style::default().fg(Color::Yellow).bold(),
+            )]));
+            lines.push(Line::from("  Each line shows: Event/Market ... [return] [prob] [volume]"));
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled("  Return ", Style::default().fg(Color::Green)),
+                Span::raw("= Estimated annual return if market resolves Yes"),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("  Probability ", Style::default().fg(Color::Cyan)),
+                Span::raw("= Current Yes price (e.g., 99.5¢ = 99.5%)"),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("  Volume ", Style::default().fg(Color::Yellow)),
+                Span::raw("= 24h trading volume for the market"),
+            ]));
+            lines.push(Line::from(""));
+            lines.push(Line::from("  Yield opportunities are markets with >95% probability."));
+            lines.push(Line::from("  Higher return = higher risk (further from 100%)."));
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![Span::styled(
+                "  Sort options (press 's'):",
+                Style::default().fg(Color::Cyan),
+            )]));
+            lines.push(Line::from("    Return, Volume, End Date"));
+        },
+    }
+
+    lines.push(Line::from(""));
+
+    // Keyboard shortcuts
+    lines.push(Line::from(vec![Span::styled(
+        "Keyboard Shortcuts:",
+        Style::default().fg(Color::Yellow).bold(),
+    )]));
+    lines.push(Line::from("  ↑/k, ↓/j  Move up/down in lists"));
+    lines.push(Line::from("  Tab       Switch between panels"));
+    lines.push(Line::from("  1-4       Switch tabs (Events/Favorites/Breaking/Yield)"));
+    lines.push(Line::from("  s         Cycle sort options"));
+    lines.push(Line::from("  /         API search (searches Polymarket)"));
+    lines.push(Line::from("  f         Local filter (filters current list)"));
+    lines.push(Line::from("  o         Open event in browser"));
+    lines.push(Line::from("  Enter     Toggle watching event for live trades"));
+    lines.push(Line::from("  L         Login to Polymarket"));
+    lines.push(Line::from("  l         Toggle logs panel"));
+    lines.push(Line::from("  Esc       Cancel/close"));
+    lines.push(Line::from("  q         Quit"));
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![Span::styled(
+        "Press Esc to close",
+        Style::default().fg(Color::DarkGray),
+    )]));
+
+    lines
+}
+
 /// Render a dim overlay over the entire screen to indicate modal is active
 fn render_dim_overlay(f: &mut Frame) {
     let area = f.area();
@@ -2136,45 +2313,19 @@ fn render_popup(f: &mut Frame, app: &TrendingAppState, popup: &PopupType) {
         _ => {},
     }
 
-    let area = centered_rect(60, 50, f.area());
+    // Use larger area for Help popup since it has more content
+    let area = match popup {
+        PopupType::Help => centered_rect(70, 80, f.area()),
+        _ => centered_rect(60, 50, f.area()),
+    };
 
     // Clear the area behind the popup
-    f.render_widget(Clear, area);
 
     let (title, content) = match popup {
-        PopupType::Help => (
-            "Help - Keyboard Shortcuts",
-            vec![
-                Line::from(vec![Span::styled(
-                    "Navigation:",
-                    Style::default().fg(Color::Yellow).bold(),
-                )]),
-                Line::from("  ↑/k, ↓/j  - Move up/down in lists"),
-                Line::from("  Tab       - Switch between panels"),
-                Line::from("  ←/→       - Switch between tabs (Trending/Breaking/New)"),
-                Line::from(""),
-                Line::from(vec![Span::styled(
-                    "Actions:",
-                    Style::default().fg(Color::Yellow).bold(),
-                )]),
-                Line::from("  Enter     - Toggle watching event for live trades"),
-                Line::from("  /         - API search (searches Polymarket)"),
-                Line::from("  f         - Local filter (filters current list)"),
-                Line::from("  Esc       - Cancel search/filter or close popup"),
-                Line::from(""),
-                Line::from(vec![Span::styled(
-                    "Other:",
-                    Style::default().fg(Color::Yellow).bold(),
-                )]),
-                Line::from("  ?         - Show this help"),
-                Line::from("  q         - Quit"),
-                Line::from(""),
-                Line::from(vec![Span::styled(
-                    "Press Esc to close",
-                    Style::default().fg(Color::DarkGray),
-                )]),
-            ],
-        ),
+        PopupType::Help => {
+            let content = build_help_content(app);
+            ("Help", content)
+        },
         PopupType::ConfirmQuit => (
             "Confirm Quit",
             vec![

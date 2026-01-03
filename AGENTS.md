@@ -79,10 +79,49 @@ cd /Users/penso/tmp/polymarket-tui
 git worktree remove ../polymarket-tui-feature-name
 ```
 
+## Security Requirements
+
+**This is a PUBLIC repository. NEVER commit secrets or private data.**
+
+### Forbidden Content
+
+NEVER commit any of the following:
+- API keys, secrets, or tokens (real values)
+- Private keys or wallet addresses (real values)
+- Session cookies or authentication tokens
+- Passwords or credentials
+- `.env` files with real values
+- `auth.json` or similar credential files
+- Any personally identifiable information
+
+### Allowed Content
+
+These are acceptable:
+- Placeholder values (e.g., `"your-api-key-here"`, empty strings `""`)
+- Example/test addresses (e.g., `0x0000000000000000000000000000000000000000`, `0x1234...`)
+- Code that references environment variables or config files (but not the values)
+- Documentation explaining how to configure credentials
+
+### Before Every Commit
+
+1. Review `git diff` to ensure no secrets are included
+2. Check for any hardcoded strings that look like tokens (long alphanumeric strings)
+3. Ensure `.env`, `auth.json`, and similar files are in `.gitignore`
+
+### If Secrets Are Accidentally Committed
+
+If you accidentally commit secrets:
+1. **DO NOT PUSH** - stop immediately
+2. Use `git reset HEAD~1` to undo the commit
+3. Remove the secret from the file
+4. Re-commit without the secret
+5. If already pushed, the secret is compromised - rotate it immediately
+
 ## Code Quality Checklist
 
 Before committing, ensure:
 
+- [ ] **No secrets or private tokens are included** (CRITICAL)
 - [ ] Code is formatted (`just format-check` passes)
 - [ ] Code passes clippy linting (`just lint` passes)
 - [ ] All tests pass (`cargo test`)

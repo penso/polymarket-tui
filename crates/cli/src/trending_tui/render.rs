@@ -53,23 +53,40 @@ fn format_with_thousands(n: f64, decimals: usize) -> String {
 
 /// Calculate the required height for the orderbook panel based on data
 /// Uses actual data size when available, preserves last height when loading
-fn calculate_orderbook_height(app: &TrendingAppState) -> u16 {
+fn calculate_orderbook_height(
+    app: &TrendingAppState,
+    event: Option<&polymarket_api::gamma::Event>,
+) -> u16 {
     const MAX_PER_SIDE: usize = 6;
-    // Min height = borders(2) + header(1) + spread(1) + message line = 5
-    const MIN_HEIGHT: u16 = 5;
+    // Min height for message display = borders(2) + title(1) + message(1) = 4
+    const MESSAGE_HEIGHT: u16 = 4;
 
-    if app.orderbook_state.is_loading {
+    // Check if the selected market is closed
+    let market_is_closed = event.is_some_and(|e| {
+        let mut sorted_markets: Vec<_> = e.markets.iter().collect();
+        sorted_markets.sort_by_key(|m| m.closed);
+        let idx = app
+            .orderbook_state
+            .selected_market_index
+            .min(sorted_markets.len().saturating_sub(1));
+        sorted_markets.get(idx).is_some_and(|m| m.closed)
+    });
+
+    if market_is_closed {
+        // Closed market - use fixed small height
+        MESSAGE_HEIGHT
+    } else if app.orderbook_state.is_loading {
         // Keep the same height during loading to prevent layout jumps
-        app.orderbook_state.last_height
+        app.orderbook_state.last_height.max(MESSAGE_HEIGHT)
     } else if let Some(orderbook) = &app.orderbook_state.orderbook {
         let asks_count = orderbook.asks.len().min(MAX_PER_SIDE);
         let bids_count = orderbook.bids.len().min(MAX_PER_SIDE);
         // Height = borders(2) + header(1) + asks + spread(1) + bids
         let height = 2 + 1 + asks_count + 1 + bids_count;
-        (height as u16).max(MIN_HEIGHT)
+        (height as u16).max(MESSAGE_HEIGHT)
     } else {
-        // No data yet, use last height or min height
-        app.orderbook_state.last_height.max(MIN_HEIGHT)
+        // No data yet, use last height or message height
+        app.orderbook_state.last_height.max(MESSAGE_HEIGHT)
     }
 }
 
@@ -876,7 +893,7 @@ fn render_favorites_tab(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         let is_watching = app.is_watching(event_slug);
 
         // Calculate dynamic orderbook height based on data
-        let orderbook_height = calculate_orderbook_height(app);
+        let orderbook_height = calculate_orderbook_height(app, Some(event));
 
         // Split right side into event details, markets, orderbook, and trades
         let right_chunks = Layout::default()
@@ -1072,13 +1089,21 @@ fn render_favorites_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         Style::default()
     };
 
-    let title = format!(" Favorites ({}) ", events.len());
+    // Build position indicator for bottom right (lazygit style)
+    let total_count = events.len();
+    let position_indicator = if total_count > 0 {
+        format!("{} of {}", selected_index + 1, total_count)
+    } else {
+        "0 of 0".to_string()
+    };
+
     let list = List::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .title(title)
+                .title("Favorites")
+                .title_bottom(Line::from(format!("{}─", position_indicator)).right_aligned())
                 .border_style(block_style),
         )
         .highlight_style(
@@ -1361,21 +1386,30 @@ fn render_yield_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         Style::default()
     };
 
-    // Build title with filter info if active
+    // Build title with filter info if active (count moved to bottom)
     let title = if !yield_state.filter_query.is_empty() {
         format!(
-            "Yield ({}/{}) - Filter: '{}' - Sort: {}",
-            filtered.len(),
-            yield_state.opportunities.len(),
+            "Yield - Filter: '{}' - Sort: {}",
             truncate(&yield_state.filter_query, 15),
             yield_state.sort_by.label()
         )
     } else {
         format!(
-            "Yield Opportunities ({}) - Sort: {}",
-            yield_state.opportunities.len(),
+            "Yield Opportunities - Sort: {}",
             yield_state.sort_by.label()
         )
+    };
+
+    // Build position indicator for bottom right (lazygit style)
+    let total_count = if !yield_state.filter_query.is_empty() {
+        filtered.len()
+    } else {
+        yield_state.opportunities.len()
+    };
+    let position_indicator = if total_count > 0 {
+        format!("{} of {}", yield_state.selected_index + 1, total_count)
+    } else {
+        "0 of 0".to_string()
     };
 
     // Build block with optional bottom title for loading/searching status
@@ -1386,7 +1420,13 @@ fn render_yield_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         .border_style(block_style);
 
     if yield_state.is_search_loading {
-        block = block.title_bottom(Line::from(" Searching... ").centered());
+        block = block.title_bottom(Line::from(vec![
+            Span::raw(" Searching... "),
+            Span::raw(" ".repeat(10)), // spacer
+            Span::raw(format!("{}─", position_indicator)),
+        ]));
+    } else {
+        block = block.title_bottom(Line::from(format!("{}─", position_indicator)).right_aligned());
     }
 
     let table = Table::new(rows, [
@@ -3645,30 +3685,48 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         Style::default()
     };
 
-    // Build title with count, sort option, and search query if applicable
+    // Build title with sort option and search query if applicable (count moved to bottom)
     let event_count = app.filtered_events().len();
     let sort_label = app.event_sort_by.label();
     let title = if !app.search.last_searched_query.is_empty() && !app.search.results.is_empty() {
         // Show search query in title when displaying API search results
         format!(
-            "Events ({}) - Sort: {} - \"{}\"",
-            event_count, sort_label, app.search.last_searched_query
+            "Events - Sort: {} - \"{}\"",
+            sort_label, app.search.last_searched_query
         )
     } else {
-        format!("Events ({}) - Sort: {}", event_count, sort_label)
+        format!("Events - Sort: {}", sort_label)
     };
 
-    // Build block with optional bottom title for loading status
+    // Build position indicator for bottom right (lazygit style)
+    let position_indicator = if event_count > 0 {
+        format!("{} of {}", selected_index + 1, event_count)
+    } else {
+        "0 of 0".to_string()
+    };
+
+    // Build block with position indicator at bottom right
     let mut block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title(title)
         .border_style(block_style);
 
+    // Add status or position indicator at bottom (lazygit style: "1 of 50─" with trailing dash)
     if app.pagination.is_fetching_more {
-        block = block.title_bottom(Line::from(" Loading more... ").centered());
+        block = block.title_bottom(Line::from(vec![
+            Span::raw(" Loading more... "),
+            Span::raw(" ".repeat(10)), // spacer
+            Span::raw(format!("{}─", position_indicator)),
+        ]));
     } else if app.search.is_searching {
-        block = block.title_bottom(Line::from(" Searching... ").centered());
+        block = block.title_bottom(Line::from(vec![
+            Span::raw(" Searching... "),
+            Span::raw(" ".repeat(10)), // spacer
+            Span::raw(format!("{}─", position_indicator)),
+        ]));
+    } else {
+        block = block.title_bottom(Line::from(format!("{}─", position_indicator)).right_aligned());
     }
 
     let list = List::new(items).block(block).highlight_style(
@@ -3714,7 +3772,7 @@ fn render_trades(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         let min_event_details_height = 8; // Minimum height (6 base lines + 2 for borders)
 
         // Calculate dynamic orderbook height based on data
-        let orderbook_height = calculate_orderbook_height(app);
+        let orderbook_height = calculate_orderbook_height(app, Some(event));
 
         // Split area into event details, markets, orderbook, and trades
         let chunks = Layout::default()
@@ -4681,17 +4739,29 @@ fn render_markets(f: &mut Frame, app: &TrendingAppState, event: &Event, area: Re
         Style::default()
     };
 
-    let list = List::new(items).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .title(if is_focused {
-                format!("Markets ({}) (Focused)", event.markets.len())
-            } else {
-                format!("Markets ({})", event.markets.len())
-            })
-            .border_style(block_style),
-    );
+    // Build title (without count, moved to bottom)
+    let title = if is_focused {
+        "Markets (Focused)"
+    } else {
+        "Markets"
+    };
+
+    // Build position indicator for bottom right (lazygit style)
+    let selected_idx = app.orderbook_state.selected_market_index;
+    let position_indicator = if total_markets > 0 {
+        format!("{} of {}", selected_idx + 1, total_markets)
+    } else {
+        "0 of 0".to_string()
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(title)
+        .title_bottom(Line::from(format!("{}─", position_indicator)).right_aligned())
+        .border_style(block_style);
+
+    let list = List::new(items).block(block);
 
     f.render_widget(list, area);
 

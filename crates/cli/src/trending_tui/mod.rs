@@ -2171,7 +2171,7 @@ pub async fn run_trending_tui(
                         }
                     },
                     KeyCode::Char('p') => {
-                        // Show profile popup (if authenticated and not in search/filter mode)
+                        // Toggle profile popup (if authenticated and not in search/filter mode)
                         if app.main_tab == MainTab::Yield && app.yield_state.is_searching {
                             app.yield_state.add_search_char('p');
                             yield_search_debounce = Some(tokio::time::Instant::now());
@@ -2182,6 +2182,9 @@ pub async fn run_trending_tui(
                             if app.search.mode == SearchMode::ApiSearch {
                                 search_debounce = Some(tokio::time::Instant::now());
                             }
+                        } else if app.popup == Some(state::PopupType::UserProfile) {
+                            // Close profile popup if already open
+                            app.close_popup();
                         } else if app.auth_state.is_authenticated {
                             app.show_popup(state::PopupType::UserProfile);
                         }

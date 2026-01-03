@@ -2706,8 +2706,8 @@ fn render_login_popup(f: &mut Frame, app: &TrendingAppState) {
 
 /// Render user profile popup
 fn render_user_profile_popup(f: &mut Frame, app: &TrendingAppState) {
-    // Fixed width: 55 (separator) + 2 (borders) + 2 (padding) = 59, round to 60
-    let area = centered_rect_fixed_width(60, 60, f.area());
+    // Fixed width: 55 (content) + 2 (borders) = 57
+    let area = centered_rect_fixed_width(57, 60, f.area());
     f.render_widget(Clear, area);
 
     let auth = &app.auth_state;

@@ -1297,6 +1297,34 @@ pub async fn run_trending_tui(
         }
     }
 
+    // Fetch orderbook for the initially selected market
+    {
+        let app = app_state.lock().await;
+        if let Some(event) = app.selected_event() {
+            // Get the first non-closed market (same sorting as render_markets)
+            let mut sorted_markets: Vec<_> = event.markets.iter().collect();
+            sorted_markets.sort_by_key(|m| m.closed);
+            let selected_idx = app
+                .orderbook_state
+                .selected_market_index
+                .min(sorted_markets.len().saturating_sub(1));
+            if let Some(market) = sorted_markets.get(selected_idx) {
+                let outcome_idx = match app.orderbook_state.selected_outcome {
+                    state::OrderbookOutcome::Yes => 0,
+                    state::OrderbookOutcome::No => 1,
+                };
+                if let Some(token_id) = market
+                    .clob_token_ids
+                    .as_ref()
+                    .and_then(|ids| ids.get(outcome_idx).cloned())
+                {
+                    drop(app);
+                    spawn_fetch_orderbook(Arc::clone(&app_state), token_id);
+                }
+            }
+        }
+    }
+
     // Fetch API status on startup
     spawn_fetch_api_status(Arc::clone(&app_state));
 

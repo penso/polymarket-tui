@@ -28,6 +28,36 @@ pub enum ClickedTab {
     Yield,
 }
 
+/// Format a number with thousands separators (e.g., 1234567 -> "1,234,567")
+fn format_with_thousands(n: f64, decimals: usize) -> String {
+    let formatted = format!("{:.prec$}", n, prec = decimals);
+    let parts: Vec<&str> = formatted.split('.').collect();
+    let int_part = parts[0];
+
+    // Add thousands separators to integer part
+    let int_with_sep: String = int_part
+        .chars()
+        .rev()
+        .enumerate()
+        .map(|(i, c)| {
+            if i > 0 && i % 3 == 0 {
+                format!(",{}", c)
+            } else {
+                c.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+
+    if decimals > 0 && parts.len() > 1 {
+        format!("{}.{}", int_with_sep, parts[1])
+    } else {
+        int_with_sep
+    }
+}
+
 /// Calculate the required height for the orderbook panel based on data
 /// Returns a height that fits up to 6 asks + 6 bids + header + spread + borders
 fn calculate_orderbook_height(app: &TrendingAppState) -> u16 {
@@ -4858,8 +4888,8 @@ fn render_orderbook(f: &mut Frame, app: &TrendingAppState, event: &Event, area: 
         let format_level =
             |level: &crate::trending_tui::state::OrderbookLevel, price_color: Color| -> Line {
                 let price_str = format_price(level.price);
-                let shares_str = format!("{:.0}", level.size);
-                let total_str = format!("${:.2}", level.total);
+                let shares_str = format_with_thousands(level.size, 0);
+                let total_str = format!("${}", format_with_thousands(level.total, 2));
 
                 let padding_span = Span::raw(" ".repeat(left_padding));
                 let price_span = Span::styled(

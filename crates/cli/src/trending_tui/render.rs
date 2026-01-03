@@ -4735,6 +4735,9 @@ fn render_orderbook(f: &mut Frame, app: &TrendingAppState, event: &Event, area: 
         let bar_max_width = (chunks[0].width as usize).saturating_sub(2);
         let mut depth_lines: Vec<Line> = Vec::new();
 
+        // Add empty line to align with the header row in the price panel
+        depth_lines.push(Line::from(vec![Span::raw("")]));
+
         // Show asks (sell orders) in red at the top - bars grow from right to left
         // Reversed so highest price (deepest) is at top, best ask at bottom
         // Scale asks relative to max_ask_total for proper visualization

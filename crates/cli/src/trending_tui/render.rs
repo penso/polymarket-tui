@@ -2287,11 +2287,12 @@ fn build_help_content(app: &TrendingAppState) -> Vec<Line<'static>> {
 /// Render a dim overlay over the entire screen to indicate modal is active
 fn render_dim_overlay(f: &mut Frame) {
     let area = f.area();
-    // First clear the area, then render a dim background
+    // First clear the area, then render a semi-transparent dim background
     f.render_widget(Clear, area);
     // Create a paragraph that fills the entire area with a dim background
+    // Use a lighter color so content behind is slightly visible
     let overlay = Paragraph::new("")
-        .style(Style::default().bg(Color::Rgb(20, 20, 30)));
+        .style(Style::default().bg(Color::Rgb(40, 40, 50)));
     f.render_widget(overlay, area);
 }
 
@@ -3411,11 +3412,11 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
     let title = if !app.search.last_searched_query.is_empty() && !app.search.results.is_empty() {
         // Show search query in title when displaying API search results
         format!(
-            "Events ({}) [{}] - \"{}\"",
+            "Events ({}) - Sort: {} - \"{}\"",
             event_count, sort_label, app.search.last_searched_query
         )
     } else {
-        format!("Events ({}) [{}]", event_count, sort_label)
+        format!("Events ({}) - Sort: {}", event_count, sort_label)
     };
 
     // Build block with optional bottom title for loading status

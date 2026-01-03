@@ -300,6 +300,7 @@ pub struct TradeFormState {
 }
 
 impl TradeFormState {
+    #[allow(dead_code)]
     pub fn new(token_id: String, market_question: String, outcome: String, price: f64) -> Self {
         Self {
             token_id,
@@ -1242,6 +1243,7 @@ impl TrendingAppState {
     }
 
     /// Open trade popup for a specific market
+    #[allow(dead_code)]
     pub fn open_trade_popup(
         &mut self,
         token_id: String,

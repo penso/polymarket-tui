@@ -1720,76 +1720,57 @@ pub async fn run_trending_tui(
                                 }
                             }
                         }
-                        // Handle click on Markets panel to open trade popup
+                        // Handle click on Markets panel to select market for orderbook
                         if panel == FocusedPanel::Markets && app.main_tab == MainTab::Trending {
-                            // Extract trade popup data before mutably borrowing app
-                            let trade_data: Option<(String, String, String, f64)> =
-                                if let Some(event) = app.selected_event() {
-                                    // Calculate which market row was clicked
-                                    let (_, _, _, markets_area, ..) = calculate_panel_areas(
-                                        size,
-                                        app.is_in_filter_mode(),
-                                        app.show_logs,
-                                        app.main_tab,
-                                    );
-                                    // Account for border (1 line at top)
-                                    let relative_y =
-                                        mouse.row.saturating_sub(markets_area.y + 1) as usize;
-                                    let clicked_idx = app.scroll.markets + relative_y;
+                            // Extract clicked market info before mutably borrowing app
+                            let click_data: Option<(usize, Option<String>)> = if let Some(event) =
+                                app.selected_event()
+                            {
+                                // Calculate which market row was clicked
+                                let (_, _, _, markets_area, ..) = calculate_panel_areas(
+                                    size,
+                                    app.is_in_filter_mode(),
+                                    app.show_logs,
+                                    app.main_tab,
+                                );
+                                // Account for border (1 line at top)
+                                let relative_y =
+                                    mouse.row.saturating_sub(markets_area.y + 1) as usize;
+                                let clicked_idx = app.scroll.markets + relative_y;
 
-                                    // Sort markets same way as render_markets (non-closed first)
-                                    let mut sorted_markets: Vec<_> = event.markets.iter().collect();
-                                    sorted_markets.sort_by_key(|m| m.closed);
+                                // Sort markets same way as render_markets (non-closed first)
+                                let mut sorted_markets: Vec<_> = event.markets.iter().collect();
+                                sorted_markets.sort_by_key(|m| m.closed);
 
-                                    if clicked_idx < sorted_markets.len() {
-                                        let market = sorted_markets[clicked_idx];
-                                        // Only allow trading on non-closed markets
-                                        if !market.closed {
-                                            // Get the first outcome's token_id and price
-                                            if let Some(ref token_ids) = market.clob_token_ids {
-                                                if let Some(token_id) = token_ids.first() {
-                                                    let outcome = market
-                                                        .outcomes
-                                                        .first()
-                                                        .cloned()
-                                                        .unwrap_or_else(|| "Yes".to_string());
-                                                    let price = app
-                                                        .market_prices
-                                                        .get(token_id)
-                                                        .copied()
-                                                        .or_else(|| {
-                                                            market
-                                                                .outcome_prices
-                                                                .first()
-                                                                .and_then(|p| p.parse::<f64>().ok())
-                                                        })
-                                                        .unwrap_or(0.5);
-                                                    Some((
-                                                        token_id.clone(),
-                                                        market.question.clone(),
-                                                        outcome,
-                                                        price,
-                                                    ))
-                                                } else {
-                                                    None
-                                                }
-                                            } else {
-                                                None
-                                            }
-                                        } else {
-                                            None
-                                        }
-                                    } else {
-                                        None
-                                    }
+                                if clicked_idx < sorted_markets.len() {
+                                    let market = sorted_markets[clicked_idx];
+                                    // Get token_id for orderbook based on selected outcome
+                                    let outcome_idx = match app.orderbook_state.selected_outcome {
+                                        state::OrderbookOutcome::Yes => 0,
+                                        state::OrderbookOutcome::No => 1,
+                                    };
+                                    let token_id = market
+                                        .clob_token_ids
+                                        .as_ref()
+                                        .and_then(|ids| ids.get(outcome_idx).cloned());
+                                    Some((clicked_idx, token_id))
                                 } else {
                                     None
-                                };
+                                }
+                            } else {
+                                None
+                            };
 
-                            // Now mutably borrow app to open the trade popup
-                            if let Some((token_id, question, outcome, price)) = trade_data {
-                                app.open_trade_popup(token_id, question.clone(), outcome, price);
-                                log_info!("Opening trade popup for: {}", question);
+                            // Update selected market and fetch orderbook
+                            if let Some((clicked_idx, token_id)) = click_data
+                                && app.orderbook_state.selected_market_index != clicked_idx
+                            {
+                                app.orderbook_state.selected_market_index = clicked_idx;
+                                if let Some(token_id) = token_id {
+                                    app.orderbook_state.orderbook = None;
+                                    drop(app);
+                                    spawn_fetch_orderbook(Arc::clone(&app_state), token_id);
+                                }
                             }
                         }
                     }

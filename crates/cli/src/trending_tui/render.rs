@@ -4930,11 +4930,8 @@ fn render_orderbook(f: &mut Frame, app: &TrendingAppState, event: &Event, area: 
         // Spread separator - right aligned
         if let Some(spread) = orderbook.spread {
             let spread_cents = spread * 100.0;
-            let spread_str = if spread_cents >= 1.0 {
-                format!("─── Spread: {:.1}¢ ───", spread_cents)
-            } else {
-                format!("─── Spread: {:.2}¢ ───", spread_cents)
-            };
+            // Always use 1 decimal place for consistency
+            let spread_str = format!("─── Spread: {:.1}¢ ───", spread_cents);
             // Center the spread line
             let spread_padding = panel_width.saturating_sub(spread_str.chars().count()) / 2;
             level_lines.push(Line::from(vec![Span::styled(

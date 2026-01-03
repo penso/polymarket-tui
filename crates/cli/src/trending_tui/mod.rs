@@ -588,12 +588,27 @@ fn spawn_fetch_favorites(app_state: Arc<TokioMutex<TrendingAppState>>) {
             },
         };
 
-        // Create authenticated gamma client
+        // Check if session cookie is available
+        if auth_config.session_cookie.is_none() {
+            let mut app = app_state.lock().await;
+            app.favorites_state.is_loading = false;
+            app.favorites_state.error_message = Some(
+                "Session cookie required. Add 'session_cookie' to your auth.json config \
+                 with the value of 'polymarketsession' cookie from browser dev tools."
+                    .to_string(),
+            );
+            return;
+        }
+
+        // Create authenticated gamma client with session cookies
         let gamma_auth = GammaAuth {
             api_key: auth_config.api_key,
             api_secret: auth_config.secret,
             passphrase: auth_config.passphrase,
             address: auth_config.address,
+            session_cookie: auth_config.session_cookie,
+            session_nonce: auth_config.session_nonce,
+            session_auth_type: auth_config.session_auth_type,
         };
         let gamma_client = GammaClient::with_auth(gamma_auth);
 
@@ -611,31 +626,13 @@ fn spawn_fetch_favorites(app_state: Arc<TokioMutex<TrendingAppState>>) {
             },
         };
 
-        log_info!("Found {} favorite event IDs", favorites.len());
+        log_info!("Found {} favorites", favorites.len());
 
-        if favorites.is_empty() {
-            let mut app = app_state.lock().await;
-            app.favorites_state.is_loading = false;
-            app.favorites_state.events.clear();
-            app.favorites_state.favorite_ids = favorites;
-            return;
-        }
-
-        // Fetch actual event data for each favorite
-        let mut events = Vec::new();
-        for fav in &favorites {
-            match gamma_client.get_event_by_id(&fav.event_id).await {
-                Ok(Some(event)) => {
-                    events.push(event);
-                },
-                Ok(None) => {
-                    log_warn!("Favorite event {} not found", fav.event_id);
-                },
-                Err(e) => {
-                    log_warn!("Failed to fetch event {}: {}", fav.event_id, e);
-                },
-            }
-        }
+        // Extract events from favorites (the API returns full event data embedded)
+        let events: Vec<_> = favorites
+            .iter()
+            .filter_map(|fav| fav.event.clone())
+            .collect();
 
         log_info!("Loaded {} favorite events", events.len());
 
@@ -1005,6 +1002,15 @@ pub async fn run_trending_tui(
 
             // Handle mouse events
             if let Event::Mouse(mouse) = &event {
+                // Skip mouse handling when a popup/modal is active
+                // The modal takes focus and background should not respond to mouse
+                {
+                    let app = app_state.lock().await;
+                    if app.popup.is_some() {
+                        continue;
+                    }
+                }
+
                 // Focus panel on hover (mouse move)
                 if let MouseEventKind::Moved = mouse.kind {
                     let mut app = app_state.lock().await;
@@ -1523,6 +1529,9 @@ pub async fn run_trending_tui(
                                 passphrase: app.login_form.passphrase.clone(),
                                 address: app.login_form.address.clone(),
                                 username: None,
+                                session_cookie: None, // Can be added manually to config file
+                                session_nonce: None,
+                                session_auth_type: None,
                             };
 
                             match config.validate() {
@@ -1922,6 +1931,48 @@ pub async fn run_trending_tui(
                                 let _ = std::process::Command::new("cmd")
                                     .args(["/C", "start", &url])
                                     .spawn();
+                            }
+                        }
+                    },
+                    KeyCode::Char('e') => {
+                        // Open config file in editor (only in Favorites tab when session cookie is missing)
+                        if app.main_tab == MainTab::Favorites
+                            && app.favorites_state.error_message.is_some()
+                        {
+                            let config_path = crate::auth::AuthConfig::config_path();
+                            let config_path_str = config_path.display().to_string();
+
+                            // Use system open command (opens in GUI editor, not terminal)
+                            // We can't use terminal editors like vim/nvim while the TUI is running
+                            #[cfg(target_os = "macos")]
+                            let result = std::process::Command::new("open")
+                                .arg("-t") // Open in default text editor (usually TextEdit)
+                                .arg(&config_path_str)
+                                .spawn();
+
+                            #[cfg(target_os = "linux")]
+                            let result = std::process::Command::new("xdg-open")
+                                .arg(&config_path_str)
+                                .spawn();
+
+                            #[cfg(target_os = "windows")]
+                            let result = std::process::Command::new("cmd")
+                                .args(["/C", "start", "notepad", &config_path_str])
+                                .spawn();
+
+                            match result {
+                                Ok(_) => log_info!("Opened config file: {}", config_path_str),
+                                Err(e) => log_error!("Failed to open config file: {}", e),
+                            }
+                        } else if app.main_tab == MainTab::Yield && app.yield_state.is_searching {
+                            app.yield_state.add_search_char('e');
+                            yield_search_debounce = Some(tokio::time::Instant::now());
+                        } else if app.main_tab == MainTab::Yield && app.yield_state.is_filtering {
+                            app.yield_state.add_filter_char('e');
+                        } else if app.is_in_filter_mode() {
+                            app.add_search_char('e');
+                            if app.search.mode == SearchMode::ApiSearch {
+                                search_debounce = Some(tokio::time::Instant::now());
                             }
                         }
                     },

@@ -133,11 +133,18 @@ pub struct Event {
     pub closed: bool,
     #[serde(default)]
     pub tags: Vec<Tag>,
+    #[serde(default)]
     pub markets: Vec<Market>,
     #[serde(rename = "endDate", default)]
     pub end_date: Option<String>, // ISO 8601 date string
     #[serde(default)]
     pub image: Option<String>, // URL to event image/thumbnail
+    /// Volume in last 24 hours (from favorites API)
+    #[serde(rename = "volume24hr", default)]
+    pub volume_24hr: Option<f64>,
+    /// Total liquidity
+    #[serde(default)]
+    pub liquidity: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -257,12 +264,22 @@ pub struct GammaClient {
 }
 
 /// Authentication credentials for Gamma API
+///
+/// For cookie-based auth (favorites, etc.), session cookies are needed.
+/// These can be obtained from browser dev tools after logging in to polymarket.com.
 #[derive(Debug, Clone)]
 pub struct GammaAuth {
     pub api_key: String,
     pub api_secret: String,
     pub passphrase: String,
     pub address: String,
+    /// Session cookie for browser-based authentication (polymarketsession)
+    /// Required for endpoints like favorite_events that don't support HMAC auth
+    pub session_cookie: Option<String>,
+    /// Session nonce cookie (polymarketnonce)
+    pub session_nonce: Option<String>,
+    /// Auth type cookie (polymarketauthtype), usually "magic"
+    pub session_auth_type: Option<String>,
 }
 
 impl GammaClient {
@@ -291,6 +308,14 @@ impl GammaClient {
     /// Check if the client has authentication credentials
     pub fn has_auth(&self) -> bool {
         self.auth.is_some()
+    }
+
+    /// Check if the client has a session cookie for browser-based auth
+    pub fn has_session_cookie(&self) -> bool {
+        self.auth
+            .as_ref()
+            .and_then(|a| a.session_cookie.as_ref())
+            .is_some_and(|s| !s.is_empty())
     }
 
     /// Create a new GammaClient with file-based caching
@@ -736,31 +761,79 @@ impl GammaClient {
         Ok(l2_headers.to_header_map())
     }
 
+    /// Create cookie-based authentication headers for Gamma API
+    /// This is required for endpoints like favorite_events that use browser session auth
+    fn create_cookie_headers(&self) -> Result<reqwest::header::HeaderMap> {
+        use reqwest::header::{COOKIE, HeaderMap, HeaderValue};
+
+        let auth = self.auth.as_ref().ok_or_else(|| {
+            crate::error::PolymarketError::InvalidData("No auth credentials configured".to_string())
+        })?;
+
+        let session_cookie = auth.session_cookie.as_ref().ok_or_else(|| {
+            crate::error::PolymarketError::InvalidData(
+                "Session cookies required for this endpoint. \
+                 Get them from browser dev tools after logging in to polymarket.com"
+                    .to_string(),
+            )
+        })?;
+
+        // Build cookie string with all required cookies
+        let mut cookies = vec![format!("polymarketsession={}", session_cookie)];
+
+        if let Some(ref nonce) = auth.session_nonce {
+            cookies.push(format!("polymarketnonce={}", nonce));
+        }
+
+        if let Some(ref auth_type) = auth.session_auth_type {
+            cookies.push(format!("polymarketauthtype={}", auth_type));
+        }
+
+        let cookie_value = cookies.join("; ");
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            COOKIE,
+            HeaderValue::from_str(&cookie_value).map_err(|e| {
+                crate::error::PolymarketError::InvalidData(format!("Invalid cookie value: {}", e))
+            })?,
+        );
+
+        Ok(headers)
+    }
+
     /// Get all favorite events for the authenticated user
+    /// Requires a valid session cookie (browser-based authentication)
     pub async fn get_favorite_events(&self) -> Result<Vec<FavoriteEvent>> {
-        if !self.has_auth() {
+        if !self.has_session_cookie() {
             return Err(crate::error::PolymarketError::InvalidData(
-                "Authentication required for favorite events".to_string(),
+                "Session cookie required for favorite events. \
+                 Add 'session_cookie' to your auth config with the value of \
+                 'polymarketsession' cookie from browser dev tools."
+                    .to_string(),
             ));
         }
 
         let url = format!("{}/favorite_events", GAMMA_API_BASE);
         let request_path = "/favorite_events";
 
-        let headers = self.create_auth_headers("GET", request_path, None)?;
+        log_info!("GET {} (cookie auth)", url);
+
+        let headers = self.create_cookie_headers()?;
 
         let response = self.client.get(&url).headers(headers).send().await?;
+        let status = response.status();
 
-        if !response.status().is_success() {
-            let status = response.status();
+        if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
-            log_warn!("Failed to get favorite events: {} - {}", status, body);
+            log_warn!("GET {} -> error: {} - {}", request_path, status, body);
             return Err(crate::error::PolymarketError::InvalidData(format!(
-                "Failed to get favorite events: {}",
-                status
+                "Failed to get favorite events: {} - {}",
+                status, body
             )));
         }
 
+        log_info!("GET {} -> {}", request_path, status);
         let favorites: Vec<FavoriteEvent> = response.json().await?;
         log_info!("Fetched {} favorite events", favorites.len());
         Ok(favorites)
@@ -901,20 +974,37 @@ pub struct PublicProfile {
     pub profile_image_optimized: Option<String>,
 }
 
-/// Favorite event entry
+/// Favorite event entry from the Gamma API
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FavoriteEvent {
-    /// Favorite entry ID (used for deletion)
+    /// Favorite entry ID (used for deletion) - returned as string from API
+    #[serde(deserialize_with = "deserialize_string_to_i64")]
     pub id: i64,
     /// Event ID
-    #[serde(rename = "eventId")]
     pub event_id: String,
-    /// User address
+    /// User ID
     #[serde(default)]
-    pub address: Option<String>,
+    pub user_id: Option<String>,
+    /// The full event data (optional, included when fetching favorites)
+    #[serde(default)]
+    pub event: Option<Event>,
     /// Creation timestamp
-    #[serde(rename = "createdAt", default)]
+    #[serde(default)]
     pub created_at: Option<String>,
+    /// Update timestamp
+    #[serde(default)]
+    pub updated_at: Option<String>,
+}
+
+/// Helper to deserialize string numbers to i64
+fn deserialize_string_to_i64<'de, D>(deserializer: D) -> std::result::Result<i64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+    let s: String = serde::Deserialize::deserialize(deserializer)?;
+    s.parse::<i64>()
+        .map_err(|e| D::Error::custom(format!("Failed to parse i64: {}", e)))
 }
 
 /// Request body for adding a favorite event

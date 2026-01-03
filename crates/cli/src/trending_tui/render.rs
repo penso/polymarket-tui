@@ -461,18 +461,86 @@ fn render_favorites_tab(f: &mut Frame, app: &TrendingAppState, area: Rect) {
         return;
     }
 
-    // Show error state
+    // Show error/info state
     if let Some(ref error) = favorites_state.error_message {
-        let error_msg = Paragraph::new(format!("Error: {}", error))
-            .block(
-                Block::default()
-                    .title(" Favorites ")
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded),
-            )
-            .alignment(Alignment::Center)
-            .style(Style::default().fg(Color::Red));
-        f.render_widget(error_msg, area);
+        // Check if this is a "missing session cookie" info message vs actual error
+        let is_session_cookie_missing =
+            error.contains("session_cookie") || error.contains("Session cookie");
+
+        if is_session_cookie_missing {
+            // Get the actual config path
+            let config_path = crate::auth::AuthConfig::config_path();
+            let config_path_str = config_path.display().to_string();
+
+            // Show helpful setup instructions, not an error
+            let lines = vec![
+                Line::from(Span::styled(
+                    "Session Cookie Required",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                )),
+                Line::from(""),
+                Line::from("Favorites require browser authentication."),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "To set up:",
+                    Style::default().add_modifier(Modifier::BOLD),
+                )),
+                Line::from("1. Log in to polymarket.com in your browser"),
+                Line::from("2. Open Developer Tools (F12)"),
+                Line::from("3. Go to Application > Cookies > polymarket.com"),
+                Line::from("4. Copy these cookie values and add to config:"),
+                Line::from(""),
+                Line::from(Span::styled(
+                    format!("   {}", config_path_str),
+                    Style::default().fg(Color::Cyan),
+                )),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "   \"session_cookie\": \"<polymarketsession>\",",
+                    Style::default().fg(Color::Cyan),
+                )),
+                Line::from(Span::styled(
+                    "   \"session_nonce\": \"<polymarketnonce>\",",
+                    Style::default().fg(Color::Cyan),
+                )),
+                Line::from(Span::styled(
+                    "   \"session_auth_type\": \"magic\"",
+                    Style::default().fg(Color::Cyan),
+                )),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "Press 'e' to open config in system editor",
+                    Style::default().fg(Color::Green),
+                )),
+            ];
+
+            let info_msg = Paragraph::new(lines)
+                .block(
+                    Block::default()
+                        .title(" Favorites - Setup Required ")
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
+                        .border_style(Style::default().fg(Color::Yellow)),
+                )
+                .alignment(Alignment::Left)
+                .wrap(Wrap { trim: true });
+            f.render_widget(info_msg, area);
+        } else {
+            // Show actual error
+            let error_msg = Paragraph::new(format!("Error: {}", error))
+                .block(
+                    Block::default()
+                        .title(" Favorites ")
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded),
+                )
+                .alignment(Alignment::Center)
+                .wrap(Wrap { trim: true })
+                .style(Style::default().fg(Color::Red));
+            f.render_widget(error_msg, area);
+        }
         return;
     }
 
@@ -1521,8 +1589,19 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         .split(popup_layout[1])[1]
 }
 
+/// Render a dim overlay over the entire screen to indicate modal is active
+fn render_dim_overlay(f: &mut Frame) {
+    let area = f.area();
+    // Create a block with a dim background to overlay the entire screen
+    let overlay = Block::default().style(Style::default().bg(Color::Rgb(0, 0, 0)));
+    f.render_widget(overlay, area);
+}
+
 /// Render a popup/modal dialog
 fn render_popup(f: &mut Frame, app: &TrendingAppState, popup: &PopupType) {
+    // First, render a dim overlay to visually indicate the modal is active
+    render_dim_overlay(f);
+
     match popup {
         PopupType::Login => {
             render_login_popup(f, app);

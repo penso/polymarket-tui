@@ -22,6 +22,19 @@ pub struct AuthConfig {
     /// Optional username/display name
     #[serde(default)]
     pub username: Option<String>,
+    /// Optional Polymarket session cookie for Gamma API (favorites, etc.)
+    /// This can be obtained from browser dev tools after logging in to polymarket.com
+    /// Look for the "polymarketsession" cookie value
+    #[serde(default)]
+    pub session_cookie: Option<String>,
+    /// Optional Polymarket nonce cookie (required with session_cookie)
+    /// Look for the "polymarketnonce" cookie value
+    #[serde(default)]
+    pub session_nonce: Option<String>,
+    /// Optional Polymarket auth type cookie (usually "magic")
+    /// Look for the "polymarketauthtype" cookie value
+    #[serde(default)]
+    pub session_auth_type: Option<String>,
 }
 
 #[allow(dead_code)]

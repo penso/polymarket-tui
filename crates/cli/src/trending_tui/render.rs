@@ -198,6 +198,19 @@ fn format_price_cents(price: f64) -> String {
     }
 }
 
+/// Format a volume/liquidity value with appropriate units (K, M)
+fn format_volume(value: f64) -> String {
+    if value >= 1_000_000.0 {
+        format!("${:.1}M", value / 1_000_000.0)
+    } else if value >= 1_000.0 {
+        format!("${:.0}K", value / 1_000.0)
+    } else if value > 0.0 {
+        format!("${:.0}", value)
+    } else {
+        String::new()
+    }
+}
+
 /// Shared function to build event info lines for display
 /// Used by both Events tab and Yield tab to show consistent event details
 fn build_event_info_lines(
@@ -3069,7 +3082,7 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             let markets_count = event.markets.len();
             let markets_str = format!("{:>width$}", markets_count, width = max_markets_width);
 
-            // For Breaking tab, show price change; for other tabs, show volume
+            // Show metric based on current sort option (or price change for Breaking tab)
             let (metric_str, metric_color) =
                 if app.event_filter == crate::trending_tui::state::EventFilter::Breaking {
                     // Show price change percentage for Breaking tab
@@ -3085,22 +3098,39 @@ fn render_events_list(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                         (String::new(), Color::Green)
                     }
                 } else {
-                    // Calculate total volume from all markets for other tabs
-                    let total_volume: f64 = event
-                        .markets
-                        .iter()
-                        .map(|m| m.volume_24hr.or(m.volume_total).unwrap_or(0.0))
-                        .sum();
-                    let volume_str = if total_volume >= 1_000_000.0 {
-                        format!("${:.1}M", total_volume / 1_000_000.0)
-                    } else if total_volume >= 1_000.0 {
-                        format!("${:.0}K", total_volume / 1_000.0)
-                    } else if total_volume > 0.0 {
-                        format!("${:.0}", total_volume)
-                    } else {
-                        String::new()
-                    };
-                    (volume_str, Color::Green)
+                    // Show metric based on current sort option
+                    use crate::trending_tui::state::EventSortBy;
+                    match app.event_sort_by {
+                        EventSortBy::Volume24hr => {
+                            // Calculate 24h volume from all markets
+                            let total_volume: f64 = event
+                                .markets
+                                .iter()
+                                .map(|m| m.volume_24hr.unwrap_or(0.0))
+                                .sum();
+                            (format_volume(total_volume), Color::Green)
+                        },
+                        EventSortBy::VolumeTotal => {
+                            // Use event's total volume or sum from markets
+                            let total_volume = event.volume.unwrap_or_else(|| {
+                                event.markets.iter().map(|m| m.volume_total.unwrap_or(0.0)).sum()
+                            });
+                            (format_volume(total_volume), Color::Green)
+                        },
+                        EventSortBy::Liquidity | EventSortBy::Newest | EventSortBy::EndingSoon => {
+                            // Show liquidity for these sort options
+                            let liquidity = event.liquidity.unwrap_or(0.0);
+                            (format_volume(liquidity), Color::Cyan)
+                        },
+                        EventSortBy::Competitive => {
+                            // Show competitive score as percentage
+                            if let Some(competitive) = event.competitive {
+                                (format!("{:.0}%", competitive * 100.0), Color::Magenta)
+                            } else {
+                                (String::new(), Color::Magenta)
+                            }
+                        },
+                    }
                 };
             let volume_str = metric_str;
             let volume_color = metric_color;

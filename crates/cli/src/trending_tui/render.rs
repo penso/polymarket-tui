@@ -28,11 +28,30 @@ pub enum ClickedTab {
 }
 
 /// Check if a click is on a tab (unified single line of tabs)
+/// Check if the login button was clicked (top right, "[ Login ]" = 10 chars)
+/// Returns true if click is on the login button area
+pub fn is_login_button_clicked(x: u16, y: u16, size: Rect) -> bool {
+    // Login button is on the first line (y = 0) and at the right edge
+    // "[ Login ]" is 10 characters wide
+    if y != 0 {
+        return false;
+    }
+
+    let login_button_start = size.width.saturating_sub(10);
+    x >= login_button_start
+}
+
 /// Tabs are rendered on the first line (y = 0)
 /// Returns which tab was clicked: Trending [1], Breaking [2], New [3], Yield [4]
-pub fn get_clicked_tab(x: u16, y: u16, _size: Rect) -> Option<ClickedTab> {
+pub fn get_clicked_tab(x: u16, y: u16, size: Rect) -> Option<ClickedTab> {
     // Tabs are on the first line (y = 0)
     if y != 0 {
+        return None;
+    }
+
+    // Don't match tabs if clicking on login button area (right side)
+    let login_button_start = size.width.saturating_sub(10);
+    if x >= login_button_start {
         return None;
     }
 
@@ -47,7 +66,7 @@ pub fn get_clicked_tab(x: u16, y: u16, _size: Rect) -> Option<ClickedTab> {
         return Some(ClickedTab::Breaking);
     } else if (31..37).contains(&x) {
         return Some(ClickedTab::New);
-    } else if x >= 40 {
+    } else if (40..50).contains(&x) {
         return Some(ClickedTab::Yield);
     }
     None
@@ -283,6 +302,15 @@ fn render_header(f: &mut Frame, app: &TrendingAppState, area: Rect) {
             ])
             .split(area);
 
+        // Split tabs line: tabs on left, login button on right
+        let tabs_line_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Min(0),     // Tabs (fill remaining space)
+                Constraint::Length(10), // Login button "[ Login ]"
+            ])
+            .split(header_chunks[0]);
+
         // Render unified tabs in gitui-style (underline for selected, keyboard shortcuts)
         let tab_titles: Vec<Line> = vec![
             Line::from("Trending [1]"),
@@ -299,7 +327,13 @@ fn render_header(f: &mut Frame, app: &TrendingAppState, area: Rect) {
                     .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
             )
             .divider(" ");
-        f.render_widget(tabs, header_chunks[0]);
+        f.render_widget(tabs, tabs_line_chunks[0]);
+
+        // Render login button on the right
+        let login_button = Paragraph::new("[ Login ]")
+            .style(Style::default().fg(Color::Cyan))
+            .alignment(Alignment::Right);
+        f.render_widget(login_button, tabs_line_chunks[1]);
 
         // Horizontal separator line (gitui-style) - full width line of ─ characters
         let line_width = header_chunks[1].width as usize;
@@ -1288,6 +1322,22 @@ fn render_popup(f: &mut Frame, popup: &PopupType) {
         ]),
         PopupType::EventInfo(slug) => ("Event Info", vec![
             Line::from(format!("Slug: {}", slug)),
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                "Press Esc to close",
+                Style::default().fg(Color::DarkGray),
+            )]),
+        ]),
+        PopupType::Login => ("Login", vec![
+            Line::from(""),
+            Line::from("Lorem ipsum dolor sit amet, consectetur adipiscing elit."),
+            Line::from("Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."),
+            Line::from(""),
+            Line::from("Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris"),
+            Line::from("nisi ut aliquip ex ea commodo consequat."),
+            Line::from(""),
+            Line::from("Duis aute irure dolor in reprehenderit in voluptate velit esse"),
+            Line::from("cillum dolore eu fugiat nulla pariatur."),
             Line::from(""),
             Line::from(vec![Span::styled(
                 "Press Esc to close",

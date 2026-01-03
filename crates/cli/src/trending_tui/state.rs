@@ -160,6 +160,7 @@ pub enum PopupType {
     Help,              // Show help/keyboard shortcuts
     ConfirmQuit,       // Confirm before quitting
     EventInfo(String), // Show detailed event info (slug)
+    Login,             // Login modal (placeholder)
 }
 
 /// Search-related state

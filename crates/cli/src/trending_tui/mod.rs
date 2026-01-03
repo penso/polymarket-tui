@@ -9,7 +9,7 @@ use {
     ratatui::layout::{Constraint, Direction, Layout, Rect},
     render::{ClickedTab, render, truncate},
     state::{
-        EventFilter, EventTrades, FocusedPanel, MainTab, SearchMode, YieldOpportunity,
+        EventFilter, EventTrades, FocusedPanel, MainTab, PopupType, SearchMode, YieldOpportunity,
         YieldSearchResult,
     },
 };
@@ -886,6 +886,12 @@ pub async fn run_trending_tui(
                     let mut app = app_state.lock().await;
                     let term_size = terminal.size()?;
                     let size = Rect::new(0, 0, term_size.width, term_size.height);
+
+                    // Check for login button click (top right)
+                    if render::is_login_button_clicked(mouse.column, mouse.row, size) {
+                        app.show_popup(PopupType::Login);
+                        continue;
+                    }
 
                     // Check for tab clicks (first line - unified tabs)
                     if let Some(clicked_tab) =
